@@ -159,7 +159,8 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .tcard .info{flex:1;min-width:0}
 .tcard .info b{display:block;font-size:16px}
 .tcard .info small{display:block;font-size:12.5px;color:var(--muted)}
-.prof{display:flex;align-items:center;gap:14px;padding:16px}
+.prof{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:16px}
+.prof .hint{flex-basis:100%;margin-top:2px}
 .prof .av{width:64px;height:64px;border-radius:50%;border:2px solid var(--accent);background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:22px;overflow:hidden;flex:none}
 .prof .av img{width:100%;height:100%;object-fit:cover}
 .setrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--surface-2);background:none;border-left:0;border-right:0;border-top:0;width:100%;text-align:left;color:var(--fg);font-weight:600}
@@ -201,7 +202,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "5";   // bump together with CACHE in sw.js
+const APP_VERSION = "6";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -720,21 +721,20 @@ function viewTeams(){
         <span class="info"><b>${esc(t.full)}</b><small>${isEditorOf(t) ? "Admin · " : ""}${n ? plural(n, "request needs", "requests need") + " a reply" : next ? "Next: " + esc(next.role) + ", " + esc(fmtShort(next.date)) : "Nothing scheduled yet"}</small></span>
         ${n ? `<span class="count">${n}</span>` : ""}<span class="muted" style="width:20px;height:20px;display:grid">${ICON.go}</span></a>`;
     }).join("") || `<div class="empty">No teams found yet.</div>`}</section>
-    <p class="hint">Missing a team? Ask that team's leader to add your email address (${esc(S.me.emails[0] || "")}) to their roster. It shows up here the next time you open RCI Serve.</p>`;
+    <p class="hint" style="text-align:center">Missing a team? Ask that team's leader to add your email address (${esc(S.me.emails[0] || "")}) to their roster. It shows up here the next time you open RCI Serve.</p>`;
 }
 
 function viewProfile(){
   return `<h1 class="page">Profile</h1>
     <section class="panel prof"><span class="av">${S.photo ? `<img src="${S.photo}" alt="">` : esc(initials(S.me.name))}</span>
-      <span style="min-width:0"><b style="display:block;font-size:18px">${esc(S.me.name)}</b><small class="muted" style="word-break:break-all">${esc(S.me.emails[0] || "")}</small></span></section>
+      <span style="min-width:0"><b style="display:block;font-size:18px">${esc(S.me.name)}</b><small class="muted" style="word-break:break-all">${esc(S.me.emails[0] || "")}</small></span>
+      <p class="hint">Your profile and photo are edited in each team's app (My Profile).</p></section>
     ${badgeAsk()}
     <section class="panel">
       <button class="setrow" data-act="refresh"><span>Refresh my teams</span><span class="muted" style="width:20px;height:20px;display:grid">${ICON.refresh}</span></button>
       ${DEMO ? "" : `<button class="setrow" data-act="signout" style="color:var(--bad)"><span>Sign out</span></button>`}
     </section>
-    <p class="hint">Your profile, photo and birthday are edited in each team's app (My Profile).</p>
-    ${S.hideInstall ? "" : installGuide()}
-    <p class="hint">RCI Serve version ${APP_VERSION}${DEMO ? " · demo" : ""}</p>`;
+    ${S.hideInstall ? "" : installGuide()}`;
 }
 
 const SHOW_ANNOUNCEMENTS = false;   // News page built but hidden for now — flip to true to bring the tab back
