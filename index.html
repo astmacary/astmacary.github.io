@@ -52,16 +52,16 @@ img{max-width:100%}
 @media (max-width:820px){input,select,textarea{font-size:16px!important}}
 
 header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
-header.top .wrap{display:flex;align-items:center;gap:10px;padding-top:12px;padding-bottom:10px}
+header.top .wrap{display:flex;align-items:center;gap:12px;padding-top:16px;padding-bottom:10px}
 .brand{display:flex;align-items:center;min-width:0;flex:1;background:none;border:none;padding:0;color:inherit}
-.brand .wm{height:46px;width:auto}
+.brand .wm{height:52px;width:auto}
 .wm-dark{display:none}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .wm-light{display:none}:root:not([data-theme="light"]) .wm-dark{display:block}}
 :root[data-theme="dark"] .wm-light{display:none}:root[data-theme="dark"] .wm-dark{display:block}
 .iconbtn{background:none;border:1px solid var(--line);border-radius:999px;width:40px;height:40px;display:grid;place-items:center;color:var(--muted);flex:none;padding:0;position:relative}
 .iconbtn svg{width:18px;height:18px}
 .iconbtn.spin svg{animation:spin 1s linear infinite}
-.me-btn{border:2px solid var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:14px;overflow:visible}
+.me-btn{border:2px solid var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:14px;overflow:visible;width:50px;height:50px}
 .me-btn img{width:100%;height:100%;border-radius:50%;object-fit:cover}
 .red-dot{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:var(--bad);border:2px solid var(--surface)}
 
@@ -201,7 +201,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "4";   // bump together with CACHE in sw.js
+const APP_VERSION = "5";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
