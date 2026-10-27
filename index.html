@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RCI Serve</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/icons/favicon.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#081C33" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="RCI Serve">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap">
+<style>
+/* RCI Serve: one home for all four RCI team apps. Same look as the team apps (navy + gold). */
+:root{
+  --bg:#F2F4F8; --surface:#FFFFFF; --surface-2:#E7EBF2; --line:#D3DAE5;
+  --fg:#0B1D33; --muted:#566479; --accent:#8A6631; --accent-ink:#FFFFFF; --accent-soft:#F4EBDD;
+  --ok:#1E7A4C; --ok-soft:#DDF1E6; --warn:#8A5A00; --warn-soft:#FBEBCD; --bad:#B3261E; --bad-soft:#F9DEDC;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:12px; --go:#1E8A52; --stop:#C62828; --navy:#0B1D33;
+  padding-top:env(safe-area-inset-top,0px);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#03111F; --surface:#081C33; --surface-2:#0E2845; --line:#1A3555;
+  --fg:#EEF2F7; --muted:#A3B2C6; --accent:#D2B07C; --accent-ink:#03111F; --accent-soft:#252C38;
+  --ok:#5CCB8F; --ok-soft:#0F2E2A; --warn:#E3B866; --warn-soft:#2E2A20; --bad:#F2877F; --bad-soft:#33202C; color-scheme:dark}
+  :root:not([data-theme="light"]) .team{--t:var(--td)}}
+:root[data-theme="dark"]{
+  --bg:#03111F; --surface:#081C33; --surface-2:#0E2845; --line:#1A3555;
+  --fg:#EEF2F7; --muted:#A3B2C6; --accent:#D2B07C; --accent-ink:#03111F; --accent-soft:#252C38;
+  --ok:#5CCB8F; --ok-soft:#0F2E2A; --warn:#E3B866; --warn-soft:#2E2A20; --bad:#F2877F; --bad-soft:#33202C; color-scheme:dark}
+:root[data-theme="dark"] .team{--t:var(--td)}
+.team{--t:var(--tl)}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--accent)}
+img{max-width:100%}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:720px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+@media (max-width:820px){input,select,textarea{font-size:16px!important}}
+
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;align-items:center;gap:10px;padding-top:12px;padding-bottom:10px}
+.brand{display:flex;align-items:center;min-width:0;flex:1;background:none;border:none;padding:0;color:inherit}
+.brand .wm{height:46px;width:auto}
+.wm-dark{display:none}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .wm-light{display:none}:root:not([data-theme="light"]) .wm-dark{display:block}}
+:root[data-theme="dark"] .wm-light{display:none}:root[data-theme="dark"] .wm-dark{display:block}
+.iconbtn{background:none;border:1px solid var(--line);border-radius:999px;width:40px;height:40px;display:grid;place-items:center;color:var(--muted);flex:none;padding:0;position:relative}
+.iconbtn svg{width:18px;height:18px}
+.iconbtn.spin svg{animation:spin 1s linear infinite}
+.me-btn{border:2px solid var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:14px;overflow:visible}
+.me-btn img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+.red-dot{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:var(--bad);border:2px solid var(--surface)}
+
+main{padding:18px 0 calc(96px + env(safe-area-inset-bottom,0px))}
+main .wrap{display:flex;flex-direction:column;gap:22px}
+.kicker{font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+h1.greet{font-family:var(--display);font-weight:700;font-size:clamp(30px,8vw,40px);line-height:1.02;margin:2px 0 0;text-wrap:balance}
+h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.02;margin:0;text-transform:uppercase;letter-spacing:.02em}
+.sec{display:flex;flex-direction:column;gap:10px}
+.sec h2{margin:0;font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.count{min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:var(--bad);color:#FFFFFF;font-family:var(--body);font-size:12px;font-weight:700;letter-spacing:0;display:inline-flex;align-items:center;justify-content:center}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.panel.pad{padding:14px;display:flex;flex-direction:column;gap:8px}
+.muted{color:var(--muted)}
+.hint{font-size:13px;color:var(--muted);margin:0}
+
+/* team tiles */
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.tile{position:relative;display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);text-decoration:none;color:var(--fg);min-height:100px}
+.tile:active{transform:scale(.98)}
+.t-ic{width:36px;height:36px;border-radius:10px;background:var(--tl);color:#FFFFFF;display:grid;place-items:center;flex:none}
+.t-ic svg{width:19px;height:19px}
+.tile b{font-size:15px;line-height:1.2}
+.tile small{font-size:12px;color:var(--muted)}
+.tile small.hot{color:var(--bad);font-weight:600}
+.tile small.good{color:var(--ok);font-weight:600}
+.tile .count{position:absolute;top:12px;right:12px}
+.tile .admin{position:absolute;top:14px;right:12px;font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--accent)}
+
+/* rows */
+.row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--surface-2);text-decoration:none;color:var(--fg)}
+.row:last-child{border-bottom:0}
+.bar{width:4px;align-self:stretch;border-radius:2px;background:var(--t);flex:none}
+.row .info{flex:1;min-width:0}
+.tlabel{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t)}
+.row .info b{display:block;font-weight:700;line-height:1.25}
+.row .info small{display:block;font-size:12px;color:var(--muted)}
+.acts{display:flex;flex-direction:column;gap:6px;flex:none}
+.btn{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;min-height:36px;padding:0 14px;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;color:var(--fg)}
+.btn.accept{background:var(--go);border-color:var(--go);color:#FFFFFF}
+.btn.decline{background:transparent;border:1.5px solid var(--stop);color:var(--stop)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.big{min-height:46px;font-size:15px;padding:0 20px}
+.btn.block{width:100%}
+.btn[disabled]{opacity:.55}
+.pill{font-size:11px;font-weight:700;letter-spacing:.06em;padding:4px 8px;border-radius:6px;white-space:nowrap;flex:none}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.today{background:var(--accent);color:var(--accent-ink)}
+.note{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:13px}
+.note svg{flex:none;width:16px;height:16px;margin-top:2px}
+.empty{padding:16px 14px;color:var(--muted);font-size:14px}
+
+/* calendar */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border-radius:17px;border:1px solid var(--line);background:var(--surface);font-weight:600;font-size:12.5px}
+.chip .dot{width:9px;height:9px;border-radius:50%;background:var(--t)}
+.chip.off{opacity:.45}
+.chip.off .dot{background:transparent;border:1.5px solid var(--t)}
+.cal{padding:12px}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal-head b{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase}
+.cal-head .iconbtn{border:0;background:var(--surface-2);color:var(--fg)}
+.dow,.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;padding-bottom:4px}
+.day{height:46px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:10px;border:0;background:transparent;font-size:14px;font-weight:500;padding:0}
+.day.today{color:var(--accent);font-weight:800}
+.day.sel{background:var(--navy);color:#FFFFFF;font-weight:700}
+:root[data-theme="dark"] .day.sel{background:var(--accent);color:var(--accent-ink)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .day.sel{background:var(--accent);color:var(--accent-ink)}}
+.day .dots{display:flex;gap:3px;height:6px}
+.day .dots i{width:6px;height:6px;border-radius:50%;background:var(--t)}
+.day.sel .dots i{box-shadow:0 0 0 1.5px #FFFFFF}
+.day.blank{visibility:hidden}
+
+/* teams list + profile */
+.tcard{display:flex;align-items:center;gap:12px;padding:14px;text-decoration:none;color:var(--fg)}
+.tcard .info{flex:1;min-width:0}
+.tcard .info b{display:block;font-size:16px}
+.tcard .info small{display:block;font-size:12.5px;color:var(--muted)}
+.prof{display:flex;align-items:center;gap:14px;padding:16px}
+.prof .av{width:64px;height:64px;border-radius:50%;border:2px solid var(--accent);background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:22px;overflow:hidden;flex:none}
+.prof .av img{width:100%;height:100%;object-fit:cover}
+.setrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--surface-2);background:none;border-left:0;border-right:0;border-top:0;width:100%;text-align:left;color:var(--fg);font-weight:600}
+.setrow:last-child{border-bottom:0}
+.alert{border:2px solid var(--bad)}
+.install{border-color:var(--accent);background:var(--accent-soft)}
+.install ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.install .acts2{display:flex;gap:8px;flex-wrap:wrap}
+
+/* tab bar */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav.tabs .wrap{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding-top:6px;padding-bottom:6px}
+nav.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;color:var(--muted);font-size:11px;font-weight:600;min-height:50px;padding:4px 0;position:relative}
+nav.tabs button svg{width:22px;height:22px}
+nav.tabs button[aria-current="page"]{color:var(--accent);font-weight:700}
+nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;height:18px;font-size:10.5px;padding:0 5px}
+
+.center{min-height:62vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center}
+.center .wm{width:min(240px,70%);height:auto}
+.center p{max-width:380px;margin:0;color:var(--muted)}
+.spinner{width:34px;height:34px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.err{font-size:12px;color:var(--bad);background:var(--bad-soft);padding:8px 10px;border-radius:8px;max-width:420px;word-break:break-word}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(92px + env(safe-area-inset-bottom,0px));z-index:50;background:var(--navy);color:#FFFFFF;padding:10px 16px;border-radius:10px;font-size:14px;font-weight:600;max-width:min(92vw,440px);box-shadow:0 8px 24px rgba(3,17,31,.3)}
+.toast.bad{background:var(--bad)}
+.updating{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.updating .spinner{width:12px;height:12px;border-width:2px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" class="toast" hidden></div>
+<script>
+/* ============================================================
+   RCI Serve — one home for the four RCI team apps.
+   It lives at the top of astmacary.github.io, so the team apps
+   (/rci-productions/, /rci-security/, /rci-ushers/, /rci-worship-arts/)
+   open inside the same installed app, with the same sign-in.
+   It reads each team's SharePoint list with that app's own rules.
+   ============================================================ */
+const APP_VERSION = "1";   // bump together with CACHE in sw.js
+const CONFIG = {
+  clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
+  tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
+  siteHost: "xb3hc3233xdwtuxk4m6un8xymmy.sharepoint.com",
+  appHosts: ["astmacary.github.io", "serve.therampchurch.com"]
+};
+// The four team apps. Colors: tl = light mode, td = dark mode. Editors copied from each app's CONFIG.editors.
+const TEAMS = [
+  { key: "productions", name: "Productions", full: "RCI Productions", path: "/rci-productions/", tl: "#0B3A6E", td: "#6FA4E0", icon: "cam",
+    sitePath: "/sites/RCIProductions", listId: "01c57f63-f693-4a25-bd83-18ef8c5b6ecd",
+    editors: ["ashley.stmacary@therampchurch.com", "ward.shaquille93@gmail.com", "morgandmosby@gmail.com"] },
+  { key: "security", name: "Security", full: "RCI Security", path: "/rci-security/", tl: "#7A1F1F", td: "#EB9393", icon: "shield",
+    sitePath: "/sites/RCISecurity", listName: "Security Schedule",
+    editors: ["delisa.rogers@therampchurch.com", "hal.hanson@therampchurch.com", "halrhansonjr@gmail.com", "lee.gilbert@therampchurch.com", "gilbertwilfred7@gmail.com", "ashley.stmacary@therampchurch.com"] },
+  { key: "ushers", name: "Ushers & Altar", full: "RCI Ushers & Altar Workers", path: "/rci-ushers/", tl: "#1E5E43", td: "#6CC69C", icon: "door",
+    sitePath: "/sites/RCIUsherDept.-UsherSchedule", listName: "Usher Schedule",
+    editors: ["delisa.rogers@therampchurch.com", "ashley.stmacary@therampchurch.com", "tammyrambler@gmail.com"] },
+  { key: "worship", name: "Worship & Arts", full: "RCI Worship & Arts", path: "/rci-worship-arts/", tl: "#4A2F7A", td: "#B9A1EA", icon: "music",
+    sitePath: "/sites/RCIMusicDept", listId: "ce2715b8-f330-4471-8e20-adeae324d21c",
+    editors: ["ashley.stmacary@therampchurch.com", "cassie.carter.inc@gmail.com"] }
+];
+const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
+const onAppHost = CONFIG.appHosts.includes(location.hostname);
+const DEMO = /[?&]demo\b/.test(location.search) || !onAppHost;
+
+/* Tell the team apps they're open inside RCI Serve (this tab only), so they show the team switcher. */
+try { sessionStorage.setItem("rci-serve:hub", "1"); } catch(e){}
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad = n => String(n).padStart(2, "0");
+const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const fromKey = k => { const [y,m,d] = k.split("-").map(Number); return new Date(y, m-1, d); };
+const spDate = v => v ? keyOf(new Date(v)) : "";
+const todayKey = () => keyOf(new Date());
+const addDays = (k, n) => { const d = fromKey(k); d.setDate(d.getDate()+n); return keyOf(d); };
+const fmtShort = k => fromKey(k).toLocaleDateString(undefined, {weekday:"short", month:"short", day:"numeric"});
+const fmtDay = k => fromKey(k).toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"});
+const lc = s => String(s || "").toLowerCase().trim();
+const filled = v => !!v && String(v).trim() !== "" && String(v).trim() !== "--";
+const initials = n => (n||"?").split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
+const firstOf = n => (n||"").trim().split(/\s+/)[0] || "";
+const teamOf = k => TEAMS.find(t => t.key === k);
+const tvars = t => `--tl:${t.tl};--td:${t.td}`;
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+const ICON = {
+  cam: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4V8z"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  door: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M10 21v-6h4v6"/></svg>',
+  music: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>',
+  cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+  grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+  next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  go: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>'
+};
+
+let toastTimer;
+function toast(msg, bad=false){
+  const t = $("#toast"); t.textContent = msg; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, bad ? 6000 : 3200);
+}
+
+/* ---------- theme ---------- */
+const THEME_KEY = "rci-serve-theme";
+try { const t = localStorage.getItem(THEME_KEY); if (t) document.documentElement.setAttribute("data-theme", t); } catch(e){}
+function isDark(){ const t = document.documentElement.getAttribute("data-theme"); return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; }
+function toggleTheme(){ const n = isDark() ? "light" : "dark"; document.documentElement.setAttribute("data-theme", n); try { localStorage.setItem(THEME_KEY, n); } catch(e){} render(); }
+
+/* ============================================================
+   DATA — reads each team's list with that app's own rules
+   ============================================================ */
+const API = {
+  msal: null, account: null, sites: {},
+  async init(){
+    const msal = await import("https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/+esm");
+    this.msal = new msal.PublicClientApplication({
+      auth: { clientId: CONFIG.clientId, authority: "https://login.microsoftonline.com/" + CONFIG.tenantId, redirectUri: location.origin + "/" },
+      cache: { cacheLocation: "localStorage" }   // the same place the team apps keep their sign-in, so one sign-in covers all of them
+    });
+    await this.msal.initialize();
+    const r = await this.msal.handleRedirectPromise();
+    this.account = r?.account || this.msal.getActiveAccount() || this.msal.getAllAccounts()[0] || null;
+    if (this.account) this.msal.setActiveAccount(this.account);
+    return !!this.account;
+  },
+  signIn(){ return this.msal.loginRedirect({ scopes: SCOPES, redirectUri: location.origin + "/" }); },
+  signOut(){ return this.msal.logoutRedirect({ account: this.account, postLogoutRedirectUri: location.origin + "/" }); },
+  async token(){
+    try { return (await this.msal.acquireTokenSilent({ scopes: SCOPES, account: this.account })).accessToken; }
+    catch(e){ await this.msal.acquireTokenRedirect({ scopes: SCOPES, redirectUri: location.origin + "/" }); throw e; }
+  },
+  async g(path, opts={}){
+    const url = path.startsWith("https://") ? path : "https://graph.microsoft.com/v1.0" + path;
+    const res = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + await this.token(), ...(opts.headers||{}) } });
+    if (!res.ok){
+      let detail = ""; try { detail = (await res.json()).error?.message || ""; } catch(e){}
+      const err = new Error(`${res.status} ${detail || res.statusText}`); err.status = res.status; throw err;
+    }
+    return opts.raw ? res : (res.status === 204 ? null : res.json());
+  },
+  async all(path){ let out = [], next = path; while (next){ const j = await this.g(next); out = out.concat(j.value || []); next = j["@odata.nextLink"]; } return out; },
+  async me(){
+    const me = await this.g("/me?$select=displayName,mail,userPrincipalName");
+    return { name: me.displayName || this.account.name || "", emails: [...new Set([me.mail, me.userPrincipalName, this.account.username].filter(Boolean).map(lc))] };
+  },
+  async photo(){
+    try { const r = await this.g("/me/photo/$value", { raw: true }); return URL.createObjectURL(await r.blob()); } catch(e){ return null; }
+  },
+  /* Loads one team's rows. Throws an error with .noAccess when the person can't open that team's site. */
+  async team(t){
+    try { return await this.teamRows(t); }
+    catch(e){ if (e.status === 403 || e.status === 404 || e.status === 401) e.noAccess = true; throw e; }
+  },
+  async teamRows(t){
+    const site = await this.g(`/sites/${CONFIG.siteHost}:${t.sitePath}?$select=id`);
+    const base = `/sites/${site.id}/lists`;
+    const listId = t.listId || (await this.g(`${base}/${encodeURIComponent(t.listName)}?$select=id`)).id;
+    const emailById = {};
+    try {
+      const users = await this.all(`${base}/${encodeURIComponent("User Information List")}/items?$expand=fields($select=EMail,UserName)&$top=999`);
+      users.forEach(u => { emailById[u.id] = lc(u.fields.EMail || u.fields.UserName || ""); });
+    } catch(e){ console.warn(t.name + ": couldn't read the site's user list; matching by name.", e); }
+    const col = {};
+    let sel;
+    if (t.key === "productions") sel = "Title,ServiceDates,ServiceCategory,CallTime,ServiceTime,ChoiceNames,PersonLookupId,Status,Published,ArchiveStatus";
+    else if (t.key === "worship") sel = "Title,ServiceDate,ServiceCategory,CallTime,ServiceTime,FullName,NameEmailLookupId,Status,Published,LeaderPositions,SingingPositions,MusicianPositions";
+    else {
+      // Security and Ushers: find each column by its internal name, then by its display name (same as those apps do).
+      const COLS = {
+        ServiceDate: ["Service Date"], Name: ["Name"], SecurityName: ["Security Name", "Usher's Name", "Usher’s Name", "Ushers Name", "Usher Name"],
+        Placement: ["Placement", "Usher Placement"], Placement2: ["Placement2", "Altar Worker Placement"],
+        Status2: ["Placement 2 Status", "Placement2 Status", "Altar Worker Placement Status", "Altar Worker Status"],
+        Status: ["Status"], ServiceCategory: ["Service Category"], CallTime: ["Call Time"], ArchiveStatus: ["Archive Status"]
+      };
+      let cols = [];
+      try { cols = (await this.g(`${base}/${listId}/columns?$select=name,displayName`)).value || []; } catch(e){}
+      const norm = v => lc(v).replace(/[’']/g, "'");
+      for (const [k, labels] of Object.entries(COLS)){
+        const hit = cols.find(c => c.name === k) || cols.find(c => labels.map(norm).includes(norm(c.displayName)));
+        if (hit) col[k] = hit.name; else if (!cols.length && k !== "Placement2" && k !== "Status2") col[k] = k;
+      }
+      sel = ["Title", ...Object.entries(col).map(([k, v]) => k === "Name" ? v + "LookupId" : v)].join(",");
+    }
+    const raw = await this.all(`${base}/${listId}/items?$expand=fields($select=${sel})&$top=500`);
+    this.sites[t.key] = { siteId: site.id, listId, col };
+    return raw.flatMap(r => normalize(t, String(r.id), r.fields, emailById, col));
+  },
+  async update(teamKey, rowId, fields){
+    const s = this.sites[teamKey];
+    await this.g(`/sites/${s.siteId}/lists/${s.listId}/items/${rowId}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) });
+  }
+};
+
+/* One shape for every team's rows. kind: "profile" (Roster / Birthday row), "assign" (a position on a date), or "other". */
+function normalize(t, id, f, emailById, col){
+  const base = { team: t.key, rowId: id, id: t.key + ":" + id, slot: 1 };
+  if (t.key === "productions"){
+    const cat = f.ServiceCategory || "";
+    const kind = cat === "🎂 Birthday" ? "profile" : (!f.ServiceDates || /^(absent|no service)$/i.test(cat)) ? "other" : "assign";
+    return [{ ...base, kind, date: spDate(f.ServiceDates), category: cat, role: f.Title || "", fullName: f.ChoiceNames || "",
+      email: emailById[f.PersonLookupId] || "", call: f.CallTime || "", time: f.ServiceTime || "",
+      pending: f.Status === "Pending" && f.Published === "Request Sent",
+      confirmed: f.Status === "Accepted" && f.Published === "Request Approved",
+      gone: lc(f.ArchiveStatus) === "archived" }];
+  }
+  if (t.key === "worship"){
+    const cat = f.ServiceCategory || "";
+    const positions = ["LeaderPositions", "SingingPositions", "MusicianPositions"].flatMap(c => Array.isArray(f[c]) ? f[c] : (f[c] ? [f[c]] : []));
+    const role = positions.join(" · ") || f.Title || "";
+    const profile = cat === "Birthday" || cat === "🎂 Birthday" || (!cat && !f.ServiceDate && !!f.FullName);
+    const notesHolder = !!f.ServiceDate && lc(f.Title) === "coordinator" && !f.FullName && !positions.length;
+    const kind = profile ? "profile" : (!f.ServiceDate || notesHolder || /^(absent|no service)$/i.test(cat)) ? "other" : "assign";
+    return [{ ...base, kind, date: spDate(f.ServiceDate), category: cat, role, fullName: f.FullName || "",
+      email: emailById[f.NameEmailLookupId] || "", call: f.CallTime || "", time: f.ServiceTime || "",
+      pending: f.Status === "Pending" && f.Published === "Request Sent",
+      confirmed: f.Status === "Accepted" && f.Published === "Request Approved",
+      gone: !f.ServiceDate && lc(f.Status) === "unavailable" }];
+  }
+  // Security and Ushers share a shape; Ushers rows can hold a second (Altar Worker) request.
+  const g = k => col[k] ? f[col[k]] : undefined;
+  const dateRaw = g("ServiceDate"), cat = g("ServiceCategory") || "", call = g("CallTime") || "";
+  const roster = !dateRaw && !cat && !call;
+  const name = g("SecurityName") || "", status = g("Status") || "";
+  const email = emailById[f[(col.Name || "Name") + "LookupId"]] || "";
+  const common = { ...base, date: dateRaw ? spDate(dateRaw) : "", category: roster ? "" : cat, fullName: name, email, call, time: "" };
+  if (roster) return [{ ...common, kind: "profile", role: "", pending: false, confirmed: false,
+    gone: t.key === "security" ? lc(g("ArchiveStatus")) === "archive" : lc(status) === "unavailable" }];
+  const kind = (!dateRaw || lc(cat) === "no service") ? "other" : "assign";
+  const p1 = g("Placement") || "", p2 = g("Placement2") || "", st2 = g("Status2") || "";
+  const req = (role, st) => lc(st) === "pending" && filled(cat) && filled(name) && filled(role);
+  const out = [];
+  if (t.key === "security" || filled(p1) || !filled(p2))
+    out.push({ ...common, kind, role: p1, status, pending: req(p1, status), confirmed: lc(status) === "accepted", gone: false });
+  if (t.key === "ushers" && filled(p2))
+    out.push({ ...common, kind, id: common.id + ":2", slot: 2, role: p2, pending: req(p2, st2 || "Pending"), confirmed: lc(st2) === "accepted", gone: false });
+  return out;
+}
+
+/* What "Accept" writes, per team (the same as each app's own Accept button). */
+function acceptFields(item){
+  if (item.team === "productions" || item.team === "worship") return { Status: "Accepted", Published: "Request Approved" };
+  if (item.team === "ushers" && item.slot === 2) return { [API.sites.ushers.col.Status2]: "Accepted" };
+  return { [API.sites[item.team]?.col?.Status || "Status"]: "Accepted" };
+}
+
+/* ---------- demo data (opened anywhere but the real address, or with ?demo) ---------- */
+function demoTeams(){
+  const t = todayKey(), d = fromKey(t);
+  const sun = n => addDays(t, ((7 - d.getDay()) % 7) + 7*n), wed = n => addDays(t, ((3 - d.getDay() + 7) % 7) + 7*n);
+  const me = "you@example.org", A = (team, date, role, st, cat, call, slot) => ({ team, rowId: role+date, id: team+":"+role+date, slot: slot || 1, kind: "assign", date, category: cat || "Sunday Morning", role, fullName: "Demo Person", email: me, call: call || "", time: "", pending: st === "p", confirmed: st === "a", gone: false });
+  const P = team => ({ team, rowId: "p", id: team+":p", kind: "profile", date: "", category: "", role: "", fullName: "Demo Person", email: me, pending: false, confirmed: false, gone: false });
+  return {
+    me: { name: "Demo Person", emails: [me] },
+    teams: {
+      productions: { items: [P("productions"), A("productions", sun(1), "FOH Audio Engineer", "p"), A("productions", sun(0), "ProPresenter Technician", "a", "Sunday Morning", "8:00 AM"), A("productions", sun(3), "Camera 2 Operator", "a")] },
+      security: { items: [P("security"), A("security", wed(0), "Main Entrance", "a", "Wednesday Night", "6:30 PM"), A("security", wed(2), "Parking Lot", "a", "Wednesday Night")] },
+      ushers: { items: [P("ushers"), A("ushers", sun(1), "Guest Lobby", "p"), A("ushers", sun(2), "Altar Worker", "a", "Sunday Morning", "", 2)] },
+      worship: { error: null, items: [] }
+    }
+  };
+}
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams: {}, loading: false, loadedAt: 0,
+            busy: new Set(), cal: { month: null, sel: null, off: new Set() }, hideInstall: false };
+const mineRow = i => (i.email && S.me.emails.includes(lc(i.email))) || (!i.email && i.fullName && lc(i.fullName) === lc(S.me.name));
+const isEditorOf = t => !!S.me && t.editors.some(e => S.me.emails.includes(lc(e)));
+/* On a team: an admin of it, has a (not archived) Roster / profile row, or has been scheduled in the last 120 days or later. */
+function member(t){
+  const d = S.teams[t.key]; if (!d) return false;
+  if (isEditorOf(t)) return true;
+  if (d.noAccess || !d.items) return false;
+  const since = addDays(todayKey(), -120);
+  return d.items.some(i => mineRow(i) && ((i.kind === "profile" && !i.gone) || (i.kind === "assign" && i.date >= since)));
+}
+const myTeams = () => TEAMS.filter(member);
+const myItems = () => myTeams().flatMap(t => (S.teams[t.key].items || []).filter(i => i.kind === "assign" && mineRow(i) && (i.pending || i.confirmed)));
+const upcoming = () => myItems().filter(i => i.date >= todayKey()).sort((a,b) => a.date.localeCompare(b.date) || a.team.localeCompare(b.team));
+const pendingOf = k => upcoming().filter(i => i.pending && (!k || i.team === k));
+const totalPending = () => pendingOf().length;
+
+/* Shared with the team apps (same address): who's signed in, which teams they're on, and each team's request count.
+   The team apps read this to show the Switch Team button and to add the other teams' counts to the app-icon number. */
+function saveShared(){
+  if (!S.me) return;
+  try {
+    const teams = myTeams().map(t => ({ key: t.key, count: S.teams[t.key]?.items ? pendingOf(t.key).length : 0, admin: isEditorOf(t) }));
+    localStorage.setItem("rci-serve:state", JSON.stringify({ emails: S.me.emails, name: S.me.name, at: Date.now(), teams }));
+  } catch(e){}
+}
+function saveCache(){
+  try {
+    const teams = {};
+    for (const t of TEAMS){ const d = S.teams[t.key]; if (!d) continue;
+      teams[t.key] = { noAccess: !!d.noAccess, error: d.error || "", items: (d.items || []).filter(i => mineRow(i)) }; }
+    localStorage.setItem("rci-serve:cache", JSON.stringify({ me: S.me, at: Date.now(), teams }));
+  } catch(e){}
+}
+function readCache(){
+  try { const c = JSON.parse(localStorage.getItem("rci-serve:cache") || "null"); return c && c.me ? c : null; } catch(e){ return null; }
+}
+function updateBadge(){
+  saveShared();
+  if (DEMO || !("setAppBadge" in navigator)) return;
+  const n = totalPending();
+  (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
+}
+
+async function loadAll(){
+  if (S.loading) return;
+  S.loading = true; render();
+  if (DEMO){
+    const d = demoTeams(); S.me = d.me; S.teams = d.teams;
+  } else {
+    const results = await Promise.allSettled(TEAMS.map(t => API.team(t)));
+    const next = {};
+    results.forEach((r, n) => {
+      const t = TEAMS[n];
+      if (r.status === "fulfilled") next[t.key] = { items: r.value };
+      else if (r.reason?.noAccess) next[t.key] = { noAccess: true, items: [] };
+      else { console.warn(t.name, r.reason); next[t.key] = { error: r.reason?.message || "Couldn't load", items: S.teams[t.key]?.items || null }; }
+    });
+    S.teams = next;
+    saveCache();
+  }
+  S.loading = false; S.loadedAt = Date.now(); S.phase = "ready";
+  if (!S.cal.sel){ const first = upcoming()[0]; S.cal.sel = first && first.date <= addDays(todayKey(), 31) ? first.date : todayKey(); }
+  updateBadge(); render();
+}
+
+async function accept(id){
+  const item = myItems().find(i => i.id === id); if (!item || S.busy.has(id)) return;
+  S.busy.add(id); render();
+  try {
+    if (!DEMO) await API.update(item.team, item.rowId, acceptFields(item));
+    item.pending = false; item.confirmed = true;
+    toast(`Accepted: ${item.role}, ${fmtShort(item.date)}`);
+    saveCache();
+  } catch(e){ toast("Couldn't save your reply. " + e.message, true); }
+  S.busy.delete(id); updateBadge(); render();
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const inAppBrowser = () => /FBAN|FBAV|Instagram|Line\/|GSA\/|Teams|Outlook|; wv\)/i.test(navigator.userAgent);
+let deferredInstall = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstall = e; render(); });
+window.addEventListener("appinstalled", () => { deferredInstall = null; toast("Installed. Look for RCI Serve on your home screen."); render(); });
+
+function installGuide(){
+  if (isStandalone() || S.hideInstall) return "";
+  const safari = isIOS() && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+  const first = inAppBrowser() ? `<li>Open this link in <b>${isIOS() ? "Safari" : "Chrome"}</b> (not inside another app).</li>` : "";
+  const steps = deferredInstall ? "" : safari
+    ? `<ol>${first}<li>Tap the two lines on the web address bar below.</li><li>Tap the <b>Share</b> button.</li><li>Tap the <b>View More</b> drop-down menu.</li><li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open RCI Serve from your home screen and sign in.</li></ol>`
+    : `<ol>${first}<li>Tap the <b>Share</b> button on the web address bar at the top.</li><li>Tap the <b>View More</b> drop-down menu.</li><li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open RCI Serve from your home screen and sign in.</li></ol>`;
+  return `<section class="panel pad install"><div class="sec"><h2 style="font-size:18px">Add RCI Serve to Your Home Screen</h2></div>
+    <p class="hint" style="color:var(--fg)">One icon for every team you serve on. You sign in once, and you can switch between your teams without leaving the app.</p>
+    ${steps}<div class="acts2">${deferredInstall ? `<button class="btn primary big" data-act="install">Install App</button>` : ""}<button class="btn" data-act="hide-install">Not now</button></div></section>`;
+}
+function badgeAsk(){
+  if (DEMO || !isStandalone() || !("Notification" in window) || !("setAppBadge" in navigator)) return "";
+  if (Notification.permission === "granted") return "";
+  if (Notification.permission === "denied") return S.view === "profile" ? `<section class="panel pad"><b>App badge is off</b><p class="hint">Notifications are blocked for RCI Serve, so the red number on the app icon can't show. Turn them on in your phone's Settings → Notifications → RCI Serve.</p></section>` : "";
+  return `<section class="panel pad alert"><b>Notifications &amp; App Badge</b><p class="hint">Allow notifications so the red number on the RCI Serve icon shows your requests from every team.</p>
+    <button class="btn decline" style="background:var(--stop);color:#FFFFFF;align-self:flex-start" data-act="allow-badge">Allow Notifications</button></section>`;
+}
+
+function teamTile(t){
+  const d = S.teams[t.key] || {}, n = d.items ? pendingOf(t.key).length : 0;
+  const next = upcoming().find(i => i.team === t.key && i.confirmed);
+  let line;
+  if (d.error && !d.items) line = `<small>Couldn't load. Tap to open.</small>`;
+  else if (n) line = `<small class="hot">${n} need${n === 1 ? "s" : ""} a reply</small>`;
+  else if (next) line = `<small>Serving ${next.date === todayKey() ? "today" : next.date <= addDays(todayKey(), 6) ? fromKey(next.date).toLocaleDateString(undefined, {weekday:"short"}) : fmtShort(next.date)}</small>`;
+  else line = `<small class="good">All caught up</small>`;
+  return `<a class="tile team" style="${tvars(t)}" href="${t.path}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.name)}</b>${line}
+    ${n ? `<span class="count" aria-label="${n} pending">${n}</span>` : isEditorOf(t) ? `<span class="admin">ADMIN</span>` : ""}</a>`;
+}
+function reqRow(i){
+  const t = teamOf(i.team), busy = S.busy.has(i.id);
+  return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
+    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.call ? " · Call " + esc(i.call) : ""}</small></div>
+    <div class="acts"><button class="btn accept" data-act="accept" data-id="${esc(i.id)}" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Accept"}</button>
+    <a class="btn decline" href="${t.path}" aria-label="Decline in ${esc(t.full)}">Decline</a></div></div>`;
+}
+function itemRow(i, showDate=true){
+  const t = teamOf(i.team), today = i.date === todayKey();
+  return `<a class="row team" style="${tvars(t)}" href="${t.path}"><span class="bar"></span>
+    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${showDate ? esc(fmtShort(i.date)) + " · " : ""}${esc(i.category || "")}${i.call ? " · Call " + esc(i.call) : ""}</small></div>
+    ${i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : today ? `<span class="pill today">TODAY</span>` : `<span class="pill ok">CONFIRMED</span>`}</a>`;
+}
+function overlaps(){
+  const by = {};
+  upcoming().forEach(i => { (by[i.date] = by[i.date] || []).push(i); });
+  return Object.entries(by).filter(([, l]) => new Set(l.map(i => i.team)).size > 1 && l.some(i => i.pending)).map(([k, l]) => ({ date: k, list: l }));
+}
+
+function viewHome(){
+  const h = new Date().getHours(), part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
+  const teams = myTeams(), reqs = pendingOf(), week = upcoming().filter(i => i.confirmed && i.date <= addDays(todayKey(), 7));
+  let out = `<div><div class="kicker">${esc(new Date().toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"}))}</div>
+    <h1 class="greet">Good ${part}, ${esc(firstOf(S.me.name) || "friend")}</h1>
+    ${S.loading ? `<div class="updating" style="margin-top:6px"><span class="spinner"></span>Checking your teams…</div>` : ""}</div>`;
+  out += installGuide() + badgeAsk();
+  if (!teams.length && !S.loading){
+    return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
+      <p class="hint">RCI Serve shows the teams where your email (${esc(S.me.emails[0] || "")}) is on the roster or schedule. If you serve on a team, ask that team's leader to add this email address, then pull this page back up.</p>
+      <button class="btn" style="align-self:flex-start" data-act="refresh">Check again</button></section>`;
+  }
+  out += `<section class="sec"><h2>Your Teams</h2><div class="tiles">${teams.map(teamTile).join("")}</div></section>`;
+  if (reqs.length){
+    out += `<section class="sec"><h2>Needs Your Reply <span class="count">${reqs.length}</span></h2><div class="panel">${reqs.map(reqRow).join("")}</div>
+      ${overlaps().map(o => `<div class="note">${ICON.warn}<span>You have ${o.list.length} requests on ${esc(fmtShort(o.date))} (${esc([...new Set(o.list.map(i => teamOf(i.team).name))].join(" and "))}). Accept the one you can serve, and decline the other in its team app.</span></div>`).join("")}
+      <p class="hint">Decline opens that team's app, where you confirm it.</p></section>`;
+  }
+  out += `<section class="sec"><h2>Next 7 Days</h2><div class="panel">${week.length ? week.map(i => itemRow(i)).join("") : `<div class="empty">${reqs.length ? "Nothing confirmed this week yet." : "Nothing on your schedule this week."}</div>`}</div></section>`;
+  const errs = TEAMS.filter(t => S.teams[t.key]?.error && member(t));
+  if (errs.length) out += `<p class="hint">Couldn't refresh ${esc(errs.map(t => t.name).join(", "))} just now. ${S.teams[errs[0].key].items ? "Showing what was saved last time." : ""} <button class="btn" data-act="refresh" style="min-height:30px">Try again</button></p>`;
+  return out;
+}
+
+function viewCalendar(){
+  const teams = myTeams(), off = S.cal.off;
+  const m = S.cal.month || (S.cal.sel || todayKey()).slice(0, 7);
+  S.cal.month = m;
+  const [y, mo] = m.split("-").map(Number), first = new Date(y, mo-1, 1), daysIn = new Date(y, mo, 0).getDate();
+  const items = myItems().filter(i => !off.has(i.team));
+  const by = {}; items.forEach(i => { (by[i.date] = by[i.date] || []).push(i); });
+  let cells = "";
+  for (let n = 0; n < first.getDay(); n++) cells += `<span class="day blank"></span>`;
+  for (let d = 1; d <= daysIn; d++){
+    const k = `${m}-${pad(d)}`, list = by[k] || [], teamsOn = [...new Set(list.map(i => i.team))];
+    cells += `<button class="day${k === S.cal.sel ? " sel" : ""}${k === todayKey() ? " today" : ""}" data-act="day" data-k="${k}" aria-label="${esc(fmtDay(k))}${list.length ? ", " + plural(list.length, "assignment", "assignments") : ""}"${k === S.cal.sel ? ' aria-pressed="true"' : ""}>
+      <span>${d}</span><span class="dots">${teamsOn.map(tk => `<i class="team" style="${tvars(teamOf(tk))}"></i>`).join("")}</span></button>`;
+  }
+  const sel = S.cal.sel, dayList = (by[sel] || []).sort((a,b) => a.team.localeCompare(b.team));
+  const label = first.toLocaleDateString(undefined, {month:"long", year:"numeric"});
+  return `<h1 class="page">My Calendar</h1>
+    ${teams.length > 1 ? `<div class="chips" role="group" aria-label="Show teams">${teams.map(t => `<button class="chip team${off.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="filter" data-k="${t.key}" aria-pressed="${!off.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
+    <section class="panel cal"><div class="cal-head"><button class="iconbtn" data-act="month" data-d="-1" aria-label="Previous month">${ICON.prev}</button><b>${esc(label)}</b><button class="iconbtn" data-act="month" data-d="1" aria-label="Next month">${ICON.next}</button></div>
+      <div class="dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+      <div class="days">${cells}</div></section>
+    <section class="sec"><h2>${esc(fmtDay(sel))}</h2><div class="panel">${dayList.length ? dayList.map(i => itemRow(i, false)).join("") : `<div class="empty">You're not scheduled on this day.</div>`}</div>
+      <p class="hint">Shows your own assignments on every team. Each team's Calendar shows the whole team.</p></section>`;
+}
+
+function viewTeams(){
+  const teams = myTeams();
+  return `<h1 class="page">Your Teams</h1>
+    <section class="panel">${teams.map(t => {
+      const n = S.teams[t.key]?.items ? pendingOf(t.key).length : 0, next = upcoming().find(i => i.team === t.key && i.confirmed);
+      return `<a class="tcard row team" style="${tvars(t)}" href="${t.path}"><span class="t-ic">${ICON[t.icon]}</span>
+        <span class="info"><b>${esc(t.full)}</b><small>${isEditorOf(t) ? "Admin · " : ""}${n ? plural(n, "request needs", "requests need") + " a reply" : next ? "Next: " + esc(next.role) + ", " + esc(fmtShort(next.date)) : "Nothing scheduled yet"}</small></span>
+        ${n ? `<span class="count">${n}</span>` : ""}<span class="muted" style="width:20px;height:20px;display:grid">${ICON.go}</span></a>`;
+    }).join("") || `<div class="empty">No teams found yet.</div>`}</section>
+    <p class="hint">Missing a team? Ask that team's leader to add your email address (${esc(S.me.emails[0] || "")}) to their roster. It shows up here the next time you open RCI Serve.</p>`;
+}
+
+function viewProfile(){
+  return `<h1 class="page">Profile</h1>
+    <section class="panel prof"><span class="av">${S.photo ? `<img src="${S.photo}" alt="">` : esc(initials(S.me.name))}</span>
+      <span style="min-width:0"><b style="display:block;font-size:18px">${esc(S.me.name)}</b><small class="muted" style="word-break:break-all">${esc(S.me.emails[0] || "")}</small></span></section>
+    ${badgeAsk()}
+    <section class="panel">
+      <button class="setrow" data-act="theme"><span>${isDark() ? "Light mode" : "Dark mode"}</span><span class="muted" style="width:20px;height:20px;display:grid">${isDark() ? ICON.sun : ICON.moon}</span></button>
+      <button class="setrow" data-act="refresh"><span>Refresh my teams</span><span class="muted" style="width:20px;height:20px;display:grid">${ICON.refresh}</span></button>
+      ${DEMO ? "" : `<button class="setrow" data-act="signout" style="color:var(--bad)"><span>Sign out</span></button>`}
+    </section>
+    <p class="hint">Your profile, photo and birthday are edited in each team's app (My Profile).</p>
+    ${S.hideInstall ? "" : installGuide()}
+    <p class="hint">RCI Serve version ${APP_VERSION}${DEMO ? " · demo" : ""}</p>`;
+}
+
+const TABS = [["home","Home",ICON.home],["calendar","My Calendar",ICON.cal],["teams","Teams",ICON.grid],["profile","Profile",ICON.user]];
+function render(){
+  const app = $("#app");
+  const n = S.phase === "ready" ? totalPending() : 0;
+  const header = `<header class="top"><div class="wrap"><button class="brand" data-act="tab" data-view="home" aria-label="RCI Serve, go to Home"><img class="wm wm-light" src="/icons/wordmark.png?v=${APP_VERSION}" alt=""><img class="wm wm-dark" src="/icons/wordmark-dark.png?v=${APP_VERSION}" alt=""></button>
+    ${S.phase === "ready" ? `<button class="iconbtn${S.loading ? " spin" : ""}" data-act="refresh" aria-label="Refresh">${ICON.refresh}</button>
+    <button class="iconbtn me-btn" data-act="tab" data-view="profile" aria-label="Profile${n ? `, ${n} pending request${n > 1 ? "s" : ""}` : ""}">${S.photo ? `<img src="${S.photo}" alt="">` : esc(initials(S.me?.name))}${n ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div></header>`;
+  if (S.phase !== "ready"){
+    let body = "";
+    if (S.phase === "boot") body = `<div class="center"><span class="spinner" role="status" aria-label="Loading"></span><p>Opening RCI Serve…</p></div>`;
+    if (S.phase === "signin") body = installGuide() + `<div class="center"><img class="wm wm-light" src="/icons/wordmark.png?v=${APP_VERSION}" alt="RCI Serve"><img class="wm wm-dark" src="/icons/wordmark-dark.png?v=${APP_VERSION}" alt="RCI Serve">
+      <p>Every RCI team you serve on, in one place. Sign in once with the email your team leader has for you.</p>
+      <button class="btn primary big" data-act="signin">Sign in with Microsoft</button>
+      <p style="font-size:13px">The sign-in page says Microsoft; that's expected. You may get a one-time code by email.</p></div>`;
+    if (S.phase === "error") body = `<div class="center"><h1 class="page">Can't open RCI Serve</h1><div class="err">${esc(S.error)}</div><button class="btn primary big" data-act="retry">Try again</button></div>`;
+    app.innerHTML = header + `<main><div class="wrap">${body}</div></main>`;
+    return;
+  }
+  const body = S.view === "calendar" ? viewCalendar() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
+  const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap">${TABS.map(([v, l, ic]) =>
+    `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}${l}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
+  app.innerHTML = header + `<main><div class="wrap">${body}</div></main>` + tabs;
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act;
+  if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
+  else if (act === "signin") API.signIn();
+  else if (act === "signout"){ try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
+  else if (act === "retry") location.reload();
+  else if (act === "refresh") loadAll();
+  else if (act === "accept") accept(b.dataset.id);
+  else if (act === "theme") toggleTheme();
+  else if (act === "hide-install"){ S.hideInstall = true; try { sessionStorage.setItem("rci-serve:noinstall", "1"); } catch(_){} render(); }
+  else if (act === "install" && deferredInstall){ deferredInstall.prompt(); deferredInstall = null; render(); }
+  else if (act === "allow-badge"){ try { await Notification.requestPermission(); } catch(_){} updateBadge(); render(); }
+  else if (act === "day"){ S.cal.sel = b.dataset.k; render(); }
+  else if (act === "month"){ const [y, m] = S.cal.month.split("-").map(Number), d = new Date(y, m - 1 + Number(b.dataset.d), 1); S.cal.month = keyOf(d).slice(0, 7); render(); }
+  else if (act === "filter"){ const k = b.dataset.k; S.cal.off.has(k) ? S.cal.off.delete(k) : S.cal.off.add(k); render(); }
+});
+
+/* Coming back to the app: refresh after a minute away, and pick up a newer version of RCI Serve. */
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible" || S.phase !== "ready") return;
+  try {
+    const html = await (await fetch("/index.html", { cache: "no-store" })).text();
+    const v = (html.match(/const APP_VERSION = "(\d+)"/) || [])[1];
+    if (v && v !== APP_VERSION){ location.reload(); return; }
+  } catch(_){}
+  if (Date.now() - S.loadedAt > 60000) loadAll();
+});
+
+async function start(){
+  try { S.view = sessionStorage.getItem("rci-serve:view") || "home"; S.hideInstall = sessionStorage.getItem("rci-serve:noinstall") === "1"; } catch(_){}
+  render();
+  if (DEMO){ await loadAll(); return; }
+  try {
+    const signedIn = await API.init();
+    if (!signedIn){ S.phase = "signin"; render(); return; }
+    S.me = await API.me();
+    const c = readCache();
+    if (c && c.me.emails.some(x => S.me.emails.includes(x))){ S.teams = c.teams; S.phase = "ready"; render(); }   // show the saved picture right away
+    API.photo().then(p => { S.photo = p; render(); });
+    await loadAll();
+  } catch(e){
+    console.error(e);
+    if (S.phase === "ready") return;
+    S.phase = "error"; S.error = e.message || String(e); render();
+  }
+}
+
+if ("serviceWorker" in navigator && location.protocol === "https:" && window.top === window.self){
+  navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).catch(() => {});
+}
+start();
+</script>
+</body>
+</html>
