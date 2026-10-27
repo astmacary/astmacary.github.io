@@ -77,7 +77,6 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .panel.pad{padding:14px;display:flex;flex-direction:column;gap:8px}
 .muted{color:var(--muted)}
 .hint{font-size:13px;color:var(--muted);margin:0}
-.giving-frame{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r);background:#fff}
 
 /* team tiles */
 .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -746,15 +745,12 @@ const TABS = [["home","Home",ICON.home], ...(SHOW_ANNOUNCEMENTS ? [["announcemen
 
 function viewGiving(){
   return `<h1 class="page">Giving</h1>
-    <iframe id="givingFrame" class="giving-frame" src="${GIVING_URL}" title="Give to The Ramp Church" allow="payment" referrerpolicy="no-referrer-when-downgrade"></iframe>`;
+    <section class="panel pad" style="align-items:center;text-align:center;gap:14px;padding:28px 20px">
+      <span style="width:56px;height:56px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center">${ICON.heart}</span>
+      <div><b style="display:block;font-size:17px;margin-bottom:4px">Give to The Ramp Church</b><p class="hint" style="font-size:14px">Giving opens in your browser, where your Pushpay sign-in is remembered — it can't be shown inside the app.</p></div>
+      <a class="btn primary big" href="${GIVING_URL}" target="_blank" rel="noopener">Give now</a>
+    </section>`;
 }
-function sizeGivingFrame(){
-  const f = document.getElementById("givingFrame"); if (!f) return;
-  const nav = document.querySelector("nav.tabs");
-  const avail = window.innerHeight - f.getBoundingClientRect().top - (nav ? nav.offsetHeight : 0) - 16;
-  f.style.height = Math.max(420, avail) + "px";
-}
-addEventListener("resize", () => { if (S.view === "giving") sizeGivingFrame(); });
 function render(){
   const app = $("#app");
   const n = S.phase === "ready" ? totalPending() : 0;
@@ -780,7 +776,6 @@ function render(){
     `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap">${body}</div></main>` + tabs;
   hydrateFlyers();
-  if (S.view === "giving") sizeGivingFrame();
 }
 function hydrateFlyers(){
   document.querySelectorAll("[data-flyer]").forEach(async el => {
