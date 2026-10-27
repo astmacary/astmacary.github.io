@@ -77,6 +77,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .panel.pad{padding:14px;display:flex;flex-direction:column;gap:8px}
 .muted{color:var(--muted)}
 .hint{font-size:13px;color:var(--muted);margin:0}
+.giving-frame{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r);background:#fff}
 
 /* team tiles */
 .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -202,7 +203,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "6";   // bump together with CACHE in sw.js
+const APP_VERSION = "7";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -277,7 +278,8 @@ const ICON = {
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   go: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>',
-  bullhorn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11v2a2 2 0 0 0 2 2h1l3 6V9H6a2 2 0 0 0-2 2z"/><path d="M9 9l10-5v16L9 15"/><path d="M15 15.5a4 4 0 0 0 0-7"/></svg>'
+  bullhorn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11v2a2 2 0 0 0 2 2h1l3 6V9H6a2 2 0 0 0-2 2z"/><path d="M9 9l10-5v16L9 15"/><path d="M15 15.5a4 4 0 0 0 0-7"/></svg>',
+  heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>'
 };
 
 let toastTimer;
@@ -738,8 +740,21 @@ function viewProfile(){
 }
 
 const SHOW_ANNOUNCEMENTS = false;   // News page built but hidden for now — flip to true to bring the tab back
+const GIVING_URL = "https://pushpay.com/g/therampchurch";
 const TABS = [["home","Home",ICON.home], ...(SHOW_ANNOUNCEMENTS ? [["announcements","News",ICON.bullhorn]] : []),
-  ["calendar","Calendar",ICON.cal],["teams","Teams",ICON.grid],["profile","Profile",ICON.user]];
+  ["calendar","Calendar",ICON.cal],["giving","Giving",ICON.heart],["teams","Teams",ICON.grid],["profile","Profile",ICON.user]];
+
+function viewGiving(){
+  return `<h1 class="page">Giving</h1>
+    <iframe id="givingFrame" class="giving-frame" src="${GIVING_URL}" title="Give to The Ramp Church" allow="payment" referrerpolicy="no-referrer-when-downgrade"></iframe>`;
+}
+function sizeGivingFrame(){
+  const f = document.getElementById("givingFrame"); if (!f) return;
+  const nav = document.querySelector("nav.tabs");
+  const avail = window.innerHeight - f.getBoundingClientRect().top - (nav ? nav.offsetHeight : 0) - 16;
+  f.style.height = Math.max(420, avail) + "px";
+}
+addEventListener("resize", () => { if (S.view === "giving") sizeGivingFrame(); });
 function render(){
   const app = $("#app");
   const n = S.phase === "ready" ? totalPending() : 0;
@@ -760,11 +775,12 @@ function render(){
     app.innerHTML = header + `<main><div class="wrap">${body}</div></main>`;
     return;
   }
-  const body = (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
+  const body = (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : S.view === "giving" ? viewGiving() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${TABS.length},minmax(0,1fr))">${TABS.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap">${body}</div></main>` + tabs;
   hydrateFlyers();
+  if (S.view === "giving") sizeGivingFrame();
 }
 function hydrateFlyers(){
   document.querySelectorAll("[data-flyer]").forEach(async el => {
