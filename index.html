@@ -201,7 +201,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "2";   // bump together with CACHE in sw.js
+const APP_VERSION = "3";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -611,14 +611,14 @@ function teamTile(t){
 function reqRow(i){
   const t = teamOf(i.team), busy = S.busy.has(i.id);
   return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
-    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.call ? " · Call " + esc(i.call) : ""}</small></div>
+    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
     <div class="acts"><button class="btn accept" data-act="accept" data-id="${esc(i.id)}" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Accept"}</button>
     <a class="btn decline" href="${t.path}" aria-label="Decline in ${esc(t.full)}">Decline</a></div></div>`;
 }
 function itemRow(i, showDate=true){
   const t = teamOf(i.team), today = i.date === todayKey();
   return `<a class="row team" style="${tvars(t)}" href="${t.path}"><span class="bar"></span>
-    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${showDate ? esc(fmtShort(i.date)) + " · " : ""}${esc(i.category || "")}${i.call ? " · Call " + esc(i.call) : ""}</small></div>
+    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${showDate ? esc(fmtShort(i.date)) + " · " : ""}${esc(i.category || "")}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
     ${i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : today ? `<span class="pill today">TODAY</span>` : `<span class="pill ok">CONFIRMED</span>`}</a>`;
 }
 function overlaps(){
@@ -737,14 +737,17 @@ function viewProfile(){
     <p class="hint">RCI Serve version ${APP_VERSION}${DEMO ? " · demo" : ""}</p>`;
 }
 
-const TABS = [["home","Home",ICON.home],["announcements","News",ICON.bullhorn],["calendar","Calendar",ICON.cal],["teams","Teams",ICON.grid],["profile","Profile",ICON.user]];
+const SHOW_ANNOUNCEMENTS = false;   // News page built but hidden for now — flip to true to bring the tab back
+const TABS = [["home","Home",ICON.home], ...(SHOW_ANNOUNCEMENTS ? [["announcements","News",ICON.bullhorn]] : []),
+  ["calendar","Calendar",ICON.cal],["teams","Teams",ICON.grid],["profile","Profile",ICON.user]];
 function render(){
   const app = $("#app");
   const n = S.phase === "ready" ? totalPending() : 0;
   const themeBtn = `<button class="iconbtn" data-act="theme" aria-label="Switch to ${isDark() ? "light" : "dark"} mode">${isDark() ? ICON.sun : ICON.moon}</button>`;
   const header = `<header class="top"><div class="wrap"><button class="brand" data-act="tab" data-view="home" aria-label="RCI Serve, go to Home"><img class="wm wm-light" src="/icons/wordmark.png?v=${APP_VERSION}" alt=""><img class="wm wm-dark" src="/icons/wordmark-dark.png?v=${APP_VERSION}" alt=""></button>
+    ${S.phase === "ready" ? `<button class="iconbtn${S.loading ? " spin" : ""}" data-act="refresh" aria-label="Refresh">${ICON.refresh}</button>` : ""}
     ${themeBtn}
-    ${S.phase === "ready" ? `<button class="iconbtn${S.loading ? " spin" : ""}" data-act="refresh" aria-label="Refresh">${ICON.refresh}</button>
+    ${S.phase === "ready" ? `
     <button class="iconbtn me-btn" data-act="tab" data-view="profile" aria-label="Profile${n ? `, ${n} pending request${n > 1 ? "s" : ""}` : ""}">${S.photo ? `<img src="${S.photo}" alt="">` : esc(initials(S.me?.name))}${n ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div></header>`;
   if (S.phase !== "ready"){
     let body = "";
@@ -757,7 +760,7 @@ function render(){
     app.innerHTML = header + `<main><div class="wrap">${body}</div></main>`;
     return;
   }
-  const body = S.view === "announcements" ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
+  const body = (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap">${TABS.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap">${body}</div></main>` + tabs;
