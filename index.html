@@ -202,7 +202,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "8";   // bump together with CACHE in sw.js
+const APP_VERSION = "9";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -224,6 +224,9 @@ const TEAMS = [
     sitePath: "/sites/RCIMusicDept", listId: "ce2715b8-f330-4471-8e20-adeae324d21c", announcementsListId: "e912e877-d00e-4971-bcd4-df25f621f03d",
     editors: ["ashley.stmacary@therampchurch.com", "cassie.carter.inc@gmail.com"] }
 ];
+/* The church-wide calendar (not a team — no membership, no requests). Listed first in the calendar's chip row. */
+const CHURCH_CAL = { key: "church", name: "Church", full: "Church Calendar", tl: "#8A6631", td: "#D2B07C",
+  sitePath: "/sites/RCIServe", listName: "Church Calendar" };
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 const onAppHost = CONFIG.appHosts.includes(location.hostname);
 const DEMO = /[?&]demo\b/.test(location.search) || !onAppHost;
@@ -246,7 +249,7 @@ const lc = s => String(s || "").toLowerCase().trim();
 const filled = v => !!v && String(v).trim() !== "" && String(v).trim() !== "--";
 const initials = n => (n||"?").split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
 const firstOf = n => (n||"").trim().split(/\s+/)[0] || "";
-const teamOf = k => TEAMS.find(t => t.key === k);
+const teamOf = k => k === "church" ? CHURCH_CAL : TEAMS.find(t => t.key === k);
 const tvars = t => `--tl:${t.tl};--td:${t.td}`;
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 /* The Announcements column can hold several lines; SharePoint may return it as plain text or simple HTML. Same as each team app. */
@@ -384,6 +387,19 @@ const API = {
     this.sites[t.key] = { siteId: site.id, listId, col, annListId };
     return { items: raw.flatMap(r => normalize(t, String(r.id), r.fields, emailById, col)), announcements };
   },
+  /* The church-wide calendar: a simple list (Title + one date column) on its own site, no membership to check.
+     The date column's internal name varies by list, so it's found by type rather than guessed. */
+  async churchEvents(){
+    const site = await this.g(`/sites/${CONFIG.siteHost}:${CHURCH_CAL.sitePath}?$select=id`);
+    const base = `/sites/${site.id}/lists`;
+    const listId = (await this.g(`${base}/${encodeURIComponent(CHURCH_CAL.listName)}?$select=id`)).id;
+    const cols = (await this.g(`${base}/${listId}/columns?$select=name,displayName,dateTime,hidden,readOnly`)).value || [];
+    const dateCol = cols.find(c => c.dateTime && !c.hidden && !c.readOnly) || cols.find(c => c.dateTime);
+    if (!dateCol) throw new Error("Church Calendar: couldn't find a date column");
+    const rows = await this.all(`${base}/${listId}/items?$expand=fields($select=Title,${dateCol.name})&$top=500`);
+    return rows.map(r => ({ id: "church-" + r.id, date: spDate(r.fields[dateCol.name]), title: r.fields.Title || "" }))
+      .filter(e => e.date);
+  },
   async update(teamKey, rowId, fields){
     const s = this.sites[teamKey];
     await this.g(`/sites/${s.siteId}/lists/${s.listId}/items/${rowId}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) });
@@ -484,14 +500,19 @@ function demoTeams(){
       ushers: { items: [P("ushers"), A("ushers", sun(1), "Guest Lobby", "p"), A("ushers", sun(2), "Altar Worker", "a", "Sunday Morning", "", 2)],
         announcements: [N(2, "NEW USHER UNIFORMS\nPick up your navy polo from the welcome desk this week.")] },
       worship: { error: null, items: [], announcements: [N(3, "REHEARSAL MOVED TO THURSDAY\nThis week only, 7:00 PM in the Worship Center.", addDays(todayKey(), 3))] }
-    }
+    },
+    church: [
+      { id: "church-demo-1", date: sun(0), title: "Communion Sunday" },
+      { id: "church-demo-2", date: wed(1), title: "All-Church Prayer Night" },
+      { id: "church-demo-3", date: sun(2), title: "Baptism Service" }
+    ]
   };
 }
 
 /* ============================================================
    STATE
    ============================================================ */
-const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams: {}, loading: false, loadedAt: 0,
+const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams: {}, church: { items: [], error: "" }, loading: false, loadedAt: 0,
             busy: new Set(), cal: { month: null, sel: null, off: new Set() }, hideInstall: false };
 const mineRow = i => (i.email && S.me.emails.includes(lc(i.email))) || (!i.email && i.fullName && lc(i.fullName) === lc(S.me.name));
 const isEditorOf = t => !!S.me && t.editors.some(e => S.me.emails.includes(lc(e)));
@@ -523,7 +544,7 @@ function saveCache(){
     const teams = {};
     for (const t of TEAMS){ const d = S.teams[t.key]; if (!d) continue;
       teams[t.key] = { noAccess: !!d.noAccess, error: d.error || "", items: (d.items || []).filter(i => mineRow(i)), announcements: d.announcements || [] }; }
-    localStorage.setItem("rci-serve:cache", JSON.stringify({ me: S.me, at: Date.now(), teams }));
+    localStorage.setItem("rci-serve:cache", JSON.stringify({ me: S.me, at: Date.now(), teams, church: S.church.items || [] }));
   } catch(e){}
 }
 function readCache(){
@@ -540,9 +561,12 @@ async function loadAll(){
   if (S.loading) return;
   S.loading = true; render();
   if (DEMO){
-    const d = demoTeams(); S.me = d.me; S.teams = d.teams;
+    const d = demoTeams(); S.me = d.me; S.teams = d.teams; S.church = { items: d.church, error: "" };
   } else {
-    const results = await Promise.allSettled(TEAMS.map(t => API.team(t)));
+    const [results, churchResult] = await Promise.all([
+      Promise.allSettled(TEAMS.map(t => API.team(t))),
+      Promise.allSettled([API.churchEvents()])
+    ]);
     const next = {};
     results.forEach((r, n) => {
       const t = TEAMS[n];
@@ -551,6 +575,9 @@ async function loadAll(){
       else { console.warn(t.name, r.reason); next[t.key] = { error: r.reason?.message || "Couldn't load", items: S.teams[t.key]?.items || null, announcements: S.teams[t.key]?.announcements || [] }; }
     });
     S.teams = next;
+    const cr = churchResult[0];
+    if (cr.status === "fulfilled") S.church = { items: cr.value, error: "" };
+    else { console.warn("Church Calendar", cr.reason); S.church = { items: S.church.items || [], error: cr.reason?.message || "Couldn't load" }; }
     saveCache();
   }
   S.loading = false; S.loadedAt = Date.now(); S.phase = "ready";
@@ -623,6 +650,11 @@ function itemRow(i, showDate=true){
     <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${showDate ? esc(fmtShort(i.date)) + " · " : ""}${esc(i.category || "")}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
     ${i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : today ? `<span class="pill today">TODAY</span>` : `<span class="pill ok">CONFIRMED</span>`}</a>`;
 }
+/* A church-wide calendar event — just a title and date, no role/status, and nothing to link into. */
+function churchRow(i){
+  return `<div class="row team" style="${tvars(CHURCH_CAL)}"><span class="bar"></span>
+    <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b></div></div>`;
+}
 function overlaps(){
   const by = {};
   upcoming().forEach(i => { (by[i.date] = by[i.date] || []).push(i); });
@@ -655,10 +687,12 @@ function viewHome(){
 
 function viewCalendar(){
   const teams = myTeams(), off = S.cal.off;
+  const chips = [CHURCH_CAL, ...teams];
   const m = S.cal.month || (S.cal.sel || todayKey()).slice(0, 7);
   S.cal.month = m;
   const [y, mo] = m.split("-").map(Number), first = new Date(y, mo-1, 1), daysIn = new Date(y, mo, 0).getDate();
-  const items = myItems().filter(i => !off.has(i.team));
+  const churchItems = off.has("church") ? [] : (S.church.items || []).map(e => ({ team: "church", date: e.date, title: e.title, id: e.id }));
+  const items = myItems().filter(i => !off.has(i.team)).concat(churchItems);
   const by = {}; items.forEach(i => { (by[i.date] = by[i.date] || []).push(i); });
   let cells = "";
   for (let n = 0; n < first.getDay(); n++) cells += `<span class="day blank"></span>`;
@@ -667,15 +701,15 @@ function viewCalendar(){
     cells += `<button class="day${k === S.cal.sel ? " sel" : ""}${k === todayKey() ? " today" : ""}" data-act="day" data-k="${k}" aria-label="${esc(fmtDay(k))}${list.length ? ", " + plural(list.length, "assignment", "assignments") : ""}"${k === S.cal.sel ? ' aria-pressed="true"' : ""}>
       <span>${d}</span><span class="dots">${teamsOn.map(tk => `<i class="team" style="${tvars(teamOf(tk))}"></i>`).join("")}</span></button>`;
   }
-  const sel = S.cal.sel, dayList = (by[sel] || []).sort((a,b) => a.team.localeCompare(b.team));
+  const sel = S.cal.sel, dayList = (by[sel] || []).sort((a,b) => (a.team === "church" ? -1 : b.team === "church" ? 1 : a.team.localeCompare(b.team)));
   const label = first.toLocaleDateString(undefined, {month:"long", year:"numeric"});
   return `<h1 class="page">My Calendar</h1>
-    ${teams.length > 1 ? `<div class="chips" role="group" aria-label="Show teams">${teams.map(t => `<button class="chip team${off.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="filter" data-k="${t.key}" aria-pressed="${!off.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
+    <div class="chips" role="group" aria-label="Show calendars">${chips.map(t => `<button class="chip team${off.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="filter" data-k="${t.key}" aria-pressed="${!off.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>
     <section class="panel cal"><div class="cal-head"><button class="iconbtn" data-act="month" data-d="-1" aria-label="Previous month">${ICON.prev}</button><b>${esc(label)}</b><button class="iconbtn" data-act="month" data-d="1" aria-label="Next month">${ICON.next}</button></div>
       <div class="dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
       <div class="days">${cells}</div></section>
-    <section class="sec"><h2>${esc(fmtDay(sel))}</h2><div class="panel">${dayList.length ? dayList.map(i => itemRow(i, false)).join("") : `<div class="empty">You're not scheduled on this day.</div>`}</div>
-      <p class="hint">Shows your own assignments on every team. Each team's Calendar shows the whole team.</p></section>`;
+    <section class="sec"><h2>${esc(fmtDay(sel))}</h2><div class="panel">${dayList.length ? dayList.map(i => i.team === "church" ? churchRow(i) : itemRow(i, false)).join("") : `<div class="empty">Nothing on this day.</div>`}</div>
+      <p class="hint">Shows your own assignments on every team, plus the Church calendar. Each team's Calendar shows the whole team.</p></section>`;
 }
 
 /* Announcements across every team the person is on, soonest "Show Until" first (no end date = last, oldest first) — same ordering as each team app. */
@@ -840,7 +874,7 @@ async function start(){
     if (!signedIn){ S.phase = "signin"; render(); return; }
     S.me = await API.me();
     const c = readCache();
-    if (c && c.me.emails.some(x => S.me.emails.includes(x))){ S.teams = c.teams; S.phase = "ready"; render(); }   // show the saved picture right away
+    if (c && c.me.emails.some(x => S.me.emails.includes(x))){ S.teams = c.teams; S.church = { items: c.church || [], error: "" }; S.phase = "ready"; render(); }   // show the saved picture right away
     API.photo().then(p => { S.photo = p; render(); });
     await loadAll();
   } catch(e){
