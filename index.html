@@ -153,19 +153,6 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .ann-tlabel{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t)}
 .ann-title{font-weight:700;font-size:15.5px;line-height:1.3;overflow-wrap:anywhere;margin:0}
 .ann-text{margin:0;white-space:pre-line;color:var(--muted);font-size:14px;line-height:1.45;overflow-wrap:anywhere}
-.cue{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--t);border-radius:var(--r);display:grid;grid-template-columns:64px 1fr;overflow:hidden;margin-bottom:6px}
-.cue .when{background:var(--surface-2);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 4px;text-align:center;gap:1px}
-.cue .when .dow{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;opacity:.8}
-.cue .when .day{font-family:var(--display);font-weight:700;font-size:30px;line-height:1}
-.cue-body{padding:8px 10px;min-width:0;display:flex;flex-direction:column;gap:0}
-.cue-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.cue .role{font-weight:700;font-size:14.5px}
-.cue .cat{color:var(--muted);font-size:12.5px;margin-top:2px}
-.cue .tlabel-row{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-top:0}
-.cue .times{display:flex;gap:2px 14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:2px}
-.cue .acts{display:flex;flex-direction:row;gap:6px;flex-wrap:nowrap;overflow-x:auto;margin-top:6px}
-.cue .acts .btn{min-height:26px;padding:0 10px;font-size:11.5px;flex:1 1 0;white-space:nowrap}
-.cue .acts.single .btn{flex:0 0 auto;min-height:32px;padding:7px 14px;font-size:14px}
 .day-sep{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 2px;padding-left:2px}
 .day-sep:first-child{margin-top:0}
 .pill.today-pill{background:var(--accent);color:var(--accent-ink);font-weight:800}
@@ -265,7 +252,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "24";   // bump together with CACHE in sw.js
+const APP_VERSION = "25";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -351,7 +338,9 @@ const ICON = {
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>',
   notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>',
   image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>',
-  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  team: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.3 3.1-6 7-6s7 2.7 7 6"/><circle cx="17" cy="8" r="2.5"/><path d="M16.5 14.2c2.6.5 4.5 2.6 4.5 5.1"/></svg>'
 };
 /* Shrinks an image client-side before upload (same as the team apps' own flyer picker). */
 async function resizeImage(file, maxSide){
@@ -1008,31 +997,21 @@ function itemRow(i, showDate=true){
     <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${showDate ? esc(fmtShort(i.date)) + " · " : ""}${esc(i.category || "")}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
     ${i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : today ? `<span class="pill today">TODAY</span>` : `<span class="pill ok">CONFIRMED</span>`}</a>`;
 }
-/* Next 7 Days card — same look as each team app's own "Next 7 Days" (date block + role/category/times), with the
-   same Notes/Team/Decline options, which open in that team's own app since that's where those views live. */
+/* Which per-team buttons a Next 7 Days row shows, matching each app's own Next 7 Days capabilities. */
+const TEAM_WEEK_ACTS = { productions: ["notes", "team", "decline"], worship: ["notes", "team", "decline"], ushers: ["team", "decline"], security: ["team", "decline"] };
+/* Next 7 Days row — same row layout as the Calendar page's day panel (bar + info + status pill + icon-button
+   row-acts), linking Notes/Team/Decline out to that team's own app since that's where those views live. */
 function weekCue(i){
-  const t = teamOf(i.team), d = fromKey(i.date);
-  return `<article class="cue team" style="${tvars(t)}">
-    <div class="when"><span class="dow">${d.toLocaleDateString(undefined,{weekday:"short"})}</span><span class="day">${d.getDate()}</span></div>
-    <div class="cue-body">
-      <div class="cue-top"><span class="role">${esc(i.role || "Position")}</span>${i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : `<span class="pill ok">CONFIRMED</span>`}</div>
-      <div class="tlabel-row">${esc(t.name)}</div>
-      <div class="cat">${esc(i.category || "")}</div>
-      <div class="times">${i.call ? `<span>Call Time <b>${esc(i.call)}</b></span>` : ""}${i.time ? `<span>Service Time <b>${esc(i.time)}</b></span>` : ""}</div>
-      <div class="acts"><a class="btn" href="${t.path}">Notes</a><a class="btn" href="${t.path}">Team</a>
-        ${i.pending ? `<a class="btn accept" href="${t.path}">Accept</a>` : ""}<a class="btn decline" href="${t.path}">Decline</a></div>
-    </div></article>`;
-}
-/* A Church calendar event inside Next 7 Days — admins only (church events show here in addition to your own assignments). */
-function weekChurchCue(e){
-  const d = fromKey(e.date), noService = lc(e.title) === "no service";
-  return `<article class="cue team" style="${noService ? "--tl:var(--stop);--td:var(--stop)" : tvars(CHURCH_CAL)}">
-    <div class="when"><span class="dow">${d.toLocaleDateString(undefined,{weekday:"short"})}</span><span class="day">${d.getDate()}</span></div>
-    <div class="cue-body">
-      <div class="cue-top"><span class="role">${esc(e.title || "Event")}</span></div>
-      <div class="tlabel-row">Church</div>
-      ${!noService && isAnyAdmin() ? `<div class="acts single"><button class="btn" data-act="notes" data-id="${esc(e.rowId)}" data-date="${esc(e.date)}">Notes</button></div>` : ""}
-    </div></article>`;
+  const t = teamOf(i.team), today = i.date === todayKey();
+  const acts = TEAM_WEEK_ACTS[t.key] || ["team", "decline"];
+  return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
+    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
+    ${i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : today ? `<span class="pill today">TODAY</span>` : `<span class="pill ok">CONFIRMED</span>`}
+    <div class="row-acts">
+      ${acts.includes("notes") ? `<a class="iconbtn sm" href="${t.path}" aria-label="${esc(t.name)} Notes" title="Notes">${ICON.notes}</a>` : ""}
+      ${acts.includes("team") ? `<a class="iconbtn sm" href="${t.path}" aria-label="${esc(t.name)} Team" title="Team">${ICON.team}</a>` : ""}
+      ${acts.includes("decline") ? `<a class="iconbtn sm" href="${t.path}" aria-label="Decline" title="Decline">${ICON.x}</a>` : ""}
+    </div></div>`;
 }
 /* A church-wide calendar event — just a title and date, no role/status, and nothing to link into.
    "No Service" entries (added via the red-X toggle) get the stop color and a ban icon instead of the usual gold bar. */
@@ -1134,7 +1113,7 @@ function viewHome(){
     const church = admin ? (S.church.items || []).filter(e => e.date >= todayKey() && e.date <= wk).map(e => ({ ...e, team: "church", kind: "church" })) : [];
     const week = [...mine, ...church].filter(i => !S.weekOff.has(i.team)).sort((a, b) => a.date.localeCompare(b.date) || a.team.localeCompare(b.team));
     const byDate = {}; week.forEach(i => { (byDate[i.date] = byDate[i.date] || []).push(i); });
-    const grouped = Object.keys(byDate).sort().map(d => `<div class="day-sep">${esc(fmtDay(d))}</div>${byDate[d].map(i => i.kind === "church" ? weekChurchCue(i) : weekCue(i)).join("")}`).join("");
+    const grouped = Object.keys(byDate).sort().map(d => `<div class="day-sep">${esc(fmtDay(d))}</div><div class="panel">${byDate[d].map(i => i.kind === "church" ? churchRow(i, isEditorOf(CHURCH_CAL), isAnyAdmin()) : weekCue(i)).join("")}</div>`).join("");
     out += `<section class="sec"><h2>Next 7 Days</h2>
       ${weekChips.length > 1 ? `<div class="chips" role="group" aria-label="Show next 7 days">${weekChips.map(t => `<button class="chip team${S.weekOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="week-filter" data-k="${t.key}" aria-pressed="${!S.weekOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
       ${week.length ? `<div class="list">${grouped}</div>` : `<div class="empty">${reqs.length ? "Nothing confirmed this week yet." : "Nothing on your schedule this week."}</div>`}</section>`;
@@ -1384,7 +1363,13 @@ document.addEventListener("click", async e => {
   else if (act === "week-filter"){ const k = b.dataset.k; S.weekOff.has(k) ? S.weekOff.delete(k) : S.weekOff.add(k); saveFilter("week", S.weekOff); render(); }
   else if (act === "flyer-open"){ if (b.dataset.url) openLightbox(b.dataset.url, b.querySelector("img")?.alt); }
   else if (act === "church-add"){ S.cal.form = { mode: "add", rowId: null, title: "", date: S.cal.sel || todayKey(), targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
-  else if (act === "church-edit"){ S.cal.form = { mode: "edit", rowId: b.dataset.id, title: b.dataset.title || "", date: b.dataset.date || S.cal.sel, targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
+  else if (act === "church-edit"){
+    const date = b.dataset.date || S.cal.sel;
+    S.cal.form = { mode: "edit", rowId: b.dataset.id, title: b.dataset.title || "", date, targets: [] };
+    // churchForm only renders on the Calendar page, so jump there (needed when Edit is tapped from Home's Next 7 Days).
+    if (date){ S.view = "calendar"; S.cal.sel = date; S.cal.month = date.slice(0, 7); try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} }
+    render(); window.scrollTo(0, 0); document.querySelector('[data-field="title"]')?.focus();
+  }
   else if (act === "church-cancel"){ S.cal.form = null; render(); }
   else if (act === "church-save") churchSave();
   else if (act === "church-target"){
