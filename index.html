@@ -242,11 +242,13 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .toast.bad{background:var(--bad)}
 .updating{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .updating .spinner{width:12px;height:12px;border-width:2px}
+.comm{display:flex;flex-direction:column;gap:14px}.comm h2,.comm h3{margin:0;font-size:17px}.comm-text{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}.comm-record+.comm-record{border-top:1px solid var(--line);padding-top:12px}.comm-topic{justify-content:flex-start;text-align:left;white-space:normal;overflow-wrap:anywhere}.comm .panel{margin:0}.comm time{display:block}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
+<script src="/communications.js?v=30"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -255,7 +257,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "29";   // bump together with CACHE in sw.js
+const APP_VERSION = "30";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -892,6 +894,7 @@ async function loadAll(){
     else { console.warn("Church Calendar", cr.reason); S.church = { items: S.church.items || [], anns: S.church.anns || [], error: cr.reason?.message || "Couldn't load" }; }
     saveCache();
   }
+  await Comm.load();
   S.loading = false; S.loadedAt = Date.now(); S.phase = "ready";
   if (!S.cal.sel){ const first = upcoming()[0]; S.cal.sel = first && first.date <= addDays(todayKey(), 31) ? first.date : todayKey(); }
   updateBadge(); render();
@@ -1305,7 +1308,7 @@ const GIVING_URL = "https://pushpay.com/g/therampchurch";
 function tabsList(){
   const tabs = [["home","Home",ICON.home], ...(SHOW_ANNOUNCEMENTS ? [["announcements","News",ICON.bullhorn]] : []),
     ["calendar","Calendar",ICON.cal], ...(SHOW_GIVING ? [["giving","Giving",ICON.heart]] : []),
-    ["teams","Teams",ICON.grid]];
+    ["teams","Teams",ICON.grid], ["messages","Messages",ICON.bullhorn]];
   tabs.push(["profile","Profile",ICON.user]);
   return tabs;
 }
@@ -1340,9 +1343,9 @@ function render(){
   }
   const tabsArr = tabsList();
   const body = S.view === "notes" ? viewServiceNotes() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
-    : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
+    : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
-    `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
+    `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap">${body}</div></main>` + tabs;
   hydrateFlyers();
 }
@@ -1373,7 +1376,7 @@ document.addEventListener("click", async e => {
   const act = b.dataset.act;
   if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "signin") API.signIn();
-  else if (act === "signout"){ try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
+  else if (act === "signout"){ Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
   else if (act === "retry") location.reload();
   else if (act === "refresh") loadAll();
   else if (act === "accept") accept(b.dataset.id);
