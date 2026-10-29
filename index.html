@@ -244,7 +244,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "15";   // bump together with CACHE in sw.js
+const APP_VERSION = "16";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -987,7 +987,7 @@ function churchRow(i, editable){
   const canNotes = editable && !noService;
   return `<div class="row team" style="${style}"><span class="bar"></span>
     ${noService ? `<span style="display:grid;place-items:center;width:28px;height:28px;color:var(--stop);flex:none">${ICON.ban}</span>` : ""}
-    <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small>${i.notes ? `<p class="ann-text" style="margin-top:4px">${esc(annText(i.notes))}</p>` : ""}</div>
+    <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small>${editable && i.notes ? `<p class="ann-text" style="margin-top:4px">${esc(annText(i.notes))}</p>` : ""}</div>
     ${editable ? `<div class="row-acts">
       ${canNotes ? `<button class="iconbtn sm${i.notes ? " edit-on" : ""}" data-act="notes-new" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" aria-label="Service Notes">${ICON.notes}</button>` : ""}
       <button class="iconbtn sm" data-act="church-edit" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" data-title="${esc(i.title)}" aria-label="Edit">${ICON.edit}</button>
@@ -1046,7 +1046,7 @@ function viewHome(){
   }
   if (teams.length) out += `<section class="sec"><h2>Your Teams</h2><div class="tiles">${teams.map(teamTile).join("")}</div></section>`;
   {
-    const annFilterChips = [CHURCH_CAL, ...myTeams()];   // Church is always shown — it's for everyone, not just your own teams
+    const annFilterChips = [...(isAnyAdmin() ? [CHURCH_CAL] : []), ...myTeams()];   // Church is admin-only, not for everyone
     const anns = myAnnouncements().filter(a => !S.annOff.has(a.team));
     if (annFilterChips.length > 1 || anns.length || annSendTargets().length){
       out += `<section class="sec"><div class="sec-head"><h2>Announcements</h2>${annEditBtn()}</div>
@@ -1155,11 +1155,13 @@ function churchForm(f){
 }
 
 /* Announcements across every team the person is on, soonest "Show Until" first (no end date = last, oldest first) — same ordering as each team app. */
+/* Admin somewhere — on the Church Calendar, or on any of the 4 teams. Church announcements/notes are admin-only, not for everyone. */
+const isAnyAdmin = () => isEditorOf(CHURCH_CAL) || sendableTeams().length > 0;
 function myAnnouncements(){
   const t = todayKey();
   const fromTeams = myTeams().flatMap(team => (S.teams[team.key]?.announcements || [])
     .filter(a => a.text && (!a.until || a.until > t)).map(a => ({ ...a, team: team.key })));
-  const fromChurch = (S.church.anns || []).filter(a => a.text && (!a.until || a.until > t));   // Church announcements are for everyone
+  const fromChurch = isAnyAdmin() ? (S.church.anns || []).filter(a => a.text && (!a.until || a.until > t)) : [];
   return [...fromTeams, ...fromChurch]
     .sort((a, b) => (a.until || "9999-12-31").localeCompare(b.until || "9999-12-31") || a.team.localeCompare(b.team) || a.id - b.id);
 }
@@ -1315,7 +1317,12 @@ document.addEventListener("click", async e => {
   }
   else if (act === "church-delete"){ if (confirm("Remove this from the church calendar?")) churchRemove(b.dataset.id); }
   else if (act === "church-noservice") churchToggleNoService();
-  else if (act === "ann-edit"){ S.annEdit = !S.annEdit; S.annConfirm = null; if (!S.annEdit) S.annDraft = null; render(); }
+  else if (act === "ann-edit"){
+    S.annEdit = !S.annEdit; S.annConfirm = null;
+    // Church is the only option for someone who admins the Church Calendar but no team — default it on so there's nothing to tap.
+    S.annDraft = S.annEdit && !sendableTeams().length && isEditorOf(CHURCH_CAL) ? { targets: ["church"] } : null;
+    render();
+  }
   else if (act === "ann-ask"){ S.annConfirm = b.dataset.id; render(); }
   else if (act === "ann-keep"){ S.annConfirm = null; render(); }
   else if (act === "ann-change"){
