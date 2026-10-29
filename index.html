@@ -88,11 +88,6 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .chiprow{display:flex;flex-wrap:wrap;gap:8px}
 .chipcheck{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border-radius:17px;border:1px solid var(--line);background:var(--surface);font-weight:600;font-size:12.5px;color:var(--fg)}
 .chipcheck[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-.draft-row{display:flex;flex-direction:column;gap:6px;padding:14px;border-bottom:1px solid var(--surface-2)}
-.draft-row:last-child{border-bottom:0}
-.draft-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.draft-snip{margin:0;color:var(--muted);font-size:13px;white-space:pre-line;overflow-wrap:anywhere;max-height:3.4em;overflow:hidden}
-.draft-acts{display:flex;gap:8px;flex-wrap:wrap}
 .notes-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .tool{border:1px solid var(--line);background:var(--surface-2);color:var(--fg);border-radius:8px;padding:6px 12px;font-size:14px;font-weight:600;min-width:44px}
 .tool.swatch{width:30px;height:30px;min-width:30px;padding:0;border-radius:50%}
@@ -231,7 +226,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "11";   // bump together with CACHE in sw.js
+const APP_VERSION = "12";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -314,7 +309,9 @@ const ICON = {
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
   ban: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m5.5 5.5 13 13"/></svg>',
   edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>',
-  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>'
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>',
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg>',
+  image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>'
 };
 
 /* ---------- rich-text notes editor (same toolbar/sanitizer as the Productions & Worship & Arts apps) ---------- */
@@ -514,32 +511,6 @@ const API = {
     const { base, listId } = await this.churchMeta();
     await this.g(`${base}/${listId}/items/${rowId}`, { method: "DELETE" });
   },
-  /* Drafts: announcements / calendar prompts / Production & Worship notes, saved here until pushed to their destination. */
-  async draftsMeta(){
-    if (this._draftsMeta) return this._draftsMeta;
-    const site = await this.g(`/sites/${CONFIG.siteHost}:${CHURCH_CAL.sitePath}?$select=id`);
-    const base = `/sites/${site.id}/lists`;
-    const listId = (await this.g(`${base}/${encodeURIComponent("Drafts")}?$select=id`)).id;
-    return (this._draftsMeta = { base, listId });
-  },
-  async draftsList(){
-    const { base, listId } = await this.draftsMeta();
-    const rows = await this.all(`${base}/${listId}/items?$expand=fields($select=Title,Kind,Body,TargetDate,Targets)&$top=200`);
-    return rows.map(r => ({ id: String(r.id), title: r.fields.Title || "", kind: r.fields.Kind || "", body: r.fields.Body || "",
-        targetDate: spDate(r.fields.TargetDate), targets: (r.fields.Targets || "").split(",").map(s => s.trim()).filter(Boolean) }))
-      .sort((a, b) => Number(b.id) - Number(a.id));
-  },
-  async draftSave(d){
-    const { base, listId } = await this.draftsMeta();
-    const fields = { Title: d.title || "", Kind: d.kind, Body: d.body || "", Targets: (d.targets || []).join(","), TargetDate: d.targetDate ? d.targetDate + "T00:00:00" : null };
-    if (d.id){ await this.g(`${base}/${listId}/items/${d.id}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) }); return d.id; }
-    const r = await this.g(`${base}/${listId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
-    return String(r.id);
-  },
-  async draftDelete(id){
-    const { base, listId } = await this.draftsMeta();
-    await this.g(`${base}/${listId}/items/${id}`, { method: "DELETE" });
-  },
   /* Resolves a team's Announcements list, using the cache teamRows() already filled in when it's there. */
   async resolveAnnList(t){
     if (this.sites[t.key]?.annListId) return { siteId: this.sites[t.key].siteId, annListId: this.sites[t.key].annListId };
@@ -549,12 +520,28 @@ const API = {
     if (!annListId && t.announcementsListName){ try { annListId = (await this.g(`${base}/${encodeURIComponent(t.announcementsListName)}?$select=id`)).id; } catch(e){} }
     return { siteId: site.id, annListId };
   },
-  async announcementPush(t, { title, text, until }){
+  /* Upload an image to the site's Site Assets library and return the value for a SharePoint image (Thumbnail) column. */
+  async assetImage(siteId, listId, fileName, blob){
+    const drives = await this.g(`/sites/${siteId}/drives?$select=id,name,webUrl`);
+    const assets = drives.value.find(d => /\/SiteAssets$/i.test(d.webUrl)) || drives.value.find(d => /site assets/i.test(d.name))
+      || await this.g(`/sites/${siteId}/lists/${encodeURIComponent("Site Assets")}/drive?$select=id,name,webUrl`).catch(() => null);
+    if (!assets) throw new Error("Couldn't find the site's Site Assets library.");
+    const up = await this.g(`/drives/${assets.id}/root:/Lists/${listId}/${fileName}:/content`, { method: "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob });
+    const u = new URL(up.webUrl);
+    return JSON.stringify({ type: "thumbnail", fileName, serverUrl: u.origin, serverRelativeUrl: decodeURIComponent(u.pathname) });
+  },
+  async announcementPush(t, { title, text, until, flyerBlob, flyerName }){
     const { siteId, annListId } = await this.resolveAnnList(t);
     if (!annListId) throw new Error(`No Announcements list found on ${t.name}`);
     const fields = { Title: (title || text.split("\n")[0] || "Announcement").slice(0, 120), Announcements: text };
     if (until) fields.ShowUntil = until + "T00:00:00";
-    await this.g(`/sites/${siteId}/lists/${annListId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
+    const r = await this.g(`/sites/${siteId}/lists/${annListId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
+    if (flyerBlob){
+      try {
+        const flyer = await this.assetImage(siteId, annListId, `flyer-${r.id}-${flyerName || "flyer.jpg"}`, flyerBlob);
+        await this.g(`/sites/${siteId}/lists/${annListId}/items/${r.id}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ Flyer: flyer }) });
+      } catch(e){ /* announcement is posted either way; the flyer image column is a nice-to-have */ }
+    }
   },
   /* Production Notes: keeps whatever text was before the "SET LIST" marker on the existing Production Director row for that date — same as the Productions app's own save. */
   async pushProductionNotes(date, bodyHtml){
@@ -693,13 +680,12 @@ function demoTeams(){
    ============================================================ */
 const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams: {}, church: { items: [], error: "" }, loading: false, loadedAt: 0,
             busy: new Set(), cal: { month: null, sel: null, off: new Set(), form: null, busy: false }, hideInstall: false,
-            drafts: { items: null, loading: false, form: null, busy: false } };
-const DRAFT_KINDS = [
-  { key: "announcement", label: "Announcement" },
-  { key: "calendar", label: "Calendar Event" },
-  { key: "production-notes", label: "Production Notes" },
-  { key: "worship-notes", label: "Worship Notes" }
-];
+            annForm: null, notesForm: null };
+/* Teams this signed-in person can "Send to": only the ones they actually admin. */
+const sendableTeams = () => TEAMS.filter(isEditorOf);
+const NOTES_TARGETS = [{ key: "production-notes", label: "Production Notes", team: () => TEAMS.find(t => t.key === "productions") },
+                        { key: "worship-notes", label: "Worship Notes", team: () => TEAMS.find(t => t.key === "worship") }];
+const sendableNotesTargets = () => NOTES_TARGETS.filter(n => isEditorOf(n.team()));
 const mineRow = i => (i.email && S.me.emails.includes(lc(i.email))) || (!i.email && i.fullName && lc(i.fullName) === lc(S.me.name));
 const isEditorOf = t => !!S.me && t.editors.some(e => S.me.emails.includes(lc(e)));
 /* On a team: an admin of it, has a (not archived) Roster / profile row, or has been scheduled in the last 120 days or later. */
@@ -795,6 +781,10 @@ async function churchSave(){
     if (f.mode === "add"){
       const e = DEMO ? { id: "church-" + Date.now(), rowId: "demo-" + Date.now(), date, title } : await API.churchCreate(title, date);
       S.church.items = [...(S.church.items || []), e];
+      for (const k of (f.targets || [])){
+        const t = TEAMS.find(x => x.key === k); if (!t || !isEditorOf(t)) continue;
+        if (!DEMO) await API.announcementPush(t, { title, text: `${title} — ${fmtShort(date)}`, until: date }).catch(() => {});
+      }
       toast(`Added: ${title}, ${fmtShort(date)}`);
     } else {
       if (!DEMO) await API.churchUpdate(f.rowId, title, date);
@@ -831,70 +821,6 @@ async function churchToggleNoService(){
     saveCache();
   } catch(e){ toast("Couldn't save. " + e.message, true); }
   S.cal.busy = false; render();
-}
-
-/* ---------- Drafts: compose once, save for later, push to the right app when it's ready (editors only) ---------- */
-async function loadDrafts(){
-  if (S.drafts.loading) return;
-  S.drafts.loading = true; render();
-  try { S.drafts.items = DEMO ? [] : await API.draftsList(); }
-  catch(e){ toast("Couldn't load drafts. " + e.message, true); S.drafts.items = S.drafts.items || []; }
-  S.drafts.loading = false; render();
-}
-async function draftPush(d){
-  if (DEMO){ await new Promise(r => setTimeout(r, 400)); return; }
-  if (d.kind === "calendar") await API.churchCreate(d.title, d.targetDate);
-  else if (d.kind === "announcement"){
-    if (!d.targets.length) throw new Error("Pick at least one team to send it to.");
-    for (const k of d.targets){ const t = TEAMS.find(x => x.key === k); if (t) await API.announcementPush(t, { title: d.title, text: d.body, until: d.targetDate || null }); }
-  }
-  else if (d.kind === "production-notes") await API.pushProductionNotes(d.targetDate, d.body);
-  else if (d.kind === "worship-notes") await API.pushWorshipNotes(d.targetDate, d.body);
-}
-async function draftSave(push){
-  const f = S.drafts.form; if (!f || S.drafts.busy) return;
-  const kind = $('[data-field="kind"]')?.value || f.kind;
-  f.kind = kind;
-  f.title = ($('[data-field="title"]')?.value || "").trim();
-  f.targetDate = $('[data-field="targetDate"]')?.value || "";
-  const isNotes = kind === "production-notes" || kind === "worship-notes";
-  f.body = isNotes ? cleanHtml($("#notes-editor")?.innerHTML || "").trim() : ($('[data-field="body"]')?.value || "").trim();
-  if (kind === "calendar" && (!f.title || !f.targetDate)){ toast("A title and date are both needed.", true); return; }
-  if (isNotes && !f.targetDate){ toast("Pick the service date first.", true); return; }
-  if (kind === "announcement" && !f.body){ toast("Write the announcement text first.", true); return; }
-  S.drafts.busy = true; render();
-  try {
-    const id = DEMO ? (f.id || "demo-" + Date.now()) : await API.draftSave(f);
-    f.id = id;
-    const saved = { ...f };
-    S.drafts.items = [saved, ...(S.drafts.items || []).filter(x => x.id !== id)];
-    if (push){
-      await draftPush(saved);
-      S.drafts.items = (S.drafts.items || []).filter(x => x.id !== id);
-      if (!DEMO) await API.draftDelete(id).catch(() => {});
-      toast("Pushed" + (saved.title ? ": " + saved.title : ""));
-    } else toast("Draft saved");
-    S.drafts.form = null;
-  } catch(e){ toast("Couldn't save it. " + e.message, true); }
-  S.drafts.busy = false; render();
-}
-async function draftPushExisting(id){
-  const d = (S.drafts.items || []).find(x => String(x.id) === String(id)); if (!d || S.drafts.busy) return;
-  S.drafts.busy = true; render();
-  try {
-    await draftPush(d);
-    S.drafts.items = (S.drafts.items || []).filter(x => x.id !== d.id);
-    if (!DEMO) await API.draftDelete(d.id).catch(() => {});
-    toast("Pushed" + (d.title ? ": " + d.title : ""));
-  } catch(e){ toast("Couldn't push it. " + e.message, true); }
-  S.drafts.busy = false; render();
-}
-async function draftDelete(id){
-  if (S.drafts.busy) return;
-  S.drafts.busy = true; render();
-  try { if (!DEMO) await API.draftDelete(id); S.drafts.items = (S.drafts.items || []).filter(x => String(x.id) !== String(id)); toast("Deleted"); }
-  catch(e){ toast("Couldn't delete it. " + e.message, true); }
-  S.drafts.busy = false; render();
 }
 
 /* ============================================================
@@ -955,12 +881,45 @@ function itemRow(i, showDate=true){
 function churchRow(i, editable){
   const noService = lc(i.title) === "no service";
   const style = noService ? `--tl:var(--stop);--td:var(--stop)` : tvars(CHURCH_CAL);
+  const canNotes = editable && !noService && sendableNotesTargets().length;
   return `<div class="row team" style="${style}"><span class="bar"></span>
     ${noService ? `<span style="display:grid;place-items:center;width:28px;height:28px;color:var(--stop);flex:none">${ICON.ban}</span>` : ""}
     <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small></div>
     ${editable ? `<div class="row-acts">
+      ${canNotes ? `<button class="iconbtn sm" data-act="notes-new" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" aria-label="Service Notes">${ICON.notes}</button>` : ""}
       <button class="iconbtn sm" data-act="church-edit" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" data-title="${esc(i.title)}" aria-label="Edit">${ICON.edit}</button>
       <button class="iconbtn sm" data-act="church-delete" data-id="${esc(i.rowId)}" aria-label="Delete">${ICON.trash}</button></div>` : ""}</div>`;
+}
+function notesForm(f){
+  const targets = sendableNotesTargets(), busy = f.busy;
+  return `<section class="panel cform">
+    <b>Service Notes &middot; ${esc(fmtShort(f.date))}</b>
+    ${notesToolbar()}
+    <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Service Notes">${f.body || ""}</div>
+    <span class="hint" style="font-weight:600">Send to</span>
+    <div class="chiprow">${targets.map(n => `<button type="button" class="chipcheck" data-act="notes-target" data-k="${n.key}" aria-pressed="${f.targets.includes(n.key)}">${esc(n.label)}</button>`).join("")}</div>
+    <div class="cform-acts">
+      <button class="btn" data-act="notes-cancel" ${busy ? "disabled" : ""}>Cancel</button>
+      <button class="btn primary" data-act="notes-save" ${busy ? "disabled" : ""}>${busy ? "Sending…" : "Send"}</button>
+    </div></section>`;
+}
+async function notesSave(){
+  const f = S.notesForm; if (!f || f.busy) return;
+  f.body = cleanHtml($("#notes-editor")?.innerHTML || "").trim();
+  if (!f.body){ toast("Write the notes first.", true); return; }
+  if (!f.targets.length){ toast("Pick at least one place to send it.", true); return; }
+  f.busy = true; render();
+  try {
+    for (const k of f.targets){
+      const n = NOTES_TARGETS.find(x => x.key === k); if (!n || !isEditorOf(n.team())) continue;
+      if (k === "production-notes") await API.pushProductionNotes(f.date, f.body);
+      else if (k === "worship-notes") await API.pushWorshipNotes(f.date, f.body);
+    }
+    toast("Notes sent");
+    S.notesForm = null;
+  } catch(e){ toast("Couldn't send it. " + e.message, true); }
+  if (S.notesForm) S.notesForm.busy = false;
+  render();
 }
 function overlaps(){
   const by = {};
@@ -981,6 +940,10 @@ function viewHome(){
       <button class="btn" style="align-self:flex-start" data-act="refresh">Check again</button></section>`;
   }
   out += `<section class="sec"><h2>Your Teams</h2><div class="tiles">${teams.map(teamTile).join("")}</div></section>`;
+  if (sendableTeams().length){
+    out += `<section class="sec"><div class="sec-head"><h2>Announcements</h2>${!S.annForm ? `<button class="btn primary" data-act="ann-new">${ICON.plus} New Announcement</button>` : ""}</div>
+      ${S.annForm ? annForm(S.annForm) : `<p class="hint" style="margin-top:-6px">Post an announcement or flyer to the teams you admin.</p>`}</section>`;
+  }
   if (reqs.length){
     out += `<section class="sec"><h2>Needs Your Reply <span class="count">${reqs.length}</span></h2><div class="panel">${reqs.map(reqRow).join("")}</div>
       ${overlaps().map(o => `<div class="note">${ICON.warn}<span>You have ${o.list.length} requests on ${esc(fmtShort(o.date))} (${esc([...new Set(o.list.map(i => teamOf(i.team).name))].join(" and "))}). Accept the one you can serve, and decline the other in its team app.</span></div>`).join("")}
@@ -1021,13 +984,51 @@ function viewCalendar(){
         <button class="iconbtn sm" data-act="church-add" aria-label="Add a church event">${ICON.plus}</button>
         <button class="iconbtn sm danger" data-act="church-noservice" aria-label="Mark no service this day">${ICON.ban}</button></div>` : ""}</div>
       ${f ? churchForm(f) : ""}
+      ${S.notesForm ? notesForm(S.notesForm) : ""}
       <div class="panel">${dayList.length ? dayList.map(i => i.team === "church" ? churchRow(i, canEditChurch) : itemRow(i, false)).join("") : `<div class="empty">No events scheduled.</div>`}</div>
       <p class="hint">Shows your own assignments on every team, plus the Church calendar. Each team's Calendar shows the whole team.</p></section>`;
 }
+function annForm(f){
+  const busy = f.busy;
+  return `<section class="panel cform">
+    <label>Title (optional)<input type="text" data-field="ann-title" value="${esc(f.title || "")}" maxlength="120" placeholder="Falls back to the first line"></label>
+    <label>Message<textarea data-field="ann-body" maxlength="2000" placeholder="What should the announcement say?">${esc(f.body || "")}</textarea></label>
+    <label>Show Until (optional)<input type="date" data-field="ann-until" value="${esc(f.until || "")}"></label>
+    <label>${ICON.image} Flyer (optional)<input type="file" accept="image/*" data-field="ann-flyer"></label>
+    ${f.flyerName ? `<small class="hint">Attached: ${esc(f.flyerName)} <button type="button" class="btn" data-act="ann-flyer-clear" style="min-height:28px;padding:0 10px">Remove</button></small>` : ""}
+    <span class="hint" style="font-weight:600">Send to</span>
+    <div class="chiprow">${sendableTeams().map(t => `<button type="button" class="chipcheck" data-act="ann-target" data-k="${t.key}" aria-pressed="${f.targets.includes(t.key)}">${esc(t.name)}</button>`).join("")}</div>
+    <div class="cform-acts">
+      <button class="btn" data-act="ann-cancel" ${busy ? "disabled" : ""}>Cancel</button>
+      <button class="btn primary" data-act="ann-save" ${busy ? "disabled" : ""}>${busy ? "Posting…" : "Post Announcement"}</button>
+    </div></section>`;
+}
+async function annSave(){
+  const f = S.annForm; if (!f || f.busy) return;
+  f.body = (document.querySelector('[data-field="ann-body"]')?.value || "").trim();
+  f.title = (document.querySelector('[data-field="ann-title"]')?.value || "").trim();
+  f.until = document.querySelector('[data-field="ann-until"]')?.value || "";
+  if (!f.body){ toast("Write the announcement text first.", true); return; }
+  if (!f.targets.length){ toast("Pick at least one team to send it to.", true); return; }
+  f.busy = true; render();
+  try {
+    for (const k of f.targets){
+      const t = TEAMS.find(x => x.key === k); if (!t || !isEditorOf(t)) continue;
+      if (!DEMO) await API.announcementPush(t, { title: f.title, text: f.body, until: f.until || null, flyerBlob: f.flyerBlob, flyerName: f.flyerName });
+    }
+    toast("Posted" + (f.title ? ": " + f.title : ""));
+    S.annForm = null;
+  } catch(e){ toast("Couldn't post it. " + e.message, true); }
+  if (S.annForm) S.annForm.busy = false;
+  render();
+}
 function churchForm(f){
+  const teams = sendableTeams();
   return `<section class="panel cform">
     <label>Title<input type="text" data-field="title" value="${esc(f.title || "")}" placeholder="Event title" maxlength="120"></label>
     <label>Date<input type="date" data-field="date" value="${esc(f.date || "")}"></label>
+    ${f.mode === "add" && teams.length ? `<span class="hint" style="font-weight:600">Send to</span>
+    <div class="chiprow">${teams.map(t => `<button type="button" class="chipcheck" data-act="church-target" data-k="${t.key}" aria-pressed="${f.targets.includes(t.key)}">${esc(t.name)}</button>`).join("")}</div>` : ""}
     <div class="cform-acts"><button class="btn" data-act="church-cancel" ${S.cal.busy ? "disabled" : ""}>Cancel</button>
       <button class="btn primary" data-act="church-save" ${S.cal.busy ? "disabled" : ""}>${S.cal.busy ? "Saving…" : "Save"}</button></div></section>`;
 }
@@ -1092,56 +1093,6 @@ function viewProfile(){
     ${S.hideInstall ? "" : installGuide()}`;
 }
 
-function draftRow(d){
-  const kindLabel = (DRAFT_KINDS.find(k => k.key === d.kind) || {}).label || d.kind;
-  const snippet = d.kind === "calendar" ? "" : d.kind === "announcement" ? d.body : annText(d.body);
-  const targetsLabel = d.kind === "announcement" ? (d.targets.map(k => teamOf(k)?.name).filter(Boolean).join(", ") || "No team picked yet")
-    : (d.targetDate ? fmtShort(d.targetDate) : "No date picked yet");
-  const busy = S.drafts.busy;
-  return `<div class="draft-row"><div class="draft-head"><b>${esc(d.title || kindLabel)}</b><span class="pill warn">${esc(kindLabel)}</span></div>
-    <small class="muted">${esc(targetsLabel)}</small>
-    ${snippet ? `<p class="draft-snip">${esc(snippet)}</p>` : ""}
-    <div class="draft-acts">
-      <button class="btn" data-act="draft-edit" data-id="${esc(d.id)}" ${busy ? "disabled" : ""}>Edit</button>
-      <button class="btn primary" data-act="draft-push" data-id="${esc(d.id)}" ${busy ? "disabled" : ""}>${busy ? "Working…" : "Push"}</button>
-      <button class="iconbtn sm danger" data-act="draft-delete" data-id="${esc(d.id)}" aria-label="Delete draft" ${busy ? "disabled" : ""}>${ICON.trash}</button>
-    </div></div>`;
-}
-function draftForm(f){
-  const isNotes = f.kind === "production-notes" || f.kind === "worship-notes";
-  const busy = S.drafts.busy;
-  return `<section class="panel cform">
-    <label>Type<select data-field="kind">${DRAFT_KINDS.map(k => `<option value="${k.key}" ${f.kind === k.key ? "selected" : ""}>${esc(k.label)}</option>`).join("")}</select></label>
-    ${f.kind === "announcement" ? `
-      <label>Title (optional)<input type="text" data-field="title" value="${esc(f.title || "")}" maxlength="120" placeholder="Falls back to the first line"></label>
-      <label>Message<textarea data-field="body" maxlength="2000" placeholder="What should the announcement say?">${esc(f.body || "")}</textarea></label>
-      <label>Show Until (optional)<input type="date" data-field="targetDate" value="${esc(f.targetDate || "")}"></label>
-      <span class="hint" style="font-weight:600">Send to</span>
-      <div class="chiprow">${TEAMS.map(t => `<button type="button" class="chipcheck" data-act="draft-target" data-k="${t.key}" aria-pressed="${f.targets.includes(t.key)}">${esc(t.name)}</button>`).join("")}</div>
-    ` : f.kind === "calendar" ? `
-      <label>Title<input type="text" data-field="title" value="${esc(f.title || "")}" maxlength="120" placeholder="Event title"></label>
-      <label>Date<input type="date" data-field="targetDate" value="${esc(f.targetDate || "")}"></label>
-    ` : `
-      <label>${f.kind === "production-notes" ? "Production" : "Worship"} service date<input type="date" data-field="targetDate" value="${esc(f.targetDate || "")}"></label>
-      ${notesToolbar()}
-      <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Notes">${f.body || ""}</div>
-    `}
-    <div class="cform-acts">
-      <button class="btn" data-act="draft-cancel" ${busy ? "disabled" : ""}>Cancel</button>
-      <button class="btn" data-act="draft-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save Draft"}</button>
-      <button class="btn primary" data-act="draft-push-form" ${busy ? "disabled" : ""}>${busy ? "Pushing…" : "Save &amp; Push"}</button>
-    </div></section>`;
-}
-function viewDrafts(){
-  const list = S.drafts.items || [], f = S.drafts.form;
-  return `<div class="sec-head"><h1 class="page">Drafts</h1>${!f ? `<button class="btn primary" data-act="draft-new">${ICON.plus} New Draft</button>` : ""}</div>
-    <p class="hint" style="margin-top:-6px">Draft an announcement, calendar event, or Production/Worship notes here, then push it straight to the right app when it's ready.</p>
-    ${f ? draftForm(f) : ""}
-    ${S.drafts.loading && !list.length ? `<div class="panel pad"><div class="updating"><span class="spinner"></span>Loading drafts…</div></div>`
-      : list.length ? `<section class="panel">${list.map(draftRow).join("")}</section>`
-      : `<div class="panel pad"><div class="empty" style="padding:0">No saved drafts. Start one above.</div></div>`}`;
-}
-
 const SHOW_ANNOUNCEMENTS = false;   // News page built but hidden for now — flip to true to bring the tab back
 const SHOW_GIVING = false;   // Giving page built but hidden for now — flip to true to bring the tab back
 const GIVING_URL = "https://pushpay.com/g/therampchurch";
@@ -1149,7 +1100,6 @@ function tabsList(){
   const tabs = [["home","Home",ICON.home], ...(SHOW_ANNOUNCEMENTS ? [["announcements","News",ICON.bullhorn]] : []),
     ["calendar","Calendar",ICON.cal], ...(SHOW_GIVING ? [["giving","Giving",ICON.heart]] : []),
     ["teams","Teams",ICON.grid]];
-  if (S.me && isEditorOf(CHURCH_CAL)) tabs.push(["drafts","Drafts",ICON.edit]);
   tabs.push(["profile","Profile",ICON.user]);
   return tabs;
 }
@@ -1174,7 +1124,7 @@ function render(){
   if (S.phase !== "ready"){
     let body = "";
     if (S.phase === "boot") body = `<div class="center"><span class="spinner" role="status" aria-label="Loading"></span><p>Opening RCI Serve…</p></div>`;
-    if (S.phase === "signin") body = installGuide() + `<div class="center"><img class="wm wm-light" src="/icons/wordmark.png?v=${APP_VERSION}" alt="RCI Serve"><img class="wm wm-dark" src="/icons/wordmark-dark.png?v=${APP_VERSION}" alt="RCI Serve">
+    if (S.phase === "signin") body = installGuide() || `<div class="center"><img class="wm wm-light" src="/icons/wordmark.png?v=${APP_VERSION}" alt="RCI Serve"><img class="wm wm-dark" src="/icons/wordmark-dark.png?v=${APP_VERSION}" alt="RCI Serve">
       <p>Every RCI team you serve on, in one place. Sign in once with the email your team leader has for you.</p>
       <button class="btn primary big" data-act="signin">Sign in with Microsoft</button>
       <p style="font-size:13px">The sign-in page says Microsoft; that's expected. You may get a one-time code by email.</p></div>`;
@@ -1184,7 +1134,7 @@ function render(){
   }
   const tabsArr = tabsList();
   const body = (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
-    : S.view === "teams" ? viewTeams() : (S.view === "drafts" && tabsArr.some(t => t[0] === "drafts")) ? viewDrafts() : S.view === "profile" ? viewProfile() : viewHome();
+    : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap">${body}</div></main>` + tabs;
@@ -1215,7 +1165,7 @@ function openLightbox(url, alt){
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act;
-  if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} if (S.view === "drafts" && S.drafts.items === null) loadDrafts(); render(); window.scrollTo(0, 0); }
+  if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "signin") API.signIn();
   else if (act === "signout"){ try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
   else if (act === "retry") location.reload();
@@ -1229,20 +1179,22 @@ document.addEventListener("click", async e => {
   else if (act === "month"){ const [y, m] = S.cal.month.split("-").map(Number), d = new Date(y, m - 1 + Number(b.dataset.d), 1); S.cal.month = keyOf(d).slice(0, 7); render(); }
   else if (act === "filter"){ const k = b.dataset.k; S.cal.off.has(k) ? S.cal.off.delete(k) : S.cal.off.add(k); render(); }
   else if (act === "flyer-open"){ if (b.dataset.url) openLightbox(b.dataset.url, b.querySelector("img")?.alt); }
-  else if (act === "church-add"){ S.cal.form = { mode: "add", rowId: null, title: "", date: S.cal.sel || todayKey() }; render(); document.querySelector('[data-field="title"]')?.focus(); }
-  else if (act === "church-edit"){ S.cal.form = { mode: "edit", rowId: b.dataset.id, title: b.dataset.title || "", date: b.dataset.date || S.cal.sel }; render(); document.querySelector('[data-field="title"]')?.focus(); }
+  else if (act === "church-add"){ S.cal.form = { mode: "add", rowId: null, title: "", date: S.cal.sel || todayKey(), targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
+  else if (act === "church-edit"){ S.cal.form = { mode: "edit", rowId: b.dataset.id, title: b.dataset.title || "", date: b.dataset.date || S.cal.sel, targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
   else if (act === "church-cancel"){ S.cal.form = null; render(); }
   else if (act === "church-save") churchSave();
+  else if (act === "church-target"){ const k = b.dataset.k, f = S.cal.form; if (!f) return; const i = f.targets.indexOf(k); i >= 0 ? f.targets.splice(i, 1) : f.targets.push(k); render(); }
   else if (act === "church-delete"){ if (confirm("Remove this from the church calendar?")) churchRemove(b.dataset.id); }
   else if (act === "church-noservice") churchToggleNoService();
-  else if (act === "draft-new"){ S.drafts.form = { id: null, kind: "announcement", title: "", body: "", targetDate: "", targets: [] }; render(); }
-  else if (act === "draft-edit"){ const d = (S.drafts.items || []).find(x => String(x.id) === b.dataset.id); if (d) S.drafts.form = { ...d, targets: [...d.targets] }; render(); setTimeout(() => $("#notes-editor")?.focus(), 0); }
-  else if (act === "draft-cancel"){ S.drafts.form = null; render(); }
-  else if (act === "draft-target"){ const k = b.dataset.k, f = S.drafts.form; if (!f) return; const i = f.targets.indexOf(k); i >= 0 ? f.targets.splice(i, 1) : f.targets.push(k); render(); }
-  else if (act === "draft-save") draftSave(false);
-  else if (act === "draft-push-form") draftSave(true);
-  else if (act === "draft-push") draftPushExisting(b.dataset.id);
-  else if (act === "draft-delete"){ if (confirm("Delete this draft?")) draftDelete(b.dataset.id); }
+  else if (act === "ann-new"){ S.annForm = { title: "", body: "", until: "", targets: [], flyerBlob: null, flyerName: "", busy: false }; render(); }
+  else if (act === "ann-cancel"){ S.annForm = null; render(); }
+  else if (act === "ann-target"){ const k = b.dataset.k, f = S.annForm; if (!f) return; const i = f.targets.indexOf(k); i >= 0 ? f.targets.splice(i, 1) : f.targets.push(k); render(); }
+  else if (act === "ann-flyer-clear"){ if (S.annForm){ S.annForm.flyerBlob = null; S.annForm.flyerName = ""; render(); } }
+  else if (act === "ann-save") annSave();
+  else if (act === "notes-new"){ S.notesForm = { rowId: b.dataset.id, date: b.dataset.date, body: "", targets: [], busy: false }; render(); setTimeout(() => $("#notes-editor")?.focus(), 0); }
+  else if (act === "notes-cancel"){ S.notesForm = null; render(); }
+  else if (act === "notes-target"){ const k = b.dataset.k, f = S.notesForm; if (!f) return; const i = f.targets.indexOf(k); i >= 0 ? f.targets.splice(i, 1) : f.targets.push(k); render(); }
+  else if (act === "notes-save") notesSave();
   else if (act === "fmt"){
     const ed = $("#notes-editor"); if (!ed) return;
     ed.focus();
@@ -1253,10 +1205,9 @@ document.addEventListener("click", async e => {
   }
 });
 document.addEventListener("change", e => {
-  if (e.target.matches('[data-field="kind"]')){
-    const f = S.drafts.form; if (!f) return;
-    f.kind = e.target.value;
-    render();
+  if (e.target.matches('[data-field="ann-flyer"]')){
+    const f = S.annForm, file = e.target.files && e.target.files[0]; if (!f || !file) return;
+    f.flyerBlob = file; f.flyerName = file.name; render();
   }
 });
 
@@ -1280,10 +1231,9 @@ async function start(){
     if (!signedIn){ S.phase = "signin"; render(); return; }
     S.me = await API.me();
     const c = readCache();
-    if (c && c.me.emails.some(x => S.me.emails.includes(x))){ S.teams = c.teams; S.church = { items: c.church || [], error: "" }; S.phase = "ready"; render(); if (S.view === "drafts" && isEditorOf(CHURCH_CAL)) loadDrafts(); }   // show the saved picture right away
+    if (c && c.me.emails.some(x => S.me.emails.includes(x))){ S.teams = c.teams; S.church = { items: c.church || [], error: "" }; S.phase = "ready"; render(); }   // show the saved picture right away
     API.photo().then(p => { S.photo = p; render(); });
     await loadAll();
-    if (S.view === "drafts" && S.drafts.items === null && isEditorOf(CHURCH_CAL)) loadDrafts();
   } catch(e){
     console.error(e);
     if (S.phase === "ready") return;
