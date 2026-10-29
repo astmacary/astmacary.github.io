@@ -92,7 +92,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .tool{border:1px solid var(--line);background:var(--surface-2);color:var(--fg);border-radius:8px;padding:6px 12px;font-size:14px;font-weight:600;min-width:44px}
 .tool.swatch{width:30px;height:30px;min-width:30px;padding:0;border-radius:50%}
 .tool.swatch.reset{background:var(--surface-2);font-weight:700;color:var(--muted)}
-.notes-editor{min-height:160px;outline:none;border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;line-height:1.55}
+.notes-editor{min-height:160px;outline:none;border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;line-height:1.55;font-size:16px}
 .notes-editor:focus{box-shadow:0 0 0 2px var(--accent)}
 .notes p,.notes div{margin:0 0 .5em}
 .notes ul,.notes ol{padding-left:1.3em}
@@ -244,7 +244,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "13";   // bump together with CACHE in sw.js
+const APP_VERSION = "14";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -515,13 +515,20 @@ const API = {
     const cols = (await this.g(`${base}/${listId}/columns?$select=name,displayName,dateTime,hidden,readOnly`)).value || [];
     const dateCol = cols.find(c => c.dateTime && !c.hidden && !c.readOnly) || cols.find(c => c.dateTime);
     if (!dateCol) throw new Error("Church Calendar: couldn't find a date column");
-    return (this._churchMeta = { base, listId, dateCol: dateCol.name });
+    const hasNotes = cols.some(c => c.name === "Notes");
+    return (this._churchMeta = { base, listId, dateCol: dateCol.name, hasNotes });
   },
   async churchEvents(){
-    const { base, listId, dateCol } = await this.churchMeta();
-    const rows = await this.all(`${base}/${listId}/items?$expand=fields($select=Title,${dateCol})&$top=500`);
-    return rows.map(r => ({ id: "church-" + r.id, rowId: r.id, date: spDate(r.fields[dateCol]), title: r.fields.Title || "" }))
+    const { base, listId, dateCol, hasNotes } = await this.churchMeta();
+    const select = `Title,${dateCol}` + (hasNotes ? ",Notes" : "");
+    const rows = await this.all(`${base}/${listId}/items?$expand=fields($select=${select})&$top=500`);
+    return rows.map(r => ({ id: "church-" + r.id, rowId: r.id, date: spDate(r.fields[dateCol]), title: r.fields.Title || "", notes: r.fields.Notes || "" }))
       .filter(e => e.date);
+  },
+  async churchSaveNotes(rowId, html){
+    const { base, listId, hasNotes } = await this.churchMeta();
+    if (!hasNotes) throw new Error('The Church Calendar list needs a "Notes" (multiple lines of text) column added in SharePoint before notes can be saved on it.');
+    await this.g(`${base}/${listId}/items/${rowId}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ Notes: html }) });
   },
   async churchCreate(title, date){
     const { base, listId, dateCol } = await this.churchMeta();
@@ -729,7 +736,7 @@ function demoTeams(){
    ============================================================ */
 const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams: {}, church: { items: [], error: "" }, loading: false, loadedAt: 0,
             busy: new Set(), cal: { month: null, sel: null, off: new Set(), form: null, busy: false }, hideInstall: false,
-            annEdit: false, annDraft: null, annConfirm: null, notesForm: null };
+            annEdit: false, annDraft: null, annConfirm: null, annOff: new Set(), notesForm: null };
 /* Teams this signed-in person can "Send to": only the ones they actually admin. */
 const sendableTeams = () => TEAMS.filter(isEditorOf);
 const NOTES_TARGETS = [{ key: "production-notes", label: "Production", team: () => TEAMS.find(t => t.key === "productions") },
@@ -930,12 +937,12 @@ function itemRow(i, showDate=true){
 function churchRow(i, editable){
   const noService = lc(i.title) === "no service";
   const style = noService ? `--tl:var(--stop);--td:var(--stop)` : tvars(CHURCH_CAL);
-  const canNotes = editable && !noService && sendableNotesTargets().length;
+  const canNotes = editable && !noService;
   return `<div class="row team" style="${style}"><span class="bar"></span>
     ${noService ? `<span style="display:grid;place-items:center;width:28px;height:28px;color:var(--stop);flex:none">${ICON.ban}</span>` : ""}
-    <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small></div>
+    <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small>${i.notes ? `<p class="ann-text" style="margin-top:4px">${esc(annText(i.notes))}</p>` : ""}</div>
     ${editable ? `<div class="row-acts">
-      ${canNotes ? `<button class="iconbtn sm" data-act="notes-new" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" aria-label="Service Notes">${ICON.notes}</button>` : ""}
+      ${canNotes ? `<button class="iconbtn sm${i.notes ? " edit-on" : ""}" data-act="notes-new" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" aria-label="Service Notes">${ICON.notes}</button>` : ""}
       <button class="iconbtn sm" data-act="church-edit" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" data-title="${esc(i.title)}" aria-label="Edit">${ICON.edit}</button>
       <button class="iconbtn sm" data-act="church-delete" data-id="${esc(i.rowId)}" aria-label="Delete">${ICON.trash}</button></div>` : ""}</div>`;
 }
@@ -943,30 +950,32 @@ function notesForm(f){
   const targets = sendableNotesTargets(), busy = f.busy;
   return `<section class="panel cform">
     <b>Service Notes &middot; ${esc(fmtShort(f.date))}</b>
+    <p class="hint" style="margin:0">Always stays on this Church calendar event.</p>
     ${notesToolbar()}
     <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Service Notes">${f.body || ""}</div>
-    <span class="hint" style="font-weight:600">Send to</span>
-    <div class="chiprow">${targets.map(n => `<button type="button" class="chipcheck" data-act="notes-target" data-k="${n.key}" aria-pressed="${f.targets.includes(n.key)}">${esc(n.label)}</button>`).join("")}</div>
+    ${targets.length ? `<span class="hint" style="font-weight:600">Also send to <span class="hint" style="font-weight:400">(optional)</span></span>
+    <div class="chiprow">${targets.map(n => `<button type="button" class="chipcheck" data-act="notes-target" data-k="${n.key}" aria-pressed="${f.targets.includes(n.key)}">${esc(n.label)}</button>`).join("")}</div>` : ""}
     <div class="cform-acts">
       <button class="btn" data-act="notes-cancel" ${busy ? "disabled" : ""}>Cancel</button>
-      <button class="btn primary" data-act="notes-save" ${busy ? "disabled" : ""}>${busy ? "Sending…" : "Send"}</button>
+      <button class="btn primary" data-act="notes-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save"}</button>
     </div></section>`;
 }
 async function notesSave(){
   const f = S.notesForm; if (!f || f.busy) return;
   f.body = cleanHtml($("#notes-editor")?.innerHTML || "").trim();
   if (!f.body){ toast("Write the notes first.", true); return; }
-  if (!f.targets.length){ toast("Pick at least one place to send it.", true); return; }
   f.busy = true; render();
   try {
+    if (!DEMO) await API.churchSaveNotes(f.rowId, f.body);
+    const row = (S.church.items || []).find(x => String(x.rowId) === String(f.rowId)); if (row) row.notes = f.body;
     for (const k of f.targets){
       const n = NOTES_TARGETS.find(x => x.key === k); if (!n || !isEditorOf(n.team())) continue;
       if (k === "production-notes") await API.pushProductionNotes(f.date, f.body);
       else if (k === "worship-notes") await API.pushWorshipNotes(f.date, f.body);
     }
-    toast("Notes sent");
+    toast(f.targets.length ? "Notes saved and sent" : "Notes saved");
     S.notesForm = null;
-  } catch(e){ toast("Couldn't send it. " + e.message, true); }
+  } catch(e){ toast("Couldn't save it. " + e.message, true); }
   if (S.notesForm) S.notesForm.busy = false;
   render();
 }
@@ -990,8 +999,9 @@ function viewHome(){
   }
   out += `<section class="sec"><h2>Your Teams</h2><div class="tiles">${teams.map(teamTile).join("")}</div></section>`;
   if (sendableTeams().length){
-    const anns = myAdminAnnouncements();
+    const annTeams = sendableTeams(), anns = myAdminAnnouncements().filter(a => !S.annOff.has(a.team));
     out += `<section class="sec"><div class="sec-head"><h2>Announcements</h2>${annEditBtn()}</div>
+      ${annTeams.length > 1 ? `<div class="chips" role="group" aria-label="Show announcements">${annTeams.map(t => `<button class="chip team${S.annOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="ann-filter" data-k="${t.key}" aria-pressed="${!S.annOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
       ${anns.length ? `<div class="list">${anns.map(a => annCard(a, false)).join("")}</div>` : `<div class="empty">No announcements yet.</div>`}
       ${S.annEdit ? `<div class="panel pad" style="margin-top:10px">${annForm()}</div>` : ""}</section>`;
   }
@@ -1043,7 +1053,7 @@ function viewCalendar(){
 function myAdminAnnouncements(){
   const t = todayKey();
   return sendableTeams().flatMap(team => (S.teams[team.key]?.announcements || [])
-    .filter(a => a.text && (!a.until || a.until >= t)).map(a => ({ ...a, team: team.key })))
+    .filter(a => a.text && (!a.until || a.until > t)).map(a => ({ ...a, team: team.key })))
     .sort((a, b) => (a.until || "9999-12-31").localeCompare(b.until || "9999-12-31") || a.team.localeCompare(b.team) || a.id - b.id);
 }
 function annEditBtn(){
@@ -1099,7 +1109,7 @@ function churchForm(f){
 function myAnnouncements(){
   const t = todayKey();
   return myTeams().flatMap(team => (S.teams[team.key]?.announcements || [])
-    .filter(a => a.text && (!a.until || a.until >= t)).map(a => ({ ...a, team: team.key })))
+    .filter(a => a.text && (!a.until || a.until > t)).map(a => ({ ...a, team: team.key })))
     .sort((a, b) => (a.until || "9999-12-31").localeCompare(b.until || "9999-12-31") || a.team.localeCompare(b.team) || a.id - b.id);
 }
 /* "NEW" tag: announcements added since this person last opened Announcements on this device. */
@@ -1240,6 +1250,7 @@ document.addEventListener("click", async e => {
   else if (act === "day"){ S.cal.sel = b.dataset.k; render(); }
   else if (act === "month"){ const [y, m] = S.cal.month.split("-").map(Number), d = new Date(y, m - 1 + Number(b.dataset.d), 1); S.cal.month = keyOf(d).slice(0, 7); render(); }
   else if (act === "filter"){ const k = b.dataset.k; S.cal.off.has(k) ? S.cal.off.delete(k) : S.cal.off.add(k); render(); }
+  else if (act === "ann-filter"){ const k = b.dataset.k; S.annOff.has(k) ? S.annOff.delete(k) : S.annOff.add(k); render(); }
   else if (act === "flyer-open"){ if (b.dataset.url) openLightbox(b.dataset.url, b.querySelector("img")?.alt); }
   else if (act === "church-add"){ S.cal.form = { mode: "add", rowId: null, title: "", date: S.cal.sel || todayKey(), targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
   else if (act === "church-edit"){ S.cal.form = { mode: "edit", rowId: b.dataset.id, title: b.dataset.title || "", date: b.dataset.date || S.cal.sel, targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
@@ -1276,7 +1287,11 @@ document.addEventListener("click", async e => {
     S.annConfirm = null; render();
   }
   else if (act === "ann-target"){ const k = b.dataset.k; annDraftSave(); const f = S.annDraft; f.targets = f.targets || []; const i = f.targets.indexOf(k); i >= 0 ? f.targets.splice(i, 1) : f.targets.push(k); render(); }
-  else if (act === "notes-new"){ S.notesForm = { rowId: b.dataset.id, date: b.dataset.date, body: "", targets: [], busy: false }; render(); setTimeout(() => $("#notes-editor")?.focus(), 0); }
+  else if (act === "notes-new"){
+    const row = (S.church.items || []).find(x => String(x.rowId) === b.dataset.id);
+    S.notesForm = { rowId: b.dataset.id, date: b.dataset.date, body: row?.notes || "", targets: [], busy: false };
+    render(); setTimeout(() => $("#notes-editor")?.focus(), 0);
+  }
   else if (act === "notes-cancel"){ S.notesForm = null; render(); }
   else if (act === "notes-target"){
     const k = b.dataset.k, f = S.notesForm; if (!f) return;
