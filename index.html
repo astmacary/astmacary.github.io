@@ -159,7 +159,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .cue .times{display:flex;gap:2px 14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:2px}
 .cue .acts{display:flex;flex-direction:row;gap:6px;flex-wrap:nowrap;overflow-x:auto;margin-top:6px}
 .cue .acts .btn{min-height:26px;padding:0 10px;font-size:11.5px;flex:1 1 0;white-space:nowrap}
-.cue .acts.single .btn{flex:0 0 auto}
+.cue .acts.single .btn{flex:0 0 auto;min-height:32px;padding:7px 14px;font-size:14px}
 .day-sep{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 2px;padding-left:2px}
 .day-sep:first-child{margin-top:0}
 .pill.today-pill{background:var(--accent);color:var(--accent-ink);font-weight:800}
@@ -259,7 +259,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "21";   // bump together with CACHE in sw.js
+const APP_VERSION = "22";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1024,7 +1024,7 @@ function weekChurchCue(e){
     <div class="cue-body">
       <div class="cue-top"><span class="role">${esc(e.title || "Event")}</span></div>
       <div class="tlabel-row">Church</div>
-      ${!noService && isEditorOf(CHURCH_CAL) ? `<div class="acts single"><button class="btn" data-act="notes-new" data-id="${esc(e.rowId)}" data-date="${esc(e.date)}">Notes</button></div>` : ""}
+      ${!noService && isAnyAdmin() ? `<div class="acts single"><button class="btn" data-act="notes-new" data-id="${esc(e.rowId)}" data-date="${esc(e.date)}">Notes</button></div>` : ""}
     </div></article>`;
 }
 /* A church-wide calendar event — just a title and date, no role/status, and nothing to link into.
@@ -1415,7 +1415,10 @@ document.addEventListener("click", async e => {
   else if (act === "notes-new"){
     const row = (S.church.items || []).find(x => String(x.rowId) === b.dataset.id);
     S.notesForm = { rowId: b.dataset.id, date: b.dataset.date, body: row?.notes || "", targets: [], busy: false };
-    render(); setTimeout(() => $("#notes-editor")?.focus(), 0);
+    // The notes editor lives on the Calendar page's day panel, so jump there and select this day
+    // (needed when Notes is tapped from Home's Next 7 Days, not just from the Calendar page itself).
+    if (b.dataset.date){ S.view = "calendar"; S.cal.sel = b.dataset.date; S.cal.month = b.dataset.date.slice(0, 7); try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} }
+    render(); window.scrollTo(0, 0); setTimeout(() => $("#notes-editor")?.focus(), 0);
   }
   else if (act === "notes-cancel"){ S.notesForm = null; render(); }
   else if (act === "notes-target"){
