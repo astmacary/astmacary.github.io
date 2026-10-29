@@ -2,7 +2,7 @@
 // Registered at the top of the site ("/"), but it only answers for RCI Serve's own files.
 // The team apps (/rci-productions/, /rci-security/, /rci-ushers/, /rci-worship-arts/) have their own
 // service workers and are never touched here. Always asks for the newest copy first; the saved copy is only used offline.
-const CACHE = "rci-serve-v27";
+const CACHE = "rci-serve-v28";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest",
   "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png",
   "/icons/apple-touch-icon.png", "/icons/favicon.png", "/icons/wordmark.png", "/icons/wordmark-dark.png"];
