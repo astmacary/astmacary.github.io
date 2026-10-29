@@ -84,7 +84,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .cform input{height:42px;padding:0 12px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:15px;font-family:var(--body)}
 .cform select{height:42px;padding:0 10px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:15px;font-family:var(--body)}
 .cform textarea{min-height:120px;padding:10px 12px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:15px;font-family:var(--body);resize:vertical}
-.cform .cform-acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.cform .cform-acts,.cform-acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .chiprow{display:flex;flex-wrap:wrap;gap:8px}
 .chipcheck{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border-radius:17px;border:1px solid var(--line);background:var(--surface);font-weight:600;font-size:12.5px;color:var(--fg)}
 .chipcheck[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
@@ -259,7 +259,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "22";   // bump together with CACHE in sw.js
+const APP_VERSION = "23";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -805,7 +805,8 @@ function saveFilter(key, set){
 }
 const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams: {}, church: { items: [], anns: [], error: "" }, loading: false, loadedAt: 0,
             busy: new Set(), cal: { month: null, sel: null, off: loadFilter("cal"), form: null, busy: false }, hideInstall: false,
-            annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"), notesForm: null };
+            annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"),
+            notesPage: null, notesBack: "home" };
 /* Teams this signed-in person can "Send to": only the ones they actually admin. */
 const sendableTeams = () => TEAMS.filter(isEditorOf);
 const NOTES_TARGETS = [{ key: "production-notes", label: "Production", team: () => TEAMS.find(t => t.key === "productions") },
@@ -1024,54 +1025,67 @@ function weekChurchCue(e){
     <div class="cue-body">
       <div class="cue-top"><span class="role">${esc(e.title || "Event")}</span></div>
       <div class="tlabel-row">Church</div>
-      ${!noService && isAnyAdmin() ? `<div class="acts single"><button class="btn" data-act="notes-new" data-id="${esc(e.rowId)}" data-date="${esc(e.date)}">Notes</button></div>` : ""}
+      ${!noService && isAnyAdmin() ? `<div class="acts single"><button class="btn" data-act="notes" data-id="${esc(e.rowId)}" data-date="${esc(e.date)}">Notes</button></div>` : ""}
     </div></article>`;
 }
 /* A church-wide calendar event — just a title and date, no role/status, and nothing to link into.
    "No Service" entries (added via the red-X toggle) get the stop color and a ban icon instead of the usual gold bar. */
-function churchRow(i, editable){
+function churchRow(i, editable, canViewNotes = editable){
   const noService = lc(i.title) === "no service";
   const style = noService ? `--tl:var(--stop);--td:var(--stop)` : tvars(CHURCH_CAL);
-  const canNotes = editable && !noService;
+  const canNotes = canViewNotes && !noService;
   return `<div class="row team" style="${style}"><span class="bar"></span>
     ${noService ? `<span style="display:grid;place-items:center;width:28px;height:28px;color:var(--stop);flex:none">${ICON.ban}</span>` : ""}
-    <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small>${editable && i.notes ? `<p class="ann-text" style="margin-top:4px">${esc(annText(i.notes))}</p>` : ""}</div>
-    ${editable ? `<div class="row-acts">
-      ${canNotes ? `<button class="iconbtn sm${i.notes ? " edit-on" : ""}" data-act="notes-new" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" aria-label="Service Notes">${ICON.notes}</button>` : ""}
-      <button class="iconbtn sm" data-act="church-edit" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" data-title="${esc(i.title)}" aria-label="Edit">${ICON.edit}</button>
-      <button class="iconbtn sm" data-act="church-delete" data-id="${esc(i.rowId)}" aria-label="Delete">${ICON.trash}</button></div>` : ""}</div>`;
+    <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small></div>
+    ${editable || canNotes ? `<div class="row-acts">
+      ${canNotes ? `<button class="iconbtn sm${i.notes ? " edit-on" : ""}" data-act="notes" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" aria-label="Service Notes">${ICON.notes}</button>` : ""}
+      ${editable ? `<button class="iconbtn sm" data-act="church-edit" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" data-title="${esc(i.title)}" aria-label="Edit">${ICON.edit}</button>
+      <button class="iconbtn sm" data-act="church-delete" data-id="${esc(i.rowId)}" aria-label="Delete">${ICON.trash}</button>` : ""}</div>` : ""}</div>`;
 }
-function notesForm(f){
-  const targets = sendableNotesTargets(), busy = f.busy;
-  return `<section class="panel cform">
-    <b>Service Notes &middot; ${esc(fmtShort(f.date))}</b>
-    <p class="hint" style="margin:0">Always stays on this Church calendar event.</p>
-    ${notesToolbar()}
-    <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Service Notes">${f.body || ""}</div>
-    ${targets.length ? `<span class="hint" style="font-weight:600">Also send to <span class="hint" style="font-weight:400">(optional)</span></span>
-    <div class="chiprow">${targets.map(n => `<button type="button" class="chipcheck" data-act="notes-target" data-k="${n.key}" aria-pressed="${f.targets.includes(n.key)}">${esc(n.label)}</button>`).join("")}</div>` : ""}
-    <div class="cform-acts">
-      <button class="btn" data-act="notes-cancel" ${busy ? "disabled" : ""}>Cancel</button>
-      <button class="btn primary" data-act="notes-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save"}</button>
-    </div></section>`;
+/* A dedicated Service Notes page — same role as Production's own Notes page: anyone can view it (if they can
+   see the church event at all), only a Church Calendar editor can edit/save it. Reached via S.view === "notes". */
+function viewServiceNotes(){
+  const p = S.notesPage; if (!p) return `<div class="empty">No notes selected.</div>`;
+  const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId));
+  const canEdit = isEditorOf(CHURCH_CAL);
+  const editing = canEdit && p.editing;
+  const body = editing ? (p.body ?? (row?.notes || "")) : (row?.notes || "");
+  const targets = sendableNotesTargets(), busy = p.busy;
+  const head = `<button class="btn" data-act="notes-back" style="margin-bottom:10px">${ICON.prev}Back</button>
+    <div class="sec-head"><h1 class="page" style="font-size:22px">Service Notes</h1>${canEdit ? (editing
+        ? `<button class="iconbtn edit-on" data-act="notes-cancel-edit" aria-label="Stop editing" title="Stop editing">${ICON.check}</button>`
+        : `<button class="iconbtn" data-act="notes-edit" aria-label="Edit Service Notes" title="Edit Service Notes">${ICON.edit}</button>`) : ""}</div>
+    <p class="hint" style="margin:0 0 10px">${esc(fmtDay(p.date))}</p>`;
+  if (editing){
+    return `${head}${notesToolbar()}
+      <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Service Notes">${body || ""}</div>
+      ${targets.length ? `<span class="hint" style="font-weight:600">Also send to <span class="hint" style="font-weight:400">(optional)</span></span>
+      <div class="chiprow">${targets.map(n => `<button type="button" class="chipcheck" data-act="notes-target" data-k="${n.key}" aria-pressed="${(p.targets || []).includes(n.key)}">${esc(n.label)}</button>`).join("")}</div>` : ""}
+      <div class="cform-acts">
+        <button class="btn" data-act="notes-cancel-edit" ${busy ? "disabled" : ""}>Cancel</button>
+        <button class="btn primary" data-act="notes-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save"}</button>
+      </div>`;
+  }
+  const empty = canEdit ? "No Service Notes for this date yet. Tap the pencil to add them." : "No Service Notes for this date yet.";
+  return `${head}${body ? `<div class="panel notes">${cleanHtml(body)}</div>` : `<div class="empty">${esc(empty)}</div>`}`;
 }
 async function notesSave(){
-  const f = S.notesForm; if (!f || f.busy) return;
-  f.body = cleanHtml($("#notes-editor")?.innerHTML || "").trim();
-  if (!f.body){ toast("Write the notes first.", true); return; }
-  f.busy = true; render();
+  const p = S.notesPage; if (!p || p.busy) return;
+  const text = cleanHtml($("#notes-editor")?.innerHTML || "").trim();
+  if (!text){ toast("Write the notes first.", true); return; }
+  p.body = text; p.busy = true; render();
   try {
-    if (!DEMO) await API.churchSaveNotes(f.rowId, f.body);
-    const row = (S.church.items || []).find(x => String(x.rowId) === String(f.rowId)); if (row) row.notes = f.body;
-    for (const k of f.targets){
+    if (!DEMO) await API.churchSaveNotes(p.rowId, text);
+    const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId)); if (row) row.notes = text;
+    for (const k of (p.targets || [])){
       const n = NOTES_TARGETS.find(x => x.key === k); if (!n || !isEditorOf(n.team())) continue;
-      if (k === "production-notes") await API.pushProductionNotes(f.date, f.body);
-      else if (k === "worship-notes") await API.pushWorshipNotes(f.date, f.body);
+      if (k === "production-notes") await API.pushProductionNotes(p.date, text);
+      else if (k === "worship-notes") await API.pushWorshipNotes(p.date, text);
     }
-    toast(f.targets.length ? "Notes saved and sent" : "Notes saved");
-    S.notesForm = null;
+    toast((p.targets || []).length ? "Notes saved and sent" : "Notes saved");
+    p.editing = false; p.targets = []; p.body = null;
   } catch(e){ toast("Couldn't save it. " + e.message, true); }
-  if (S.notesForm) S.notesForm.busy = false;
+  if (S.notesPage) S.notesPage.busy = false;
   render();
 }
 function overlaps(){
@@ -1131,7 +1145,7 @@ function viewCalendar(){
   const m = S.cal.month || (S.cal.sel || todayKey()).slice(0, 7);
   S.cal.month = m;
   const [y, mo] = m.split("-").map(Number), first = new Date(y, mo-1, 1), daysIn = new Date(y, mo, 0).getDate();
-  const churchItems = off.has("church") ? [] : (S.church.items || []).map(e => ({ team: "church", date: e.date, title: e.title, id: e.id, rowId: e.rowId }));
+  const churchItems = off.has("church") ? [] : (S.church.items || []).map(e => ({ team: "church", date: e.date, title: e.title, id: e.id, rowId: e.rowId, notes: e.notes }));
   const items = myItems().filter(i => !off.has(i.team)).concat(churchItems);
   const by = {}; items.forEach(i => { (by[i.date] = by[i.date] || []).push(i); });
   let cells = "";
@@ -1154,8 +1168,7 @@ function viewCalendar(){
         <button class="iconbtn sm" data-act="church-add" aria-label="Add a church event">${ICON.plus}</button>
         <button class="iconbtn sm danger" data-act="church-noservice" aria-label="Mark no service this day">${ICON.ban}</button></div>` : ""}</div>
       ${f ? churchForm(f) : ""}
-      ${S.notesForm ? notesForm(S.notesForm) : ""}
-      <div class="panel">${dayList.length ? dayList.map(i => i.team === "church" ? churchRow(i, canEditChurch) : itemRow(i, false)).join("") : `<div class="empty">No events scheduled.</div>`}</div>
+      <div class="panel">${dayList.length ? dayList.map(i => i.team === "church" ? churchRow(i, canEditChurch, isAnyAdmin()) : itemRow(i, false)).join("") : `<div class="empty">No events scheduled.</div>`}</div>
       <p class="hint">${canEditChurch ? "Shows your own assignments on every team, plus the Church calendar." : "Shows your own assignments on every team."} Each team's Calendar shows the whole team.</p></section>`;
 }
 /* Everyone sees announcements from the teams they're ON, plus Church (it's for everyone). Only admins can edit, and
@@ -1317,7 +1330,7 @@ function render(){
     return;
   }
   const tabsArr = tabsList();
-  const body = (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
+  const body = S.view === "notes" ? viewServiceNotes() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
     : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
@@ -1412,19 +1425,25 @@ document.addEventListener("click", async e => {
     S.annConfirm = null; render();
   }
   else if (act === "ann-target"){ const k = b.dataset.k; annDraftSave(); const f = S.annDraft; f.targets = f.targets || []; const i = f.targets.indexOf(k); i >= 0 ? f.targets.splice(i, 1) : f.targets.push(k); render(); }
-  else if (act === "notes-new"){
-    const row = (S.church.items || []).find(x => String(x.rowId) === b.dataset.id);
-    S.notesForm = { rowId: b.dataset.id, date: b.dataset.date, body: row?.notes || "", targets: [], busy: false };
-    // The notes editor lives on the Calendar page's day panel, so jump there and select this day
-    // (needed when Notes is tapped from Home's Next 7 Days, not just from the Calendar page itself).
-    if (b.dataset.date){ S.view = "calendar"; S.cal.sel = b.dataset.date; S.cal.month = b.dataset.date.slice(0, 7); try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} }
-    render(); window.scrollTo(0, 0); setTimeout(() => $("#notes-editor")?.focus(), 0);
+  else if (act === "notes" || act === "notes-new"){
+    // Opens the dedicated Service Notes page (same role as each team app's own Notes page) —
+    // reached from Next 7 Days or from the Calendar day panel's notes icon.
+    S.notesBack = S.view === "notes" ? S.notesBack : S.view;
+    S.notesPage = { rowId: b.dataset.id, date: b.dataset.date, editing: false, body: null, targets: [], busy: false };
+    S.view = "notes"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){}
+    render(); window.scrollTo(0, 0);
   }
-  else if (act === "notes-cancel"){ S.notesForm = null; render(); }
+  else if (act === "notes-back"){ S.view = S.notesBack || "home"; S.notesPage = null; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
+  else if (act === "notes-edit"){
+    const p = S.notesPage; if (!p) return;
+    const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId));
+    p.editing = true; p.body = row?.notes || ""; p.targets = []; render(); setTimeout(() => $("#notes-editor")?.focus(), 0);
+  }
+  else if (act === "notes-cancel-edit"){ const p = S.notesPage; if (p) p.editing = false; render(); }
   else if (act === "notes-target"){
-    const k = b.dataset.k, f = S.notesForm; if (!f) return;
-    f.body = cleanHtml($("#notes-editor")?.innerHTML || "");   // keep what was typed — a re-render would otherwise rebuild the editor from the old f.body
-    const i = f.targets.indexOf(k); i >= 0 ? f.targets.splice(i, 1) : f.targets.push(k); render();
+    const k = b.dataset.k, p = S.notesPage; if (!p) return;
+    p.body = cleanHtml($("#notes-editor")?.innerHTML || "");   // keep what was typed — a re-render would otherwise rebuild the editor from the old body
+    const i = (p.targets = p.targets || []).indexOf(k); i >= 0 ? p.targets.splice(i, 1) : p.targets.push(k); render();
   }
   else if (act === "notes-save") notesSave();
   else if (act === "fmt"){
