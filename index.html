@@ -83,6 +83,8 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .iconbtn.sm svg{width:16px;height:16px}
 .iconbtn.danger{border-color:var(--stop);color:var(--stop)}
 .row-acts{display:flex;gap:6px;flex:none}
+.row-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none}
+.row-right .pill{font-size:9px;padding:2px 6px}
 .row .row-acts .iconbtn{border:0;background:var(--surface-2);color:var(--muted)}
 .cform{display:flex;flex-direction:column;gap:10px;padding:14px}
 .cform label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--muted)}
@@ -252,7 +254,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "25";   // bump together with CACHE in sw.js
+const APP_VERSION = "26";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -394,10 +396,26 @@ function cleanHtml(raw){
   const root = doc.body.firstChild; walk(root);
   return root.innerHTML;
 }
+/* Pasted text (from Word, Outlook, Notes, etc.) almost always carries an explicit near-black or near-white
+   color left over from the source app, not a deliberate choice — left in place, it can go invisible against
+   the editor's own background when the theme is switched. Treat those as "no color set" so the text instead
+   inherits the editor's normal (theme-aware) text color; real color choices (the swatch palette, etc.) stay. */
+function isNeutralColor(c){
+  let r, g, b;
+  if (c[0] === "#"){
+    let h = c.slice(1); if (h.length === 3) h = h.split("").map(ch => ch + ch).join("");
+    r = parseInt(h.slice(0,2),16); g = parseInt(h.slice(2,4),16); b = parseInt(h.slice(4,6),16);
+  } else {
+    const m = c.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i); if (!m) return false;
+    r = +m[1]; g = +m[2]; b = +m[3];
+  }
+  if ([r,g,b].some(v => Number.isNaN(v))) return false;
+  return (r < 40 && g < 40 && b < 40) || (r > 215 && g > 215 && b > 215);
+}
 function safeStyle(n, style, renameTo){
   const out = [];
   const color = style.match(/(?:^|;)\s*color\s*:\s*(#[0-9a-fA-F]{3,8}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\))\s*(?:;|$)/i);
-  if (color) out.push(`color:${color[1]}`);
+  if (color && !isNeutralColor(color[1])) out.push(`color:${color[1]}`);
   const margin = style.match(/(?:^|;)\s*margin(-left)?\s*:\s*((?:\d{1,4}(?:\.\d+)?(?:px|em)?\s*){1,4})(?:;|$)/i);
   if (margin) out.push(`margin${margin[1] || ""}:${margin[2].trim()}`);
   if (out.length){
@@ -991,27 +1009,33 @@ function reqRow(i){
     <div class="acts"><button class="btn accept" data-act="accept" data-id="${esc(i.id)}" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Accept"}</button>
     <a class="btn decline" href="${t.path}" aria-label="Decline in ${esc(t.full)}">Decline</a></div></div>`;
 }
+/* Which per-team buttons a team's row shows, matching that app's own Notes/Team/Decline capabilities —
+   used on both the Calendar page's day panel and the Next 7 Days list. */
+const TEAM_WEEK_ACTS = { productions: ["notes", "team", "decline"], worship: ["notes", "team", "decline"], ushers: ["team", "decline"], security: ["team", "decline"] };
+const statusPill = (i, today) => i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : today ? `<span class="pill today">TODAY</span>` : `<span class="pill ok">CONFIRMED</span>`;
+function teamActs(t){
+  const acts = TEAM_WEEK_ACTS[t.key] || ["team", "decline"];
+  return `<div class="row-acts">
+    ${acts.includes("notes") ? `<a class="iconbtn sm" href="${t.path}" aria-label="${esc(t.name)} Notes" title="Notes">${ICON.notes}</a>` : ""}
+    ${acts.includes("team") ? `<a class="iconbtn sm" href="${t.path}" aria-label="${esc(t.name)} Team" title="Team">${ICON.team}</a>` : ""}
+    ${acts.includes("decline") ? `<a class="iconbtn sm" href="${t.path}" aria-label="Decline" title="Decline">${ICON.x}</a>` : ""}
+  </div>`;
+}
+/* Calendar day panel row — bar + info, with the status pill sitting above the Notes/Team/Decline icon
+   buttons on the right (small enough that it doesn't grow the row), linking out to that team's own app. */
 function itemRow(i, showDate=true){
   const t = teamOf(i.team), today = i.date === todayKey();
-  return `<a class="row team" style="${tvars(t)}" href="${t.path}"><span class="bar"></span>
+  return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
     <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${showDate ? esc(fmtShort(i.date)) + " · " : ""}${esc(i.category || "")}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
-    ${i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : today ? `<span class="pill today">TODAY</span>` : `<span class="pill ok">CONFIRMED</span>`}</a>`;
+    <div class="row-right">${statusPill(i, today)}${teamActs(t)}</div></div>`;
 }
-/* Which per-team buttons a Next 7 Days row shows, matching each app's own Next 7 Days capabilities. */
-const TEAM_WEEK_ACTS = { productions: ["notes", "team", "decline"], worship: ["notes", "team", "decline"], ushers: ["team", "decline"], security: ["team", "decline"] };
 /* Next 7 Days row — same row layout as the Calendar page's day panel (bar + info + status pill + icon-button
    row-acts), linking Notes/Team/Decline out to that team's own app since that's where those views live. */
 function weekCue(i){
   const t = teamOf(i.team), today = i.date === todayKey();
-  const acts = TEAM_WEEK_ACTS[t.key] || ["team", "decline"];
   return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
     <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
-    ${i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : today ? `<span class="pill today">TODAY</span>` : `<span class="pill ok">CONFIRMED</span>`}
-    <div class="row-acts">
-      ${acts.includes("notes") ? `<a class="iconbtn sm" href="${t.path}" aria-label="${esc(t.name)} Notes" title="Notes">${ICON.notes}</a>` : ""}
-      ${acts.includes("team") ? `<a class="iconbtn sm" href="${t.path}" aria-label="${esc(t.name)} Team" title="Team">${ICON.team}</a>` : ""}
-      ${acts.includes("decline") ? `<a class="iconbtn sm" href="${t.path}" aria-label="Decline" title="Decline">${ICON.x}</a>` : ""}
-    </div></div>`;
+    <div class="row-right">${statusPill(i, today)}${teamActs(t)}</div></div>`;
 }
 /* A church-wide calendar event — just a title and date, no role/status, and nothing to link into.
    "No Service" entries (added via the red-X toggle) get the stop color and a ban icon instead of the usual gold bar. */
