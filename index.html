@@ -147,18 +147,19 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .ann-tlabel{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t)}
 .ann-title{font-weight:700;font-size:15.5px;line-height:1.3;overflow-wrap:anywhere;margin:0}
 .ann-text{margin:0;white-space:pre-line;color:var(--muted);font-size:14px;line-height:1.45;overflow-wrap:anywhere}
-.cue{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--t);border-radius:var(--r);display:grid;grid-template-columns:64px 1fr;overflow:hidden}
-.cue .when{background:var(--surface-2);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 4px;text-align:center}
-.cue .when .dow{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;opacity:.8}
-.cue .when .day{font-family:var(--display);font-weight:700;font-size:30px;line-height:1}
-.cue .when .mon{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;opacity:.8}
-.cue-body{padding:12px 14px;min-width:0;display:flex;flex-direction:column;gap:6px}
-.cue-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.cue .role{font-weight:700;font-size:16.5px}
-.cue .cat{color:var(--muted);font-size:13.5px}
-.cue .tlabel-row{color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
-.cue .times{display:flex;gap:2px 18px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
-.cue .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.cue{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--t);border-radius:var(--r);display:grid;grid-template-columns:48px 1fr;overflow:hidden;margin-bottom:6px}
+.cue .when{background:var(--surface-2);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 2px;text-align:center}
+.cue .when .dow{font-family:var(--display);font-weight:600;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.8}
+.cue .when .day{font-family:var(--display);font-weight:700;font-size:21px;line-height:1.05}
+.cue .when .mon{font-family:var(--display);font-weight:600;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.8}
+.cue-body{padding:8px 10px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cue-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.cue .role{font-weight:700;font-size:14.5px}
+.cue .cat{color:var(--muted);font-size:12.5px}
+.cue .tlabel-row{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.cue .times{display:flex;gap:2px 14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.cue .acts{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;margin-top:4px}
+.cue .acts .btn{min-height:26px;padding:0 10px;font-size:11.5px;flex:none;white-space:nowrap}
 .day-sep{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 2px;padding-left:2px}
 .day-sep:first-child{margin-top:0}
 .pill.today-pill{background:var(--accent);color:var(--accent-ink);font-weight:800}
@@ -258,7 +259,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "17";   // bump together with CACHE in sw.js
+const APP_VERSION = "18";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -795,9 +796,16 @@ function demoTeams(){
 /* ============================================================
    STATE
    ============================================================ */
+/* Remembers which chips someone turned off, per filter row, across visits (same device/browser). */
+function loadFilter(key){
+  try { return new Set(JSON.parse(localStorage.getItem("rci-serve:filter:" + key) || "[]")); } catch(e){ return new Set(); }
+}
+function saveFilter(key, set){
+  try { localStorage.setItem("rci-serve:filter:" + key, JSON.stringify([...set])); } catch(e){}
+}
 const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams: {}, church: { items: [], anns: [], error: "" }, loading: false, loadedAt: 0,
-            busy: new Set(), cal: { month: null, sel: null, off: new Set(), form: null, busy: false }, hideInstall: false,
-            annEdit: false, annDraft: null, annConfirm: null, annOff: new Set(), weekOff: new Set(), notesForm: null };
+            busy: new Set(), cal: { month: null, sel: null, off: loadFilter("cal"), form: null, busy: false }, hideInstall: false,
+            annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"), notesForm: null };
 /* Teams this signed-in person can "Send to": only the ones they actually admin. */
 const sendableTeams = () => TEAMS.filter(isEditorOf);
 const NOTES_TARGETS = [{ key: "production-notes", label: "Production", team: () => TEAMS.find(t => t.key === "productions") },
@@ -1352,9 +1360,9 @@ document.addEventListener("click", async e => {
   else if (act === "allow-badge"){ try { await Notification.requestPermission(); } catch(_){} updateBadge(); render(); }
   else if (act === "day"){ S.cal.sel = b.dataset.k; render(); }
   else if (act === "month"){ const [y, m] = S.cal.month.split("-").map(Number), d = new Date(y, m - 1 + Number(b.dataset.d), 1); S.cal.month = keyOf(d).slice(0, 7); render(); }
-  else if (act === "filter"){ const k = b.dataset.k; S.cal.off.has(k) ? S.cal.off.delete(k) : S.cal.off.add(k); render(); }
-  else if (act === "ann-filter"){ const k = b.dataset.k; S.annOff.has(k) ? S.annOff.delete(k) : S.annOff.add(k); render(); }
-  else if (act === "week-filter"){ const k = b.dataset.k; S.weekOff.has(k) ? S.weekOff.delete(k) : S.weekOff.add(k); render(); }
+  else if (act === "filter"){ const k = b.dataset.k; S.cal.off.has(k) ? S.cal.off.delete(k) : S.cal.off.add(k); saveFilter("cal", S.cal.off); render(); }
+  else if (act === "ann-filter"){ const k = b.dataset.k; S.annOff.has(k) ? S.annOff.delete(k) : S.annOff.add(k); saveFilter("ann", S.annOff); render(); }
+  else if (act === "week-filter"){ const k = b.dataset.k; S.weekOff.has(k) ? S.weekOff.delete(k) : S.weekOff.add(k); saveFilter("week", S.weekOff); render(); }
   else if (act === "flyer-open"){ if (b.dataset.url) openLightbox(b.dataset.url, b.querySelector("img")?.alt); }
   else if (act === "church-add"){ S.cal.form = { mode: "add", rowId: null, title: "", date: S.cal.sel || todayKey(), targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
   else if (act === "church-edit"){ S.cal.form = { mode: "edit", rowId: b.dataset.id, title: b.dataset.title || "", date: b.dataset.date || S.cal.sel, targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
