@@ -70,6 +70,11 @@ main .wrap{display:flex;flex-direction:column;gap:22px}
 .kicker{font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 h1.greet{font-family:var(--display);font-weight:700;font-size:clamp(30px,8vw,40px);line-height:1.02;margin:2px 0 0;text-wrap:balance}
 h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.02;margin:0;text-transform:uppercase;letter-spacing:.02em}
+.page-h{display:flex;align-items:center;gap:10px}
+.page-h h1{font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:.02em;margin:0;text-wrap:balance}
+.back{background:none;border:none;color:var(--muted);display:flex;align-items:center;gap:4px;padding:6px 8px 6px 0;font-weight:600;font-size:15px}
+.sub{color:var(--muted);margin:4px 0 0}
+.notes-date{margin-top:-12px;font-size:19px;font-weight:600;color:var(--fg)}
 .sec{display:flex;flex-direction:column;gap:10px}
 .sec h2{margin:0;font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
 .sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -92,7 +97,8 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .tool{border:1px solid var(--line);background:var(--surface-2);color:var(--fg);border-radius:8px;padding:6px 12px;font-size:14px;font-weight:600;min-width:44px}
 .tool.swatch{width:30px;height:30px;min-width:30px;padding:0;border-radius:50%}
 .tool.swatch.reset{background:var(--surface-2);font-weight:700;color:var(--muted)}
-.notes-editor{min-height:160px;outline:none;border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;line-height:1.55;font-size:16px}
+.notes-editor{min-height:200px;outline:none;border-color:var(--accent);line-height:1.55;font-size:16px}
+.panel.notes{padding:16px;overflow-x:auto}
 .notes-editor:focus{box-shadow:0 0 0 2px var(--accent)}
 .notes p,.notes div{margin:0 0 .5em}
 .notes ul,.notes ol{padding-left:1.3em}
@@ -259,7 +265,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "23";   // bump together with CACHE in sw.js
+const APP_VERSION = "24";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1051,20 +1057,19 @@ function viewServiceNotes(){
   const editing = canEdit && p.editing;
   const body = editing ? (p.body ?? (row?.notes || "")) : (row?.notes || "");
   const targets = sendableNotesTargets(), busy = p.busy;
-  const head = `<button class="btn" data-act="notes-back" style="margin-bottom:10px">${ICON.prev}Back</button>
-    <div class="sec-head"><h1 class="page" style="font-size:22px">Service Notes</h1>${canEdit ? (editing
-        ? `<button class="iconbtn edit-on" data-act="notes-cancel-edit" aria-label="Stop editing" title="Stop editing">${ICON.check}</button>`
-        : `<button class="iconbtn" data-act="notes-edit" aria-label="Edit Service Notes" title="Edit Service Notes">${ICON.edit}</button>`) : ""}</div>
-    <p class="hint" style="margin:0 0 10px">${esc(fmtDay(p.date))}</p>`;
+  const pencil = canEdit ? (editing
+      ? `<button class="iconbtn edit-on" data-act="notes-cancel-edit" aria-label="Stop editing" title="Stop editing">${ICON.check}</button>`
+      : `<button class="iconbtn" data-act="notes-edit" aria-label="Edit Service Notes" title="Edit Service Notes">${ICON.edit}</button>`) : "";
+  const head = `<div class="page-h"><button class="back" data-act="notes-back">${ICON.prev}Back</button></div>
+    <div class="page-h"><h1>Service Notes</h1><span style="flex:1"></span>${pencil}</div>
+    <p class="sub notes-date">${esc(fmtDay(p.date))}</p>`;
   if (editing){
-    return `${head}${notesToolbar()}
+    return `${head}
+      ${notesToolbar()}
       <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Service Notes">${body || ""}</div>
       ${targets.length ? `<span class="hint" style="font-weight:600">Also send to <span class="hint" style="font-weight:400">(optional)</span></span>
       <div class="chiprow">${targets.map(n => `<button type="button" class="chipcheck" data-act="notes-target" data-k="${n.key}" aria-pressed="${(p.targets || []).includes(n.key)}">${esc(n.label)}</button>`).join("")}</div>` : ""}
-      <div class="cform-acts">
-        <button class="btn" data-act="notes-cancel-edit" ${busy ? "disabled" : ""}>Cancel</button>
-        <button class="btn primary" data-act="notes-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save"}</button>
-      </div>`;
+      <div class="cform-acts"><button class="btn primary" data-act="notes-save" id="notes-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save Notes"}</button><button class="btn" data-act="notes-cancel-edit" ${busy ? "disabled" : ""}>Cancel</button></div>`;
   }
   const empty = canEdit ? "No Service Notes for this date yet. Tap the pencil to add them." : "No Service Notes for this date yet.";
   return `${head}${body ? `<div class="panel notes">${cleanHtml(body)}</div>` : `<div class="empty">${esc(empty)}</div>`}`;
