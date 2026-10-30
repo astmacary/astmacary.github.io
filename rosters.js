@@ -395,7 +395,7 @@ const Rosters = {
     if (!this.data.leadership?.some(p => p.userId === id)) return;
     this.aboutId = id; this.aboutEditing = false; this.placesDraft = null; S.view = 'leader-about';
     try { sessionStorage.setItem('rci-serve:view',S.view); sessionStorage.setItem('rci-serve:about:'+(S.me?.id || ''),id); } catch (_) {}
-    render();
+    render(); window.scrollTo(0,0);
   },
   aboutPerson() {
     if (!this.aboutId) try { this.aboutId = sessionStorage.getItem('rci-serve:about:'+(S.me?.id || '')) || ''; } catch (_) {}
@@ -432,7 +432,7 @@ const Rosters = {
     const active = this.accessStates[p.userId];
     const upcoming = TEAMS.flatMap(t => S.teams[t.key]?.accessVerified ? (S.teams[t.key].items || []).filter(i => i.kind === 'assign' && i.confirmed && i.date >= todayKey() && i.email && (p.emails || [p.email]).map(lc).includes(lc(i.email))).map(i => ({...i,teamName:t.name})) : []).sort((a,b) => a.date.localeCompare(b.date)).slice(0,3);
     return `<div class="page-h">${back}<h1>About ${esc(d.first || p.name.split(' ')[0])}</h1></div>
-      <section class="panel profile-hero">${this.canManage() ? `<span class="access-flag">${esc(active?.label || 'Access not checked')}</span>` : ''}<span class="profile-avatar-wrap"><span class="av" data-roster-photo="leadership:${index}">${esc(initials(p.name))}</span>${this.star(p)}</span><h2>${esc(p.name)}</h2>${this.isHubAdmin(p) ? '<span class="pill admin-tag">★ Admin</span>' : ''}${p.email && !this.isSelf(p) ? `<a class="btn" href="mailto:${esc(p.email)}">Email Me</a>` : ''}</section>
+      <section class="panel profile-hero">${this.canManage() ? `<span class="access-flag ${active?.label === 'Access verified' ? 'complete' : active?.label === 'Access needs attention' ? 'failed' : 'pending'}">${esc(active?.label || 'Access not checked')}</span>` : ''}<span class="profile-avatar-wrap"><span class="av" data-roster-photo="leadership:${index}">${esc(initials(p.name))}</span>${this.star(p)}</span><h2>${esc(p.name)}</h2>${this.isHubAdmin(p) ? '<span class="pill admin-tag">★ Admin</span>' : ''}${p.email && !this.isSelf(p) ? `<a class="btn" href="mailto:${esc(p.email)}">Email Me</a>` : ''}</section>
       ${this.accessPanel(p)}
       ${this.aboutEditing && canEdit ? `<form id="leader-info-form" class="panel sec about-edit"><h2 class="section-label">Edit ${esc(d.first || p.name)}’s Info</h2>${this.detailsFields(this.aboutDraft || d)}<label>Email</label><input value="${esc(p.email || '')}" disabled><span class="hint">Linked to their sign-in, so it cannot be changed here.</span><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>Save</button><button type="button" class="btn" data-act="leader-info-cancel">Cancel</button></div></form>` : ''}
       <section class="panel info-card">${canEdit && !this.aboutEditing ? `<button class="iconbtn card-edit" data-act="leader-info-edit" aria-label="Edit ${esc(p.name)}'s info" title="Edit">✎</button>` : ''}<dl class="kv"><dt>First Name</dt><dd>${esc(d.first || '—')}</dd><dt>Birthday</dt><dd>${esc(bd)}</dd><dt>Email</dt><dd>${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : '—'}</dd><dt>Phone</dt><dd>${d.phone ? `<a href="tel:${esc(d.phone.replace(/[^\d+]/g,''))}">${esc(d.phone)}</a>` : '—'}</dd></dl></section>
@@ -488,7 +488,8 @@ document.addEventListener('change', async e => {
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'hub-profile-form') return;
   e.preventDefault(); if (Rosters.profileSaving || !Rosters.canEditProfile()) return;
-  const name = String(new FormData(e.target).get('name') || '');
+  const f = new FormData(e.target), name = String(f.get('name') || '');
+  Object.assign(Rosters.profileDraft,{first:String(f.get('first') || ''),birthday:String(f.get('birthday') || ''),phone:String(f.get('phone') || ''),places:f.getAll('place')});
   Rosters.profileSaving = true; render();
   try { await Rosters.saveProfile(name); toast('Profile updated'); } catch(err) { toast(err.message,true); }
   Rosters.profileSaving = false; render();

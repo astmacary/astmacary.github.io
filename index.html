@@ -266,13 +266,18 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .serving-next{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}.serving-next small{display:block;color:var(--muted);font-size:12px}
 .section-label{font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin:0}.info-card{position:relative;padding:16px}.card-edit{position:absolute;top:8px;right:8px;width:30px;height:30px}.kv{display:grid;grid-template-columns:auto 1fr;gap:10px 18px;margin:0}.kv dt{color:var(--muted);font-size:13.5px}.kv dd{margin:0;font-weight:600;min-width:0;overflow-wrap:anywhere}.about-edit{padding:16px}.about-edit input:not([type=checkbox]){width:100%;min-height:42px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .checklist{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg)}.serve-opt{display:flex;align-items:center;gap:12px;padding:11px 12px;border-top:1px solid var(--line);font-weight:600;font-size:14.5px;cursor:pointer}.serve-opt:first-child{border-top:0}.serve-opt input[type=checkbox]{width:22px;height:22px;min-height:22px;accent-color:var(--accent)}.access-box{text-align:center;align-items:center;padding:16px}.access-box .acts2{justify-content:center}.access-box .hint{margin:0}.access-flag{align-self:flex-start;font-size:12px;border:1px solid var(--line);border-radius:12px;padding:3px 9px}.admin-tag{color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent)}.place-list{list-style:none;margin:0;padding:0}.place-list li{padding:11px 14px;border-bottom:1px solid var(--line)}.place-list li:last-child{border:0}
+
+.profile-hero{position:relative}.profile-hero:has(.access-flag){padding-top:40px}.access-flag{position:absolute;top:8px;right:8px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted)}.access-flag.complete{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}.access-flag.pending{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}.access-flag.failed{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
+
+.ann-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}.ann-destinations .chipcheck{border-color:color-mix(in srgb,var(--t) 45%,var(--line));color:var(--t);background:var(--surface)}.ann-destinations .chipcheck[aria-pressed="true"]{border-color:var(--t);background:color-mix(in srgb,var(--t) 18%,var(--surface));color:var(--fg)}.ann-destinations .dot{width:9px;height:9px;border-radius:50%;background:var(--t)}.ann-destinations .chipcheck:disabled{opacity:.55}.ann-share-preview{white-space:pre-wrap;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);max-height:35vh;overflow:auto}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=43"></script>
-<script src="/rosters.js?v=43"></script>
+<script src="/communications.js?v=45"></script>
+<script src="/rosters.js?v=45"></script>
+<script src="/announcement-sharing.js?v=45"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -281,7 +286,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "43";   // bump together with CACHE in sw.js
+const APP_VERSION = "45";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -853,7 +858,7 @@ const NOTES_TARGETS = [{ key: "production-notes", label: "Production", team: () 
                         { key: "worship-notes", label: "Worship & Arts", team: () => TEAMS.find(t => t.key === "worship") }];
 const sendableNotesTargets = () => NOTES_TARGETS.filter(n => isEditorOf(n.team()));
 const mineRow = i => (i.email && S.me.emails.includes(lc(i.email))) || (!i.email && i.fullName && lc(i.fullName) === lc(S.me.name));
-const isEditorOf = t => !!S.me && t.editors.some(e => S.me.emails.includes(lc(e)));
+const isEditorOf = t => !!S.me && (DEMO || t.editors.some(e => S.me.emails.includes(lc(e))));
 /* On a team: an admin of it, has a (not archived) Roster / profile row, or has been scheduled in the last 120 days or later. */
 function member(t){
   const d = S.teams[t.key]; if (!d) return false;
@@ -1228,10 +1233,14 @@ function annEditLine(a){
     : `<button class="linkbtn go-link" data-act="ann-change" data-id="${esc(team_id(a))}">Edit</button> · <button class="linkbtn danger" data-act="ann-ask" data-id="${esc(team_id(a))}">Remove</button>`;
   return `<span class="ann-meta">${esc(a.team ? teamOf(a.team).name + " · " : "")}${esc(until)} · ${ctl}</span>`;
 }
+function annDestinationPill(t,selected,act,disabled=false){
+  return `<button type="button" class="chipcheck team" style="${tvars(t)}" data-act="${act}" data-k="${t.key}" aria-pressed="${selected}" ${disabled?'disabled':''}><span class="dot" aria-hidden="true"></span>${esc(t.name)}</button>`;
+}
 function annForm(){
   const d = S.annDraft || {};
   const editing = d.editId != null, cur = editing ? myAdminAnnouncements().find(a => team_id(a) === d.editId) : null;
   return `<form class="stack ann-form" id="annForm">
+    ${!editing ? `<div class="field ann-destinations"><span class="label">Send to</span><div class="chiprow">${annSendTargets().map(t=>annDestinationPill(t,(d.targets || []).includes(t.key),'ann-target')).join('')}</div></div>` : ''}
     <h3 class="ann-form-h" style="margin-top:0">${editing ? "Edit Announcement" : "New Announcement"}</h3>
     <div class="field"><label for="ann-text">Announcement</label><textarea id="ann-text" maxlength="2000" required placeholder="First line is the headline">${esc(d.text || "")}</textarea></div>
     <div class="field"><label for="ann-until">Show Until <span class="hint">(optional)</span></label><input id="ann-until" type="date" min="${todayKey()}" value="${esc(d.until || "")}"></div>
@@ -1242,8 +1251,6 @@ function annForm(){
       <label class="btn" for="ann-flyer" style="cursor:pointer;align-self:flex-start">${d.file || (cur && cur.flyer && !d.removeFlyer) ? "Change Flyer" : "Add a Flyer"}</label>
       <input id="ann-flyer" type="file" accept="image/*" hidden>
       ${d.file ? `<span class="flyer-picked">${d.preview ? `<img src="${d.preview}" alt="">` : ""}<span>${esc(d.file.name)}</span><button type="button" class="linkbtn" data-act="ann-flyer-clear">Remove Flyer</button></span>` : ""}</div>
-    ${!editing ? `<div class="field"><span class="label">Send to</span>
-      <div class="chiprow">${annSendTargets().map(t => `<button type="button" class="chipcheck" data-act="ann-target" data-k="${t.key}" aria-pressed="${(d.targets || []).includes(t.key)}">${esc(t.name)}</button>`).join("")}</div></div>` : ""}
     <button class="btn primary block" type="submit" id="ann-add">${editing ? "Save Changes" : "Add Announcement"}</button>
     ${editing ? `<button class="btn block" type="button" data-act="ann-change-cancel">Cancel</button>` : ""}</form>`;
 }
@@ -1291,7 +1298,7 @@ function annCard(a, isNew){
   const lines = a.text.split(/\n/).map(l => l.trim()).filter(Boolean);
   const head = lines.shift() || "", rest = lines.join("\n");
   return `<article class="ann-card team${annToday(a) ? " ann-today" : ""}" style="${tvars(t)}">
-    <div class="ann-body"><span class="ann-tlabel">${esc(t.name)}</span>
+    <div class="ann-body"><div class="ann-heading"><span class="ann-tlabel">${esc(t.name)}</span>${a.team === 'church' && AnnShare.targets().length ? `<button class="iconbtn sm" data-act="ann-share" data-id="${esc(a.id)}" aria-label="Share church announcement" title="Share to another team"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></button>` : ''}</div>
       <b class="ann-title">${annToday(a) ? todayPill() : ""}${isNew ? newPill() : ""}${esc(head)}</b>${rest ? `<p class="ann-text">${esc(rest)}</p>` : ""}${S.annEdit && canEditAnn(a) ? annEditLine(a) : ""}</div>
     ${a.flyer ? `<button class="flyer" data-act="flyer-open" data-flyer="${team_id(a)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button>` : ""}
   </article>`;
@@ -1364,8 +1371,8 @@ function render(){
   const body = S.view === "notes" ? viewServiceNotes() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
     : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
-    `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
-  app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${body}</div></main>` + tabs;
+    `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
+  app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${body}</div></main>` + tabs + AnnShare.modal();
   hydrateFlyers(); if (["teams","leader-about"].includes(S.view)) Rosters.hydrate();
 }
 function hydrateFlyers(){
@@ -1393,9 +1400,12 @@ function openLightbox(url, alt){
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act;
-  if (act === "leader-about") Rosters.openAbout(b.dataset.id);
+  if (act === "ann-share") AnnShare.open(b.dataset.id);
+  else if (act === "ann-share-close") AnnShare.close();
+  else if (act === "ann-share-target") { if (!AnnShare.busy && !AnnShare.sent.has(b.dataset.k)){ AnnShare.selected.has(b.dataset.k) ? AnnShare.selected.delete(b.dataset.k) : AnnShare.selected.add(b.dataset.k); render(); } }
+  else if (act === "leader-about") Rosters.openAbout(b.dataset.id);
   else if (act === "leader-remove") { const p = Rosters.aboutPerson(); if (p && Rosters.canManage()){ Rosters.deleteKey = 'leadership'; Rosters.deleteSelection = p.userId; render(); } }
-  else if (act === "leader-about-back") { S.view = 'teams'; Rosters.aboutEditing = false; try { sessionStorage.setItem('rci-serve:view',S.view); } catch (_) {} render(); }
+  else if (act === "leader-about-back") { S.view = 'teams'; Rosters.aboutEditing = false; try { sessionStorage.setItem('rci-serve:view',S.view); } catch (_) {} render(); window.scrollTo(0,0); }
   else if (act === "leader-check-access") void Rosters.checkAccess(Rosters.aboutPerson());
   else if (act === "leader-info-edit") { const p = Rosters.aboutPerson(); if (p && Rosters.canEditAbout(p)){ Rosters.aboutDraft = Rosters.detailsFor(p); Rosters.aboutEditing = true; render(); } }
   else if (act === "leader-info-cancel") { Rosters.aboutEditing = false; render(); }
@@ -1415,7 +1425,7 @@ document.addEventListener("click", async e => {
   else if (act === "hub-profile-photo-remove") { if (Rosters.profileDraft){ Rosters.profileDraft.photo = null; render(); } }
   else if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "signin") API.signIn();
-  else if (act === "signout"){ Rosters.reset(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
+  else if (act === "signout"){ Rosters.reset(); AnnShare.sourceId=''; AnnShare.snapshot=null; AnnShare.selected.clear(); AnnShare.sent.clear(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
   else if (act === "retry") location.reload();
   else if (act === "refresh") loadAll();
   else if (act === "accept") accept(b.dataset.id);
