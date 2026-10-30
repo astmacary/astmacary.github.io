@@ -184,8 +184,8 @@ const Rosters = {
     return team && /^[1-9]\d*$/.test(String(p.rowId || '')) && (DEMO || S.teams[key]?.accessVerified) ? `${team.path}?person=${encodeURIComponent(p.rowId)}&from=serve-teams${DEMO ? '&demo' : ''}` : '';
   },
   orderPeople(key, people) {
-    if (key !== 'ushers') return people;
-    const priority = p => lc(p.name).trim() === 'tammy marshall' ? 0 : 1;
+    if (key === 'leadership') return people;
+    const priority = p => key === 'ushers' && lc(p.name).trim() === 'tammy marshall' ? 0 : p.ministryLeader === true ? 1 : 2;
     return [...people].sort((a,b) => priority(a) - priority(b) || a.name.localeCompare(b.name));
   },
   person(p, index, key) {
