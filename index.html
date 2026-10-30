@@ -263,8 +263,8 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=40"></script>
-<script src="/rosters.js?v=40"></script>
+<script src="/communications.js?v=41"></script>
+<script src="/rosters.js?v=41"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -273,7 +273,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "40";   // bump together with CACHE in sw.js
+const APP_VERSION = "41";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1299,7 +1299,7 @@ function viewTeams(){ return Rosters.view(); }
 
 function viewProfile(){
   const profile = Rosters.ownProfile();
-  if (!Rosters.data.leadership && !Rosters.tasks.leadership) void Rosters.load('leadership');
+  if (!Rosters.data.leadership && !Rosters.tasks.leadership && !Rosters.errors.leadership) void Rosters.load('leadership');
   return `<h1 class="page">Profile</h1>
     <section class="panel prof"><span class="av">${profile.photo ? `<img src="${profile.photo}" alt="">` : esc(initials(profile.name))}</span>
       <span style="min-width:0"><b style="display:block;font-size:18px">${esc(profile.name)} ${Rosters.star({emails:S.me.emails})}</b><small class="muted" style="word-break:break-all">${esc(S.me.emails[0] || "")}</small></span>
@@ -1339,7 +1339,7 @@ function render(){
     ${S.phase === "ready" ? `<button class="iconbtn${S.loading ? " spin" : ""}" data-act="refresh" aria-label="Refresh">${ICON.refresh}</button>` : ""}
     ${themeBtn}
     ${S.phase === "ready" ? `
-    <button class="iconbtn me-btn" data-act="tab" data-view="profile" aria-label="Profile${n ? `, ${n} pending request${n > 1 ? "s" : ""}` : ""}">${S.photo ? `<img src="${S.photo}" alt="">` : esc(initials(S.me?.name))}${n ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div></header>`;
+    <button class="iconbtn me-btn" data-act="tab" data-view="profile" aria-label="Profile${n ? `, ${n} pending request${n > 1 ? "s" : ""}` : ""}">${Rosters.ownProfile().photo ? `<img src="${Rosters.ownProfile().photo}" alt="">` : esc(initials(Rosters.ownProfile().name))}${n ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div></header>`;
   if (S.phase !== "ready"){
     let body = "";
     if (S.phase === "boot") body = `<div class="center"><p role="status">Opening RCI Serve…</p></div>`;
