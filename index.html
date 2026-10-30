@@ -243,12 +243,13 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .updating{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .updating .spinner{width:12px;height:12px;border-width:2px}
 .comm{display:flex;flex-direction:column;gap:14px}.comm h2,.comm h3{margin:0;font-size:17px}.comm-text{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}.comm-record+.comm-record{border-top:1px solid var(--line);padding-top:12px}.comm-topic{justify-content:flex-start;text-align:left;white-space:normal;overflow-wrap:anywhere}.comm .panel{margin:0}.comm time{display:block}
+.comm-head,.comm-record-head,.comm-topic-line{display:flex;align-items:center;justify-content:space-between;gap:12px}.comm-head h1{margin:0}.comm-actions{display:flex;gap:4px;align-items:center;margin-left:auto;flex:none}.comm-actions:empty{display:none}.comm-actions .iconbtn,.comm-head .iconbtn{flex:none}.comm-actions svg,.comm-head svg{width:19px;height:19px}.comm-topic-line .comm-topic{flex:1;min-width:0}.comm-edit-form{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:8px}.comm-edit-buttons{display:flex;gap:8px;flex-wrap:wrap}.comm-record-head{align-items:flex-start}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=31"></script>
+<script src="/communications.js?v=32"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -257,7 +258,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "31";   // bump together with CACHE in sw.js
+const APP_VERSION = "32";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -884,7 +885,7 @@ async function loadAll(){
     const next = {};
     results.forEach((r, n) => {
       const t = TEAMS[n];
-      if (r.status === "fulfilled") next[t.key] = { items: r.value.items, announcements: r.value.announcements };
+      if (r.status === "fulfilled") next[t.key] = { accessVerified: true, items: r.value.items, announcements: r.value.announcements };
       else if (r.reason?.noAccess) next[t.key] = { noAccess: true, items: [], announcements: [] };
       else { console.warn(t.name, r.reason); next[t.key] = { error: r.reason?.message || "Couldn't load", items: S.teams[t.key]?.items || null, announcements: S.teams[t.key]?.announcements || [] }; }
     });
@@ -1376,7 +1377,7 @@ document.addEventListener("click", async e => {
   const act = b.dataset.act;
   if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "signin") API.signIn();
-  else if (act === "signout"){ Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
+  else if (act === "signout"){ Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
   else if (act === "retry") location.reload();
   else if (act === "refresh") loadAll();
   else if (act === "accept") accept(b.dataset.id);
