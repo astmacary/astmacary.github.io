@@ -275,9 +275,9 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=45"></script>
-<script src="/rosters.js?v=45"></script>
-<script src="/announcement-sharing.js?v=45"></script>
+<script src="/communications.js?v=46"></script>
+<script src="/rosters.js?v=46"></script>
+<script src="/announcement-sharing.js?v=46"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -286,7 +286,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "45";   // bump together with CACHE in sw.js
+const APP_VERSION = "46";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -677,14 +677,15 @@ const API = {
     const fields = { Title: (title || text.split("\n")[0] || "Announcement").slice(0, 120), Announcements: text };
     if (until) fields.ShowUntil = until + "T00:00:00";
     const r = await this.g(`/sites/${siteId}/lists/${annListId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
-    let flyerOk = true;
+    let flyerOk = true, flyerValue = "";
     if (flyerBlob){
       try {
         const flyer = await this.assetImage(siteId, annListId, `flyer-${r.id}-${flyerName || "flyer.jpg"}`, flyerBlob);
         await this.g(`/sites/${siteId}/lists/${annListId}/items/${r.id}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ Flyer: flyer }) });
+        flyerValue = flyer;
       } catch(e){ flyerOk = false; /* announcement is posted either way; the flyer image column is a nice-to-have */ }
     }
-    return { id: Number(r.id), text, until: until || "", flyer: flyerBlob && flyerOk ? "pending" : "", flyerError: flyerBlob && !flyerOk };
+    return { id: Number(r.id), text, until: until || "", flyer: flyerValue, flyerError: flyerBlob && !flyerOk };
   },
   async updateAnnouncement(t, id, { text, until, flyerBlob, flyerName, removeFlyer }){
     const { siteId, annListId } = await this.resolveAnnList(t);
