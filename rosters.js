@@ -1,7 +1,8 @@
 /* Roster display stays within each ministry's existing SharePoint access.
    Manual Leadership entries are authenticated administrator events in the Serve board. */
 const Rosters = {
-  open: new Set(), data: {}, errors: {}, tasks: {}, identities: new Map(), photos: new Map(), extraEditors: {}, saving: false, profiles: {}, editingProfile: false, profileDraft: null, profileSaving: false, deleteKey: '', leadershipChanges: new Map(), demoLeadershipEvents: [],
+  open: new Set(), data: {}, errors: {}, tasks: {}, identities: new Map(), photos: new Map(), extraEditors: {}, saving: false, profiles: {}, profileDetailEvents: [], cardDetailEvents: [], aboutId: '', aboutEditing: false, aboutDraft: null, accessStates: {}, editingProfile: false, profileDraft: null, profileSaving: false, deleteKey: '', leadershipChanges: new Map(), demoLeadershipEvents: [],
+  places: ["Productions", "Security", "Ushers & Altar Workers", "Worship & Arts", "Men", "Women", "Elders", "Deacons", "Production Coordinator", "Benevolence", "Shepherd’s Care", "Salvation Army", "Marriage", "Evangelism", "Young Adults", "Youth", "Children Ministry", "Young Acolytes", "Parking Lot", "Property Management", "Medical", "Prayer", "Online", "New Members", "Marketing", "Armor Bearers", "Soul Care", "Recovery", "Greeters", "Guest Services", "Servant’s Heart", "Visitors Reception"].sort((a,b) => a.localeCompare(b,'en',{sensitivity:'base'})),
   baseHubAdmins: null, hubAdminTask: null,
   async loadHubAdmins() {
     if (DEMO) return;
@@ -61,7 +62,7 @@ const Rosters = {
       const rows = await API.all('/users?$select=id,displayName,mail,userPrincipalName&$filter=' + encodeURIComponent(`mail eq '${quoted}' or userPrincipalName eq '${quoted}'`));
       if (rows.length !== 1) throw new Error('No single Microsoft account matches this sign-in email.');
       const u = rows[0];
-      return { userId: u.id, name: u.displayName, email, emails: [email, u.mail, u.userPrincipalName].filter(Boolean).map(lc) };
+      return { userId: u.id, principal: u.userPrincipalName, name: u.displayName, email, emails: [email, u.mail, u.userPrincipalName].filter(Boolean).map(lc) };
     })().catch(e => { this.identities.delete(email); throw e; }));
     return this.identities.get(email);
   },
@@ -70,11 +71,11 @@ const Rosters = {
     if (!d?.accessVerified || d.error || d.noAccess || !myTeams().some(x => x.key === t.key)) throw new Error('This ministry roster is not available for your account.');
     const meta = API.sites[t.key];
     if (!meta) throw new Error('Refresh your teams and try again.');
-    const fields = ['Photo', ...(t.key === 'worship' ? ['ActiveStatus'] : [])];
+    const fields = ['Photo', 'Birthday', 'PhoneNumber', ...(t.key === 'productions' ? ['Name'] : []), ...(t.key === 'worship' ? ['ActiveStatus'] : [])];
     const rows = await API.all(`/sites/${meta.siteId}/lists/${meta.listId}/items?$expand=fields($select=${fields.join(',')})&$top=500`);
     const byId = new Map(rows.map(r => [String(r.id), r.fields || {}]));
     return this.unique(d.items.filter(p => p.kind === 'profile' && !p.gone && p.fullName && (t.key !== 'worship' || lc(byId.get(p.rowId)?.ActiveStatus) !== 'non active')).map(p => ({
-      name: p.fullName, email: p.email, rowId: p.rowId, team: t.key, photoRaw: byId.get(p.rowId)?.Photo || ''
+      name: p.fullName, email: p.email, rowId: p.rowId, team: t.key, photoRaw: byId.get(p.rowId)?.Photo || '', first: t.key === 'productions' && typeof byId.get(p.rowId)?.Name === 'string' ? byId.get(p.rowId).Name : '', birthday: (byId.get(p.rowId)?.Birthday || '').slice(0,10), phone: byId.get(p.rowId)?.PhoneNumber || ''
     })));
   },
   async adminEmails(t) {
@@ -96,6 +97,9 @@ const Rosters = {
     const raw = await API.all(base + '?$expand=fields($select=Title,Body,ParentId)&$top=200');
     const records = raw.map(r => Comm.normalize(r));
     this.readProfiles(records.filter(r => r.parent.startsWith('hub-profile:')));
+    const cards = records.filter(r => r.parent.startsWith('hub-card:'));
+    await Comm.resolveAuthors(cards);
+    this.readCards(cards);
     const events = records.filter(r => r.parent.startsWith('leadership:'));
     await Comm.resolveAuthors(events);
     return this.manualPeople(events);
@@ -132,6 +136,9 @@ const Rosters = {
     for (const p of people) {
       const profile = profiles.find(profile => profile.email && (p.emails || [p.email]).includes(lc(profile.email)) && profile.photoRaw);
       if (profile) Object.assign(p, { photoRaw: profile.photoRaw, team: profile.team, rowId: profile.rowId });
+      const related = profiles.filter(profile => profile.email && (p.emails || [p.email]).includes(lc(profile.email)));
+      p.first = related.find(x => x.first)?.first || '';
+      p.birthday = related.find(x => x.birthday)?.birthday || ''; p.phone = related.find(x => x.phone)?.phone || '';
     }
     // Identical names share one display card; their separate account identities retain all permissions.
     const display = new Map();
@@ -156,7 +163,7 @@ const Rosters = {
           : await this.ministry(t);
         if (identity === (S.me?.id || S.me?.emails.join("|"))) this.data[key] = people;
       } catch (e) { this.errors[key] = e.message || 'Unable to load the roster.'; }
-      finally { delete this.tasks[key]; if (S.phase === 'ready' && ['teams','profile'].includes(S.view) && !this.profileSaving) render(); }
+      finally { delete this.tasks[key]; if (S.phase === 'ready' && ['teams','profile','leader-about'].includes(S.view) && !this.profileSaving) render(); }
     })();
     return this.tasks[key];
   },
@@ -166,7 +173,8 @@ const Rosters = {
     render();
   },
   person(p, index, key) {
-    return `<li class="roster-person"><span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${this.star(p)}<b>${esc(p.name)}</b></li>`;
+    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${this.star(p)}<b>${esc(p.name)}</b>`;
+    return `<li class="roster-person">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : inside}</li>`;
   },
   count(key) {
     if (key === 'leadership') return this.data.leadership?.length;
@@ -283,11 +291,12 @@ const Rosters = {
     await this.load('leadership', true);
   },
   readProfiles(events) {
-    const profiles = {};
+    const profiles = {}; this.profileDetailEvents = [];
     for (const r of [...events].sort((a,b) => a.at.localeCompare(b.at) || Number(a.id)-Number(b.id))) try {
       const p = JSON.parse(r.text);
       if (!p.userId || r.authorId !== p.userId || r.parent !== 'hub-profile:' + p.userId || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 120) continue;
       if (p.photo !== undefined && p.photo !== null && (typeof p.photo !== 'string' || p.photo.length > 40000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(p.photo))) continue;
+      const details = this.cleanDetails(p); this.profileDetailEvents.push({userId:p.userId,...details,at:r.at,order:Number(r.id)});
       profiles[p.userId] = { userId:p.userId, name:p.name.trim(), ...(p.photo !== undefined ? {photo:p.photo} : {}), at:r.at };
     } catch (_) {}
     this.profiles = profiles;
@@ -296,37 +305,40 @@ const Rosters = {
   applyProfiles(people) {
     return people.map(p => {
       const settings = [...new Set(p.userIds || [p.userId])].map(id => this.profiles[id]).filter(Boolean).sort((a,b) => a.at.localeCompare(b.at)).at(-1);
-      return settings ? {...p,name:settings.name,...(settings.photo !== undefined ? {hubPhoto:settings.photo} : {})} : p;
+      const updated = settings ? {...p,name:settings.name,...(settings.photo !== undefined ? {hubPhoto:settings.photo} : {})} : p;
+      return {...updated,...this.detailsFor(updated)};
     });
   },
   canEditProfile() {
     return this.canManage() || !!this.data.leadership?.some(p => p.userId === S.me?.id || p.userIds?.includes(S.me?.id) || (p.emails || [p.email]).some(e => S.me?.emails.includes(lc(e))));
   },
   ownProfile() {
+    const person = this.data.leadership?.find(p => this.isSelf(p)) || {userId:S.me?.id,name:S.me?.name,emails:S.me?.emails};
     const stored = this.editingProfile ? this.profileDraft : this.profiles[S.me?.id];
-    return {name:stored?.name || S.me?.name || '',photo:stored && Object.prototype.hasOwnProperty.call(stored,'photo') ? stored.photo || '' : S.photo};
+    return {...this.detailsFor(person),...(stored || {}),name:stored?.name || person.name || S.me?.name || '',photo:stored && Object.prototype.hasOwnProperty.call(stored,'photo') ? stored.photo || '' : S.photo};
   },
   profileEditor() {
     if (!this.canEditProfile()) return '<p class="hint">Your ministry profile is edited in that team’s app.</p>';
     if (!this.editingProfile) return '';
-    return `<form id="hub-profile-form" class="panel sec hub-profile-editor"><label for="hub-profile-name">Display name</label><input id="hub-profile-name" name="name" maxlength="120" required value="${esc(this.profileDraft?.name || '')}"><p class="hint">Your name and photo appear on the RCI Leadership roster.</p><div class="acts2"><button class="btn" type="button" data-act="hub-profile-photo-remove">Remove photo</button><button class="btn primary" ${this.profileSaving ? 'disabled' : ''}>${this.profileSaving ? 'Saving…' : 'Save profile'}</button><button class="btn" type="button" data-act="hub-profile-cancel">Cancel</button></div></form>`;
+    return `<form id="hub-profile-form" class="panel sec hub-profile-editor"><label for="hub-profile-name">Display name</label><input id="hub-profile-name" name="name" maxlength="120" required value="${esc(this.profileDraft?.name || '')}">${this.detailsFields(this.profileDraft || {})}<h2 class="section-label">Places I Serve</h2>${this.placesFields(this.profileDraft?.places || [])}<p class="hint">Serving areas do not change app access.</p><p class="hint">Your profile appears on the RCI Leadership roster.</p><div class="acts2"><button class="btn" type="button" data-act="hub-profile-photo-remove">Remove photo</button><button class="btn primary" ${this.profileSaving ? 'disabled' : ''}>${this.profileSaving ? 'Saving…' : 'Save profile'}</button><button class="btn" type="button" data-act="hub-profile-cancel">Cancel</button></div></form>`;
   },
   editProfile() {
     if (!this.canEditProfile()) return;
-    this.profileDraft = {name:this.ownProfile().name,...(this.profiles[S.me?.id]?.photo !== undefined ? {photo:this.profiles[S.me.id].photo} : {})};
+    this.profileDraft = {...this.detailsFor(this.data.leadership?.find(p => this.isSelf(p)) || {userId:S.me?.id,name:S.me?.name,emails:S.me?.emails}),name:this.ownProfile().name,...(this.profiles[S.me?.id]?.photo !== undefined ? {photo:this.profiles[S.me.id].photo} : {})};
     this.editingProfile = true; render();
   },
   async saveProfile(name) {
     if (!this.canEditProfile() || !S.me?.id) throw new Error('Leadership members can edit only their own profile.');
     name = String(name || '').trim();
     if (!name || name.length > 120) throw new Error('Enter a name up to 120 characters.');
-    const p = {userId:S.me.id,name,...(this.profileDraft?.photo !== undefined ? {photo:this.profileDraft.photo} : {})};
+    const p = {userId:S.me.id,name,...this.cleanDetails(this.profileDraft || {}),...(this.profileDraft?.photo !== undefined ? {photo:this.profileDraft.photo} : {})};
     if (p.photo !== undefined && p.photo !== null && (p.photo.length > 40000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(p.photo))) throw new Error('Choose a smaller profile photo.');
     if (!DEMO){
       const base = await Comm.list({...CHURCH_CAL,key:'serve'},'Team Board');
       await API.g(base,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'Leadership profile',ParentId:'hub-profile:'+S.me.id,Body:JSON.stringify(p)}})});
     }
-    this.profiles[S.me.id] = {...p,at:new Date().toISOString()};
+    const at = new Date().toISOString();
+    this.profiles[S.me.id] = {...p,at}; this.profileDetailEvents.push({userId:S.me.id,...this.cleanDetails(p),at,order:Date.now()});
     if (this.data.leadership) this.data.leadership = this.applyProfiles(this.data.leadership);
     this.editingProfile = false; this.profileDraft = null;
   },
@@ -345,7 +357,100 @@ const Rosters = {
       this.profileDraft.photo = photo; render();
     } finally { URL.revokeObjectURL(url); }
   },
-  reset() { this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
+  readCards(events) {
+    this.cardDetailEvents = events.flatMap(r => { try { const p = JSON.parse(r.text), details = this.cleanDetails(p); return p.userId && r.parent === 'hub-card:' + p.userId && (r.authorId === p.userId || this.hubAdmins().includes(lc(r.email))) ? [{userId:p.userId,...details,at:r.at,order:Number(r.id)}] : []; } catch (_) { return []; } });
+    return this.cardDetailEvents;
+  },
+  cleanDetails(p) {
+    const out = {};
+    for (const [key,max] of [['first',100],['phone',60]]) if (p[key] !== undefined) {
+      if (typeof p[key] !== 'string' || p[key].length > max) throw new Error('Invalid profile details.'); out[key] = p[key].trim();
+    }
+    if (p.birthday !== undefined) {
+      if (typeof p.birthday !== 'string' || p.birthday && (!/^\d{4}-\d{2}-\d{2}$/.test(p.birthday) || new Date(p.birthday+'T12:00:00Z').toISOString().slice(0,10) !== p.birthday)) throw new Error('Enter a valid birthday.');
+      out.birthday = p.birthday;
+    }
+    if (p.places !== undefined) {
+      if (!Array.isArray(p.places) || p.places.some(x => !this.places.includes(x))) throw new Error('Choose a serving area from the list.');
+      out.places = this.places.filter(x => p.places.includes(x));
+    }
+    return out;
+  },
+  isSelf(p) { return !!S.me && (p.userId === S.me.id || p.userIds?.includes(S.me.id) || (p.emails || [p.email]).filter(Boolean).some(e => S.me.emails.includes(lc(e)))); },
+  canEditAbout(p) { return this.canManage() || this.isSelf(p); },
+  detailsFor(p) {
+    const ids = p.userIds || [p.userId];
+    const inferred = TEAMS.filter(t => (S.teams[t.key]?.items || []).some(i => i.kind === 'profile' && !i.gone && i.email && (p.emails || [p.email]).filter(Boolean).map(lc).includes(lc(i.email)))).map(t => t.key === 'ushers' ? 'Ushers & Altar Workers' : t.name);
+    const out = {first:p.first || (p.name || '').split(/\s+/)[0] || '',birthday:p.birthday || '',phone:p.phone || '',places:p.places || this.places.filter(x => inferred.includes(x))};
+    for (const e of [...this.profileDetailEvents,...this.cardDetailEvents].filter(e => ids.includes(e.userId)).sort((a,b) => a.at.localeCompare(b.at) || a.order-b.order)) Object.assign(out,this.cleanDetails(e));
+    return out;
+  },
+  detailsFields(d) {
+    return `<label for="hub-first">First Name</label><input id="hub-first" name="first" maxlength="100" value="${esc(d.first || '')}"><label for="hub-birthday">Birthday</label><input id="hub-birthday" name="birthday" type="date" value="${esc(d.birthday || '')}"><label for="hub-phone">Phone Number</label><input id="hub-phone" name="phone" type="tel" maxlength="60" value="${esc(d.phone || '')}">`;
+  },
+  placesFields(selected) {
+    return `<div class="checklist">${this.places.map(x => `<label class="serve-opt"><input type="checkbox" name="place" value="${esc(x)}" ${selected.includes(x) ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}</div>`;
+  },
+  openAbout(id) {
+    if (!this.data.leadership?.some(p => p.userId === id)) return;
+    this.aboutId = id; this.aboutEditing = false; this.placesDraft = null; S.view = 'leader-about';
+    try { sessionStorage.setItem('rci-serve:view',S.view); sessionStorage.setItem('rci-serve:about:'+(S.me?.id || ''),id); } catch (_) {}
+    render();
+  },
+  aboutPerson() {
+    if (!this.aboutId) try { this.aboutId = sessionStorage.getItem('rci-serve:about:'+(S.me?.id || '')) || ''; } catch (_) {}
+    return this.data.leadership?.find(p => p.userId === this.aboutId);
+  },
+  accessPanel(p) {
+    if (!this.canManage()) return '';
+    const state = this.accessStates[p.userId];
+    return `<section class="panel sec access-box" aria-label="Access status"><h2 class="section-label">Access Status</h2><strong role="status">${esc(state?.label || 'Access not checked')}</strong><p class="hint">${esc(state?.detail || 'Check Microsoft access to the RCI Serve board and Church Calendar.')}</p><p class="hint">${esc(p.email || '')}</p><div class="acts2"><button class="btn" data-act="leader-check-access" ${state?.busy ? 'disabled' : ''}>${state?.busy ? 'Checking…' : 'Check Access'}</button><a class="btn" href="https://${CONFIG.siteHost}${CHURCH_CAL.sitePath}/_layouts/15/user.aspx" target="_blank" rel="noopener">Manage Access</a></div></section>`;
+  },
+  async checkAccess(p) {
+    if (!this.canManage() || !p) return;
+    this.accessStates[p.userId] = {busy:true,label:'Checking access',detail:'Checking Microsoft permissions…'}; render();
+    try {
+      if (DEMO) this.accessStates[p.userId] = {label:'Access verified',detail:'Demo access only. No Microsoft permissions were changed.'};
+      else {
+        const person = await this.identity(p.email), token = await API.spToken(); if (!token) throw new Error('Microsoft access could not be checked.');
+        const board = Comm.lists.serve.board, calendar = (await API.churchMeta()).listId;
+        const login = "i:0#.f|membership|"+person.principal;
+        const q = '?@u='+encodeURIComponent("'"+login.replace(/'/g,"''")+"'");
+        const read = async id => { const r = await fetch('https://'+CONFIG.siteHost+CHURCH_CAL.sitePath+"/_api/web/lists(guid'"+id+"')/getusereffectivepermissions(@u)"+q,{headers:{Authorization:'Bearer '+token,Accept:'application/json;odata=nometadata'}}); if (!r.ok) throw new Error('Microsoft did not return the access status.'); const raw = await r.json(); const value = raw.GetUserEffectivePermissions || raw.d?.GetUserEffectivePermissions || raw; if (value.Low === undefined) throw new Error('Microsoft returned an unknown access status.'); return (BigInt(value.Low)&1n) === 1n; };
+        const [boardRead,calendarRead] = await Promise.all([read(board),read(calendar)]);
+        this.accessStates[p.userId] = boardRead && calendarRead ? {label:'Access verified',detail:'Microsoft confirmed access to the RCI Serve board and Church Calendar.'} : {label:'Access needs attention',detail:'Microsoft has not confirmed access to '+[!boardRead && 'the RCI Serve board',!calendarRead && 'Church Calendar'].filter(Boolean).join(' and ')+'.'};
+      }
+    } catch(e) { this.accessStates[p.userId] = {label:'Access not verified',detail:e.message || 'Unable to check Microsoft access. Try again.'}; }
+    if (S.view === 'leader-about' && this.aboutId === p.userId) render();
+  },
+  aboutView() {
+    if (!this.data.leadership && !this.errors.leadership) { void this.load('leadership'); return '<p role="status">Loading Leadership profile…</p>'; }
+    const p = this.aboutPerson(), back = '<button class="back" data-act="leader-about-back">‹ Back</button>';
+    if (!p) return back+'<div class="empty">This person is not on the Leadership roster.</div>';
+    const d = this.detailsFor(p), index = this.data.leadership.indexOf(p), canEdit = this.canEditAbout(p);
+    const bd = d.birthday ? new Date(d.birthday+'T12:00:00').toLocaleDateString(undefined,{month:'long',day:'numeric'}) : '—';
+    const active = this.accessStates[p.userId];
+    const upcoming = TEAMS.flatMap(t => S.teams[t.key]?.accessVerified ? (S.teams[t.key].items || []).filter(i => i.kind === 'assign' && i.confirmed && i.date >= todayKey() && i.email && (p.emails || [p.email]).map(lc).includes(lc(i.email))).map(i => ({...i,teamName:t.name})) : []).sort((a,b) => a.date.localeCompare(b.date)).slice(0,3);
+    return `<div class="page-h">${back}<h1>About ${esc(d.first || p.name.split(' ')[0])}</h1></div>
+      <section class="panel profile-hero">${this.canManage() ? `<span class="access-flag">${esc(active?.label || 'Access not checked')}</span>` : ''}<span class="profile-avatar-wrap"><span class="av" data-roster-photo="leadership:${index}">${esc(initials(p.name))}</span>${this.star(p)}</span><h2>${esc(p.name)}</h2>${this.isHubAdmin(p) ? '<span class="pill admin-tag">★ Admin</span>' : ''}${p.email && !this.isSelf(p) ? `<a class="btn" href="mailto:${esc(p.email)}">Email Me</a>` : ''}</section>
+      ${this.accessPanel(p)}
+      ${this.aboutEditing && canEdit ? `<form id="leader-info-form" class="panel sec about-edit"><h2 class="section-label">Edit ${esc(d.first || p.name)}’s Info</h2>${this.detailsFields(this.aboutDraft || d)}<label>Email</label><input value="${esc(p.email || '')}" disabled><span class="hint">Linked to their sign-in, so it cannot be changed here.</span><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>Save</button><button type="button" class="btn" data-act="leader-info-cancel">Cancel</button></div></form>` : ''}
+      <section class="panel info-card">${canEdit && !this.aboutEditing ? `<button class="iconbtn card-edit" data-act="leader-info-edit" aria-label="Edit ${esc(p.name)}'s info" title="Edit">✎</button>` : ''}<dl class="kv"><dt>First Name</dt><dd>${esc(d.first || '—')}</dd><dt>Birthday</dt><dd>${esc(bd)}</dd><dt>Email</dt><dd>${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : '—'}</dd><dt>Phone</dt><dd>${d.phone ? `<a href="tel:${esc(d.phone.replace(/[^\d+]/g,''))}">${esc(d.phone)}</a>` : '—'}</dd></dl></section>
+      ${upcoming.length ? `<section class="sec"><h2 class="section-label">Serving Next</h2><div class="list">${upcoming.map(i => `<div class="panel serving-next"><span><b>${esc(i.role)}</b><small>${esc(i.teamName)}</small></span><span>${esc(fmtShort(i.date))}</span></div>`).join('')}</div></section>` : ''}
+      <section class="sec"><h2 class="section-label">Places I Serve</h2>${canEdit ? `<form id="leader-places-form" class="panel sec about-edit">${this.placesFields(this.placesDraft?.userId === p.userId ? this.placesDraft.places : d.places)}<p class="hint">Serving areas do not change app access.</p><button class="btn primary" ${this.saving ? 'disabled' : ''}>Save Places I Serve</button></form>` : d.places.length ? `<ul class="panel place-list">${d.places.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<div class="empty">No serving areas listed yet.</div>'}</section>${this.canManage() ? `<section class="panel sec about-edit"><h2 class="section-label">Manage Team Member</h2><p class="hint">Delete removes this person from RCI Leadership. Their Microsoft account, app permissions and ministry records stay the same.</p><button class="btn danger" data-act="leader-remove">Delete Leadership member</button></section>` : ''}${this.modal()}`;
+  },
+  async saveCard(p, changes) {
+    if (!this.canEditAbout(p) || !this.data.leadership?.some(x => x.userId === p.userId)) throw new Error('Only this person or RCI Serve administrators can edit this profile.');
+    const details = this.cleanDetails(changes), at = new Date().toISOString();
+    const targetId = this.isSelf(p) && !this.canManage() ? S.me.id : p.userId;
+    if (!DEMO) {
+      const base = await Comm.list({...CHURCH_CAL,key:'serve'},'Team Board');
+      await API.g(base,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'Leadership contact info',ParentId:'hub-card:'+targetId,Body:JSON.stringify({userId:targetId,...details})}})});
+    }
+    this.cardDetailEvents.push({userId:targetId,...details,at,order:Date.now()});
+    this.data.leadership = this.applyProfiles(this.data.leadership);
+  },
+  reset() { this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.profileDetailEvents = []; this.cardDetailEvents = []; this.aboutId = ''; this.aboutEditing = false; this.accessStates = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
 };
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'leadership-form') return;
@@ -364,15 +469,19 @@ document.addEventListener('submit', async e => {
   const person = Rosters.data[key]?.find(p => (key === 'leadership' ? p.userId : p.rowId) === id);
   if (!person) return;
   Rosters.deleteSelection = id; Rosters.saving = true; render();
-  try { await Rosters.deleteMember(key, person); Rosters.deleteKey = ''; toast('Member deleted from ' + (key === 'leadership' ? 'Leadership' : 'the team roster')); }
+  try { await Rosters.deleteMember(key, person); Rosters.deleteKey = ''; if (S.view === 'leader-about' && key === 'leadership' && !Rosters.aboutPerson()){ S.view = 'teams'; try { sessionStorage.setItem('rci-serve:view',S.view); } catch (_) {} } toast('Member deleted from ' + (key === 'leadership' ? 'Leadership' : 'the team roster')); }
   catch (err) { toast(err.message || 'Unable to delete this member.', true); }
   Rosters.saving = false; render();
 });
 
 document.addEventListener('input', e => {
+  if (e.target.closest('#leader-info-form') && Rosters.aboutDraft && ['first','birthday','phone'].includes(e.target.name)) Rosters.aboutDraft[e.target.name] = e.target.value;
   if (e.target.id === 'hub-profile-name' && Rosters.profileDraft) Rosters.profileDraft.name = e.target.value;
+  if (e.target.closest('#hub-profile-form') && Rosters.profileDraft && ['first','birthday','phone'].includes(e.target.name)) Rosters.profileDraft[e.target.name] = e.target.value;
 });
 document.addEventListener('change', async e => {
+  if (e.target.closest('#leader-places-form') && e.target.name === 'place') Rosters.placesDraft = {userId:Rosters.aboutId,places:[...e.target.closest('form').querySelectorAll('input[name=place]:checked')].map(x => x.value)};
+  if (e.target.closest('#hub-profile-form') && e.target.name === 'place' && Rosters.profileDraft) Rosters.profileDraft.places = [...e.target.closest('form').querySelectorAll('input[name=place]:checked')].map(x => x.value);
   if (e.target.id !== 'hub-profile-photo') return;
   try { await Rosters.choosePhoto(e.target.files?.[0]); } catch(err) { toast(err.message,true); }
 });
@@ -383,4 +492,13 @@ document.addEventListener('submit', async e => {
   Rosters.profileSaving = true; render();
   try { await Rosters.saveProfile(name); toast('Profile updated'); } catch(err) { toast(err.message,true); }
   Rosters.profileSaving = false; render();
+});
+
+document.addEventListener('submit',async e => {
+  if (!['leader-info-form','leader-places-form'].includes(e.target.id)) return;
+  e.preventDefault(); const p = Rosters.aboutPerson(); if (!p || Rosters.saving || !Rosters.canEditAbout(p)) return;
+  const f = new FormData(e.target), changes = e.target.id === 'leader-places-form' ? {places:f.getAll('place')} : {first:String(f.get('first') || ''),birthday:String(f.get('birthday') || ''),phone:String(f.get('phone') || '')};
+  Rosters.saving = true; render();
+  try { await Rosters.saveCard(p,changes); Rosters.aboutEditing = false; Rosters.placesDraft = null; toast('Profile updated'); } catch(err) { toast(err.message,true); }
+  Rosters.saving = false; render();
 });

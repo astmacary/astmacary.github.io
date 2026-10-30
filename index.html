@@ -261,13 +261,18 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 
 .team-title{display:flex;align-items:center;gap:6px;flex:1;min-width:0}.team-title b{font-size:13px;line-height:1.2}.team-title .team-name{flex:initial}.team-title .roster-refresh-small{width:24px;height:24px;border:0;flex:none}.roster-refresh-small svg{width:12px;height:12px}.roster-chevron{display:grid;place-items:center;width:24px;height:24px}.roster-chevron svg{width:18px;height:18px}.roster-toggle[aria-expanded="true"] .roster-chevron{transform:rotate(180deg)}
 .profile-hero{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:20px 16px}.profile-avatar-wrap{position:relative}.profile-hero .av{width:104px;height:104px;border-radius:50%;border:2px solid var(--accent);display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-size:36px;font-weight:700;overflow:hidden}.profile-hero .av img{width:100%;height:100%;object-fit:cover}.profile-avatar-wrap .roster-star{position:absolute;top:2px;right:0}.profile-hero h2{font-family:var(--display);font-size:28px;letter-spacing:.02em;margin:0}.profile-hero small{overflow-wrap:anywhere;max-width:100%}.profile-hero .hint{margin:0;font-size:13px}.profile-hero-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:8px}.hub-profile-editor{padding:16px}
+
+.roster-profile-link{display:flex;align-items:center;flex-direction:column;gap:4px;width:100%;padding:0;border:0;background:transparent;color:var(--fg);font-size:inherit;line-height:inherit}.roster-profile-link:hover b{text-decoration:underline}
+.serving-next{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}.serving-next small{display:block;color:var(--muted);font-size:12px}
+.section-label{font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin:0}.info-card{position:relative;padding:16px}.card-edit{position:absolute;top:8px;right:8px;width:30px;height:30px}.kv{display:grid;grid-template-columns:auto 1fr;gap:10px 18px;margin:0}.kv dt{color:var(--muted);font-size:13.5px}.kv dd{margin:0;font-weight:600;min-width:0;overflow-wrap:anywhere}.about-edit{padding:16px}.about-edit input:not([type=checkbox]){width:100%;min-height:42px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.checklist{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg)}.serve-opt{display:flex;align-items:center;gap:12px;padding:11px 12px;border-top:1px solid var(--line);font-weight:600;font-size:14.5px;cursor:pointer}.serve-opt:first-child{border-top:0}.serve-opt input[type=checkbox]{width:22px;height:22px;min-height:22px;accent-color:var(--accent)}.access-box{text-align:center;align-items:center;padding:16px}.access-box .acts2{justify-content:center}.access-box .hint{margin:0}.access-flag{align-self:flex-start;font-size:12px;border:1px solid var(--line);border-radius:12px;padding:3px 9px}.admin-tag{color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent)}.place-list{list-style:none;margin:0;padding:0}.place-list li{padding:11px 14px;border-bottom:1px solid var(--line)}.place-list li:last-child{border:0}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=42"></script>
-<script src="/rosters.js?v=42"></script>
+<script src="/communications.js?v=43"></script>
+<script src="/rosters.js?v=43"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -276,7 +281,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "42";   // bump together with CACHE in sw.js
+const APP_VERSION = "43";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -291,7 +296,7 @@ const TEAMS = [
   { key: "security", name: "Security", full: "RCI Security", path: "/rci-security/", tl: "#7A1F1F", td: "#EB9393", icon: "shield",
     sitePath: "/sites/RCISecurity", listName: "Security Schedule", announcementsListName: "Announcements",
     editors: ["delisa.rogers@therampchurch.com", "hal.hanson@therampchurch.com", "halrhansonjr@gmail.com", "lee.gilbert@therampchurch.com", "gilbertwilfred7@gmail.com", "ashley.stmacary@therampchurch.com"] },
-  { key: "ushers", name: "Ushers & Altar", full: "RCI Ushers & Altar Workers", path: "/rci-ushers/", tl: "#1E5E43", td: "#6CC69C", icon: "door",
+  { key: "ushers", name: "Ushers & Altar Workers", full: "RCI Ushers & Altar Workers", path: "/rci-ushers/", tl: "#1E5E43", td: "#6CC69C", icon: "door",
     sitePath: "/sites/RCIUsherDept.-UsherSchedule", listName: "Usher Schedule", announcementsListName: "Announcements",
     editors: ["delisa.rogers@therampchurch.com", "ashley.stmacary@therampchurch.com", "tammyrambler@gmail.com"] },
   { key: "worship", name: "Worship & Arts", full: "RCI Worship & Arts", path: "/rci-worship-arts/", tl: "#4A2F7A", td: "#B9A1EA", icon: "music",
@@ -1357,11 +1362,11 @@ function render(){
   }
   const tabsArr = tabsList();
   const body = S.view === "notes" ? viewServiceNotes() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
-    : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
+    : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${body}</div></main>` + tabs;
-  hydrateFlyers(); if (S.view === "teams") Rosters.hydrate();
+  hydrateFlyers(); if (["teams","leader-about"].includes(S.view)) Rosters.hydrate();
 }
 function hydrateFlyers(){
   document.querySelectorAll("[data-flyer]").forEach(async el => {
@@ -1388,7 +1393,13 @@ function openLightbox(url, alt){
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act;
-  if (act === "roster-toggle") Rosters.toggle(b.dataset.k);
+  if (act === "leader-about") Rosters.openAbout(b.dataset.id);
+  else if (act === "leader-remove") { const p = Rosters.aboutPerson(); if (p && Rosters.canManage()){ Rosters.deleteKey = 'leadership'; Rosters.deleteSelection = p.userId; render(); } }
+  else if (act === "leader-about-back") { S.view = 'teams'; Rosters.aboutEditing = false; try { sessionStorage.setItem('rci-serve:view',S.view); } catch (_) {} render(); }
+  else if (act === "leader-check-access") void Rosters.checkAccess(Rosters.aboutPerson());
+  else if (act === "leader-info-edit") { const p = Rosters.aboutPerson(); if (p && Rosters.canEditAbout(p)){ Rosters.aboutDraft = Rosters.detailsFor(p); Rosters.aboutEditing = true; render(); } }
+  else if (act === "leader-info-cancel") { Rosters.aboutEditing = false; render(); }
+  else if (act === "roster-toggle") Rosters.toggle(b.dataset.k);
   else if (act === "roster-refresh") { void Rosters.load(b.dataset.k, true); render(); }
   else if (act === "leadership-add") { if (Rosters.canManage()){ Rosters.adding = true; render(); } }
   else if (act === "leadership-cancel") { Rosters.adding = false; Rosters.draft = ''; render(); }

@@ -98,7 +98,7 @@ const Comm = {
       this.extraAdmins[t.key] = Array.isArray(list) ? list.map(lc) : [];
     } catch (_) { /* Built-in administrators remain available if the optional roster cannot be read. */ }
   },
-  metadata(r) { return /^(pin:|hide:|leadership:|hub-admin:|hub-profile:)/.test(r.parent); },
+  metadata(r) { return /^(pin:|hide:|leadership:|hub-admin:|hub-profile:|hub-card:)/.test(r.parent); },
   board(d = this.data[this.selected]) { return (d?.board || []).filter(r => !this.metadata(r)); },
   hidden(id, d = this.data[this.selected], key = this.selected) {
     const admins = this.adminEmails(this.space(key));
