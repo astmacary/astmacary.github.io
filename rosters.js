@@ -179,15 +179,18 @@ const Rosters = {
     add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
     remove: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>'
   },
+  refreshIcon(key,label) {
+    return `<button class="iconbtn roster-refresh-small" data-act="roster-refresh" data-k="${key}" aria-label="Refresh ${esc(label)} roster" title="Refresh roster">${ICON.refresh}</button>`;
+  },
   controls(key, label) {
     const manage = this.canManageTeam(key), t = TEAMS.find(t => t.key === key);
-    return `<div class="roster-actions"><button class="iconbtn sm" data-act="roster-refresh" data-k="${key}" aria-label="Refresh ${esc(label)} roster" title="Refresh roster">${ICON.refresh}</button>${manage ? (key === 'leadership'
+    return `<div class="roster-actions">${manage ? (key === 'leadership'
       ? `<button class="iconbtn sm" data-act="leadership-add" aria-label="Add RCI Leadership member" title="Add member">${this.icons.add}</button>`
       : `<a class="iconbtn sm" href="${t.path}?roster=add${DEMO ? '&amp;demo' : ''}" aria-label="Add ${esc(label)} member" title="Add member">${this.icons.add}</a>`) + `<button class="iconbtn sm danger" data-act="roster-delete" data-k="${key}" aria-label="Delete ${esc(label)} member" title="Delete member">${this.icons.remove}</button>` : ''}</div>`;
   },
   section(key) {
     const opened = this.open.has(key), people = this.data[key], label = key === 'leadership' ? 'RCI Leadership' : TEAMS.find(t => t.key === key)?.full || key;
-    return `<div class="roster-section"><button class="roster-toggle" data-act="roster-toggle" data-k="${key}" aria-label="${esc(label)} team roster" aria-expanded="${opened}" aria-controls="roster-${key}"><span>Team roster · ${this.count(key) ?? '—'}</span><span aria-hidden="true">${opened ? '▴' : '▾'}</span></button>${opened ? `<div id="roster-${key}" class="roster-content">
+    return `<div class="roster-section"><button class="roster-toggle" data-act="roster-toggle" data-k="${key}" aria-label="${esc(label)} team roster" aria-expanded="${opened}" aria-controls="roster-${key}"><span>Team roster · ${this.count(key) ?? '—'}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button>${opened ? `<div id="roster-${key}" class="roster-content">
       ${this.tasks[key] ? '<p class="hint" role="status">Loading roster…</p>' : ''}
       ${this.errors[key] ? `<p class="hint" role="alert">${esc(this.errors[key])}</p>` : ''}
       ${people?.length ? `<ul class="team-roster">${people.map((p,i) => this.person(p,i,key)).join('')}</ul>` : !this.tasks[key] && !this.errors[key] ? '<p class="hint">No team members yet.</p>' : ''}
@@ -209,8 +212,8 @@ const Rosters = {
       void this.load('leadership');
       return '<h1 class="page">Your Teams</h1><p class="hint" role="status">Loading teams and roster counts…</p>';
     }
-    return `<h1 class="page">Your Teams</h1><div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
-      ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}</div>${this.modal()}`;
+    return `<h1 class="page">Your Teams</h1><div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.refreshIcon('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
+      ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.refreshIcon(t.key,t.full)}</div>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}</div>${this.modal()}`;
   },
   async deleteMember(key, person) {
     if (key === 'leadership') { await this.save(person, 'remove'); return; }
@@ -305,8 +308,8 @@ const Rosters = {
   },
   profileEditor() {
     if (!this.canEditProfile()) return '<p class="hint">Your ministry profile is edited in that team’s app.</p>';
-    if (!this.editingProfile) return '<button class="btn" data-act="hub-profile-edit">Edit profile</button>';
-    return `<form id="hub-profile-form" class="sec hub-profile-editor"><label for="hub-profile-name">Display name</label><input id="hub-profile-name" name="name" maxlength="120" required value="${esc(this.profileDraft?.name || '')}"><label for="hub-profile-photo">Profile photo</label><input id="hub-profile-photo" type="file" accept="image/*"><p class="hint">Your name and photo appear on the RCI Leadership roster.</p><div class="acts2"><button class="btn" type="button" data-act="hub-profile-photo-remove">Remove photo</button><button class="btn primary" ${this.profileSaving ? 'disabled' : ''}>${this.profileSaving ? 'Saving…' : 'Save profile'}</button><button class="btn" type="button" data-act="hub-profile-cancel">Cancel</button></div></form>`;
+    if (!this.editingProfile) return '';
+    return `<form id="hub-profile-form" class="panel sec hub-profile-editor"><label for="hub-profile-name">Display name</label><input id="hub-profile-name" name="name" maxlength="120" required value="${esc(this.profileDraft?.name || '')}"><p class="hint">Your name and photo appear on the RCI Leadership roster.</p><div class="acts2"><button class="btn" type="button" data-act="hub-profile-photo-remove">Remove photo</button><button class="btn primary" ${this.profileSaving ? 'disabled' : ''}>${this.profileSaving ? 'Saving…' : 'Save profile'}</button><button class="btn" type="button" data-act="hub-profile-cancel">Cancel</button></div></form>`;
   },
   editProfile() {
     if (!this.canEditProfile()) return;
