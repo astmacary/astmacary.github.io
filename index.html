@@ -249,6 +249,8 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .comm-hidden-label{display:block;border-left:3px solid var(--accent);padding-left:8px}
 
 .leadership-panel{border-color:var(--accent)}
+.leadership-icon{color:var(--accent);background:var(--accent-soft)}
+.hub-profile-editor{flex-basis:100%;width:100%}.hub-profile-editor input{width:100%;min-height:42px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .team-containers{display:flex;flex-direction:column;gap:6px}.team-heading{display:flex;align-items:center;gap:8px;padding:7px 9px;min-height:46px}.team-heading>b{flex:1;font-size:13px}.team-heading .t-ic{width:28px;height:28px}.team-heading .t-ic svg{width:16px;height:16px}.team-name{display:flex;align-items:center;gap:8px;flex:1;min-width:0;color:var(--fg);text-decoration:none}.team-name b{font-size:13px;line-height:1.2}.roster-actions{display:flex;align-items:center;gap:3px;margin-left:auto}.roster-actions .iconbtn{width:30px;height:30px;text-decoration:none}.roster-actions svg{width:15px;height:15px}
 .roster-section{border-top:1px solid var(--line)}.roster-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:5px 9px;min-height:30px;border:0;background:transparent;color:var(--muted);font-size:11px;font-weight:600;text-align:left}
 .roster-content{padding:5px 9px 8px}.team-roster{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px 6px}
@@ -261,8 +263,8 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=38"></script>
-<script src="/rosters.js?v=38"></script>
+<script src="/communications.js?v=39"></script>
+<script src="/rosters.js?v=39"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -271,7 +273,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "38";   // bump together with CACHE in sw.js
+const APP_VERSION = "39";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -516,7 +518,7 @@ const API = {
     const col = {};
     let sel;
     if (t.key === "productions") sel = "Title,ServiceDates,ServiceCategory,CallTime,ServiceTime,ChoiceNames,PersonLookupId,Status,Published,ArchiveStatus";
-    else if (t.key === "worship") sel = "Title,ServiceDate,ServiceCategory,CallTime,ServiceTime,FullName,NameEmailLookupId,Status,Published,LeaderPositions,SingingPositions,MusicianPositions";
+    else if (t.key === "worship") sel = "Title,ServiceDate,ServiceCategory,CallTime,ServiceTime,FullName,NameEmailLookupId,Status,Published,LeaderPositions,SingingPositions,MusicianPositions,ActiveStatus";
     else {
       // Security and Ushers: find each column by its internal name, then by its display name (same as those apps do).
       const COLS = {
@@ -748,7 +750,7 @@ const API = {
 
 /* One shape for every team's rows. kind: "profile" (Roster / Birthday row), "assign" (a position on a date), or "other". */
 function normalize(t, id, f, emailById, col){
-  const base = { team: t.key, rowId: id, id: t.key + ":" + id, slot: 1 };
+  const base = { team: t.key, rowId: id, id: t.key + ":" + id, slot: 1, active: f.ActiveStatus || "" };
   if (t.key === "productions"){
     const cat = f.ServiceCategory || "";
     const kind = cat === "🎂 Birthday" ? "profile" : (!f.ServiceDates || /^(absent|no service)$/i.test(cat)) ? "other" : "assign";
@@ -911,6 +913,7 @@ async function loadAll(){
   S.loading = false; S.loadedAt = Date.now(); S.phase = "ready";
   if (!S.cal.sel){ const first = upcoming()[0]; S.cal.sel = first && first.date <= addDays(todayKey(), 31) ? first.date : todayKey(); }
   updateBadge(); render();
+  void Rosters.load('leadership');
   void Comm.load().then(() => { if (S.phase === 'ready' && !Comm.busy && !document.activeElement?.closest('input,textarea,select,[contenteditable="true"]')) render(); });
 }
 
@@ -1295,10 +1298,12 @@ function viewAnnouncements(){
 function viewTeams(){ return Rosters.view(); }
 
 function viewProfile(){
+  const profile = Rosters.ownProfile();
+  if (!Rosters.data.leadership && !Rosters.tasks.leadership) void Rosters.load('leadership');
   return `<h1 class="page">Profile</h1>
-    <section class="panel prof"><span class="av">${S.photo ? `<img src="${S.photo}" alt="">` : esc(initials(S.me.name))}</span>
-      <span style="min-width:0"><b style="display:block;font-size:18px">${esc(S.me.name)} ${Rosters.star({emails:S.me.emails})}</b><small class="muted" style="word-break:break-all">${esc(S.me.emails[0] || "")}</small></span>
-      <p class="hint">Your profile and photo are edited in each team's app (My Profile).</p></section>
+    <section class="panel prof"><span class="av">${profile.photo ? `<img src="${profile.photo}" alt="">` : esc(initials(profile.name))}</span>
+      <span style="min-width:0"><b style="display:block;font-size:18px">${esc(profile.name)} ${Rosters.star({emails:S.me.emails})}</b><small class="muted" style="word-break:break-all">${esc(S.me.emails[0] || "")}</small></span>
+      ${Rosters.profileEditor()}</section>
     ${badgeAsk()}
     <section class="panel">
       <button class="setrow" data-act="refresh"><span>Refresh my teams</span><span class="muted" style="width:20px;height:20px;display:grid">${ICON.refresh}</span></button>
@@ -1387,6 +1392,9 @@ document.addEventListener("click", async e => {
     if (Rosters.canManageTeam(b.dataset.k)){ Rosters.deleteKey = b.dataset.k; Rosters.deleteSelection = ''; void Rosters.load(b.dataset.k); render(); }
   }
   else if (act === "roster-delete-cancel") { Rosters.deleteKey = ''; render(); }
+  else if (act === "hub-profile-edit") Rosters.editProfile();
+  else if (act === "hub-profile-cancel") { Rosters.editingProfile = false; Rosters.profileDraft = null; render(); }
+  else if (act === "hub-profile-photo-remove") { if (Rosters.profileDraft){ Rosters.profileDraft.photo = null; render(); } }
   else if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "signin") API.signIn();
   else if (act === "signout"){ Rosters.reset(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }

@@ -1,7 +1,7 @@
 /* Roster display stays within each ministry's existing SharePoint access.
    Manual Leadership entries are authenticated administrator events in the Serve board. */
 const Rosters = {
-  open: new Set(), data: {}, errors: {}, tasks: {}, identities: new Map(), photos: new Map(), extraEditors: {}, saving: false, deleteKey: '', leadershipChanges: new Map(), demoLeadershipEvents: [],
+  open: new Set(), data: {}, errors: {}, tasks: {}, identities: new Map(), photos: new Map(), extraEditors: {}, saving: false, profiles: {}, editingProfile: false, profileDraft: null, profileSaving: false, deleteKey: '', leadershipChanges: new Map(), demoLeadershipEvents: [],
   baseHubAdmins: null, hubAdminTask: null,
   async loadHubAdmins() {
     if (DEMO) return;
@@ -94,7 +94,9 @@ const Rosters = {
   async manual() {
     const base = await Comm.list({ ...CHURCH_CAL, key: 'serve' }, 'Team Board');
     const raw = await API.all(base + '?$expand=fields($select=Title,Body,ParentId)&$top=200');
-    const events = raw.map(r => Comm.normalize(r)).filter(r => r.parent.startsWith('leadership:'));
+    const records = raw.map(r => Comm.normalize(r));
+    this.readProfiles(records.filter(r => r.parent.startsWith('hub-profile:')));
+    const events = records.filter(r => r.parent.startsWith('leadership:'));
     await Comm.resolveAuthors(events);
     return this.manualPeople(events);
   },
@@ -138,7 +140,7 @@ const Rosters = {
       if (!display.has(key)) display.set(key, { ...p, userIds: [p.userId] });
       else { const old = display.get(key); old.userIds.push(p.userId); old.emails = [...new Set([...(old.emails || [old.email]), ...(p.emails || [p.email])])]; if (!old.photoRaw && p.photoRaw) Object.assign(old, { photoRaw: p.photoRaw, team: p.team, rowId: p.rowId }); }
     }
-    return [...display.values()];
+    return this.applyProfiles([...display.values()]);
   },
   async load(key, refresh = false) {
     if (this.tasks[key]) return this.tasks[key];
@@ -154,7 +156,7 @@ const Rosters = {
           : await this.ministry(t);
         if (identity === (S.me?.id || S.me?.emails.join("|"))) this.data[key] = people;
       } catch (e) { this.errors[key] = e.message || 'Unable to load the roster.'; }
-      finally { delete this.tasks[key]; if (S.phase === 'ready' && S.view === 'teams') render(); }
+      finally { delete this.tasks[key]; if (S.phase === 'ready' && ['teams','profile'].includes(S.view) && !this.profileSaving) render(); }
     })();
     return this.tasks[key];
   },
@@ -166,7 +168,14 @@ const Rosters = {
   person(p, index, key) {
     return `<li class="roster-person"><span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${this.star(p)}<b>${esc(p.name)}</b></li>`;
   },
+  count(key) {
+    if (key === 'leadership') return this.data.leadership?.length;
+    if (DEMO && this.data[key]) return this.data[key].length;
+    return this.unique((S.teams[key]?.items || []).filter(p => p.kind === 'profile' && !p.gone && p.fullName && (key !== 'worship' || lc(p.active) !== 'non active')).map(p => ({name:p.fullName,email:p.email}))).length;
+  },
   icons: {
+    leadership: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m3 6 4 4 5-6 5 6 4-4-2 14H5L3 6Z"/><path d="M6 16h12"/></svg>',
+
     add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
     remove: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>'
   },
@@ -178,7 +187,7 @@ const Rosters = {
   },
   section(key) {
     const opened = this.open.has(key), people = this.data[key], label = key === 'leadership' ? 'RCI Leadership' : TEAMS.find(t => t.key === key)?.full || key;
-    return `<div class="roster-section"><button class="roster-toggle" data-act="roster-toggle" data-k="${key}" aria-label="${esc(label)} team roster" aria-expanded="${opened}" aria-controls="roster-${key}"><span>Team roster${people ? ' · ' + people.length : ''}</span><span aria-hidden="true">${opened ? '▴' : '▾'}</span></button>${opened ? `<div id="roster-${key}" class="roster-content">
+    return `<div class="roster-section"><button class="roster-toggle" data-act="roster-toggle" data-k="${key}" aria-label="${esc(label)} team roster" aria-expanded="${opened}" aria-controls="roster-${key}"><span>Team roster · ${this.count(key) ?? '—'}</span><span aria-hidden="true">${opened ? '▴' : '▾'}</span></button>${opened ? `<div id="roster-${key}" class="roster-content">
       ${this.tasks[key] ? '<p class="hint" role="status">Loading roster…</p>' : ''}
       ${this.errors[key] ? `<p class="hint" role="alert">${esc(this.errors[key])}</p>` : ''}
       ${people?.length ? `<ul class="team-roster">${people.map((p,i) => this.person(p,i,key)).join('')}</ul>` : !this.tasks[key] && !this.errors[key] ? '<p class="hint">No team members yet.</p>' : ''}
@@ -196,7 +205,11 @@ const Rosters = {
   },
   view() {
     const teams = myTeams();
-    return `<h1 class="page">Your Teams</h1><div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><span class="t-ic">${ICON.team}</span><b>RCI Leadership</b>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
+    if (!this.data.leadership && !this.errors.leadership){
+      void this.load('leadership');
+      return '<h1 class="page">Your Teams</h1><p class="hint" role="status">Loading teams and roster counts…</p>';
+    }
+    return `<h1 class="page">Your Teams</h1><div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
       ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}</div>${this.modal()}`;
   },
   async deleteMember(key, person) {
@@ -216,6 +229,7 @@ const Rosters = {
     this.data[key] = this.data[key].filter(p => p.rowId !== person.rowId);
   },
   async photo(p) {
+    if (p.hubPhoto !== undefined) return p.hubPhoto || null;
     if (DEMO) return null;
     const key = [p.team, p.rowId, p.photoRaw, p.userId, p.email].join('|');
     if (!this.photos.has(key)) this.photos.set(key, (async () => {
@@ -265,7 +279,70 @@ const Rosters = {
     }
     await this.load('leadership', true);
   },
-  reset() { this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
+  readProfiles(events) {
+    const profiles = {};
+    for (const r of [...events].sort((a,b) => a.at.localeCompare(b.at) || Number(a.id)-Number(b.id))) try {
+      const p = JSON.parse(r.text);
+      if (!p.userId || r.authorId !== p.userId || r.parent !== 'hub-profile:' + p.userId || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 120) continue;
+      if (p.photo !== undefined && p.photo !== null && (typeof p.photo !== 'string' || p.photo.length > 40000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(p.photo))) continue;
+      profiles[p.userId] = { userId:p.userId, name:p.name.trim(), ...(p.photo !== undefined ? {photo:p.photo} : {}), at:r.at };
+    } catch (_) {}
+    this.profiles = profiles;
+    return profiles;
+  },
+  applyProfiles(people) {
+    return people.map(p => {
+      const settings = [...new Set(p.userIds || [p.userId])].map(id => this.profiles[id]).filter(Boolean).sort((a,b) => a.at.localeCompare(b.at)).at(-1);
+      return settings ? {...p,name:settings.name,...(settings.photo !== undefined ? {hubPhoto:settings.photo} : {})} : p;
+    });
+  },
+  canEditProfile() {
+    return this.canManage() || !!this.data.leadership?.some(p => p.userId === S.me?.id || p.userIds?.includes(S.me?.id) || (p.emails || [p.email]).some(e => S.me?.emails.includes(lc(e))));
+  },
+  ownProfile() {
+    const stored = this.editingProfile ? this.profileDraft : this.profiles[S.me?.id];
+    return {name:stored?.name || S.me?.name || '',photo:stored && Object.prototype.hasOwnProperty.call(stored,'photo') ? stored.photo || '' : S.photo};
+  },
+  profileEditor() {
+    if (!this.canEditProfile()) return '<p class="hint">Your ministry profile is edited in that team’s app.</p>';
+    if (!this.editingProfile) return '<button class="btn" data-act="hub-profile-edit">Edit profile</button>';
+    return `<form id="hub-profile-form" class="sec hub-profile-editor"><label for="hub-profile-name">Display name</label><input id="hub-profile-name" name="name" maxlength="120" required value="${esc(this.profileDraft?.name || '')}"><label for="hub-profile-photo">Profile photo</label><input id="hub-profile-photo" type="file" accept="image/*"><p class="hint">Your name and photo appear on the RCI Leadership roster.</p><div class="acts2"><button class="btn" type="button" data-act="hub-profile-photo-remove">Remove photo</button><button class="btn primary" ${this.profileSaving ? 'disabled' : ''}>${this.profileSaving ? 'Saving…' : 'Save profile'}</button><button class="btn" type="button" data-act="hub-profile-cancel">Cancel</button></div></form>`;
+  },
+  editProfile() {
+    if (!this.canEditProfile()) return;
+    this.profileDraft = {name:this.ownProfile().name,...(this.profiles[S.me?.id]?.photo !== undefined ? {photo:this.profiles[S.me.id].photo} : {})};
+    this.editingProfile = true; render();
+  },
+  async saveProfile(name) {
+    if (!this.canEditProfile() || !S.me?.id) throw new Error('Leadership members can edit only their own profile.');
+    name = String(name || '').trim();
+    if (!name || name.length > 120) throw new Error('Enter a name up to 120 characters.');
+    const p = {userId:S.me.id,name,...(this.profileDraft?.photo !== undefined ? {photo:this.profileDraft.photo} : {})};
+    if (p.photo !== undefined && p.photo !== null && (p.photo.length > 40000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/.test(p.photo))) throw new Error('Choose a smaller profile photo.');
+    if (!DEMO){
+      const base = await Comm.list({...CHURCH_CAL,key:'serve'},'Team Board');
+      await API.g(base,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'Leadership profile',ParentId:'hub-profile:'+S.me.id,Body:JSON.stringify(p)}})});
+    }
+    this.profiles[S.me.id] = {...p,at:new Date().toISOString()};
+    if (this.data.leadership) this.data.leadership = this.applyProfiles(this.data.leadership);
+    this.editingProfile = false; this.profileDraft = null;
+  },
+  async choosePhoto(file) {
+    if (!this.canEditProfile() || !this.editingProfile || !file) return;
+    if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image(); img.src = url; await img.decode();
+      const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 256;
+      const size = Math.min(img.naturalWidth,img.naturalHeight); if (!size) throw new Error('Unable to open this photo.');
+      canvas.getContext('2d').drawImage(img,(img.naturalWidth-size)/2,(img.naturalHeight-size)/2,size,size,0,0,256,256);
+      let photo = canvas.toDataURL('image/jpeg',.8);
+      if (photo.length > 40000) photo = canvas.toDataURL('image/jpeg',.5);
+      if (photo.length > 40000) throw new Error('Choose a smaller photo.');
+      this.profileDraft.photo = photo; render();
+    } finally { URL.revokeObjectURL(url); }
+  },
+  reset() { this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
 };
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'leadership-form') return;
@@ -287,4 +364,20 @@ document.addEventListener('submit', async e => {
   try { await Rosters.deleteMember(key, person); Rosters.deleteKey = ''; toast('Member deleted from ' + (key === 'leadership' ? 'Leadership' : 'the team roster')); }
   catch (err) { toast(err.message || 'Unable to delete this member.', true); }
   Rosters.saving = false; render();
+});
+
+document.addEventListener('input', e => {
+  if (e.target.id === 'hub-profile-name' && Rosters.profileDraft) Rosters.profileDraft.name = e.target.value;
+});
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'hub-profile-photo') return;
+  try { await Rosters.choosePhoto(e.target.files?.[0]); } catch(err) { toast(err.message,true); }
+});
+document.addEventListener('submit', async e => {
+  if (e.target.id !== 'hub-profile-form') return;
+  e.preventDefault(); if (Rosters.profileSaving || !Rosters.canEditProfile()) return;
+  const name = String(new FormData(e.target).get('name') || '');
+  Rosters.profileSaving = true; render();
+  try { await Rosters.saveProfile(name); toast('Profile updated'); } catch(err) { toast(err.message,true); }
+  Rosters.profileSaving = false; render();
 });
