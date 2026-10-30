@@ -189,8 +189,9 @@ const Rosters = {
     return [...people].sort((a,b) => priority(a) - priority(b) || a.name.localeCompare(b.name));
   },
   person(p, index, key) {
-    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${key === 'productions' ? '' : this.star(p)}<b>${esc(p.name)}</b>`;
-    return `<li class="roster-person">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : this.ministryHref(key,p) ? `<a class="roster-profile-link" data-ministry-profile href="${esc(this.ministryHref(key,p))}" aria-label="About ${esc(p.name)}">${inside}</a>` : inside}</li>`;
+    const leader = key !== 'leadership' && p.ministryLeader === true;
+    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${key === 'productions' ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? '<span class="ministry-leader-tag">Ministry Leader</span>' : ''}`;
+    return `<li class="roster-person${leader ? ' roster-ministry-leader' : ''}">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : this.ministryHref(key,p) ? `<a class="roster-profile-link" data-ministry-profile href="${esc(this.ministryHref(key,p))}" aria-label="About ${esc(p.name)}">${inside}</a>` : inside}</li>`;
   },
   count(key) {
     if (key === 'leadership') return this.data.leadership?.length;
@@ -214,13 +215,17 @@ const Rosters = {
       : `<a class="iconbtn sm" href="${t.path}?roster=add${DEMO ? '&amp;demo' : ''}" aria-label="Add ${esc(label)} member" title="Add member">${this.icons.add}</a>`) + `<button class="iconbtn sm danger" data-act="roster-delete" data-k="${key}" aria-label="Delete ${esc(label)} member" title="Delete member">${this.icons.remove}</button>` : ''}</div>`;
   },
   section(key) {
-    const opened = this.open.has(key), people = this.data[key], label = key === 'leadership' ? 'RCI Leadership' : TEAMS.find(t => t.key === key)?.full || key;
+    const opened = this.open.has(key), people = this.data[key];
+    const verified = key === 'leadership' || DEMO || S.teams[key]?.accessVerified;
+    const loaded = verified && Array.isArray(people);
+    const loading = !!this.tasks[key] || (!loaded && !this.errors[key] && (verified || S.loading));
     return `<div id="roster-${key}" class="roster-section" ${opened ? '' : 'hidden'}>${opened ? `<div class="roster-content">
-      ${this.tasks[key] ? '<p class="hint" role="status">Loading roster…</p>' : ''}
+      ${loading ? '<p class="hint" role="status">Loading roster…</p>' : ''}
       ${this.errors[key] ? `<p class="hint" role="alert">${esc(this.errors[key])} Use the refresh icon at the top of the app to try again.</p>` : ''}
-      ${people?.length ? `<ul class="team-roster">${people.map((p,i) => this.person(p,i,key)).join('')}</ul>` : !this.tasks[key] && !this.errors[key] ? '<p class="hint">No team members yet.</p>' : ''}
+      ${loaded && people.length ? `<ul class="team-roster">${people.map((p,i) => this.person(p,i,key)).join('')}</ul>` : loaded && !loading && !this.errors[key] ? '<p class="hint">No team members yet.</p>' : !loading && !this.errors[key] ? '<p class="hint" role="status">Waiting for roster access to be verified…</p>' : ''}
     </div>` : ''}</div>`;
   },
+
   modal() {
     if (this.adding && this.canManage()) return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Add Leadership member</h2><form id="leadership-form" class="sec"><label for="leadership-email">Sign-in email</label><input id="leadership-email" type="email" name="email" value="${esc(this.draft || '')}" required autocomplete="email"><p class="hint">Adds their name and photo to Leadership. App access stays the same.</p><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add member'}</button><button class="btn" type="button" data-act="leadership-cancel">Cancel</button></div></form></section></div>`;
     if (!this.deleteKey || !this.canManageTeam(this.deleteKey)) return '';
@@ -245,15 +250,6 @@ const Rosters = {
     const loading = groups.some(g => this.tasks[g.key]);
     return `<div class="roster-search-results"><p class="hint" role="status">${loading ? 'Searching rosters…' : count ? `${count} matching roster ${count === 1 ? 'entry' : 'entries'}` : 'No people found. Try another name.'}</p>${count ? '<div class="panel roster-search-columns">' : ''}${groups.map(g => `${this.errors[g.key] ? `<p class="hint" role="alert">${esc(g.full)}: ${esc(this.errors[g.key])} Use the refresh icon at the top of the app to try again.</p>` : ''}${g.people.length ? `<section class="roster-search-group"><h2>${esc(g.full)}</h2><ul class="team-roster">${g.people.map(({p,index}) => this.person(p,index,g.key)).join('')}</ul></section>` : ''}`).join('')}${count ? '</div>' : ''}</div>`;
   },
-  leaderHeader(key) {
-    const people = this.data[key] || [];
-    const leaders = people.map((p,index) => ({p,index})).filter(({p}) => p.ministryLeader);
-    if (key === 'ushers') leaders.sort((a,b) => Number(lc(b.p.name).trim() === 'tammy marshall') - Number(lc(a.p.name).trim() === 'tammy marshall'));
-    return leaders.length ? `<div class="team-leaders" aria-label="Ministry ${leaders.length === 1 ? 'leader' : 'leaders'}">${leaders.map(({p,index}) => {
-      const href = this.ministryHref(key,p), tag = href ? 'a' : 'span';
-      return `<${tag} class="team-leader" ${href ? `data-ministry-profile href="${esc(href)}" aria-label="About ${esc(p.name)}"` : ''} title="Ministry leader: ${esc(p.name)}"><span class="roster-avatar" data-roster-photo="${key}:${index}">${esc(initials(p.name))}</span><span>${esc(p.name)}</span></${tag}>`;
-    }).join('')}</div>` : '';
-  },
   view() {
     const teams = myTeams();
     if (!this.data.leadership && !this.errors.leadership){
@@ -262,7 +258,7 @@ const Rosters = {
     }
     for (const t of teams) if ((DEMO || S.teams[t.key]?.accessVerified) && !this.data[t.key] && !this.errors[t.key]) void this.load(t.key);
     return `<div class="teams-page-heading"><h1 class="page">Your Teams</h1><input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div>${this.search.trim() ? this.searchView() : ''}<div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.rosterToggle('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
-      ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.rosterToggle(t.key,t.full)}</div>${this.leaderHeader(t.key)}${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}</div>${this.modal()}`;
+      ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.rosterToggle(t.key,t.full)}</div>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}</div>${this.modal()}`;
   },
   async deleteMember(key, person) {
     if (key === 'leadership') { await this.save(person, 'remove'); return; }
