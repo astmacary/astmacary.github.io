@@ -262,22 +262,24 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .team-title{display:flex;align-items:center;gap:6px;flex:1;min-width:0}.team-title b{font-size:13px;line-height:1.2}.team-title .team-name{flex:initial}.team-title .roster-refresh-small{width:24px;height:24px;border:0;flex:none}.roster-refresh-small svg{width:12px;height:12px}.roster-chevron{display:grid;place-items:center;width:24px;height:24px}.roster-chevron svg{width:18px;height:18px}.roster-toggle[aria-expanded="true"] .roster-chevron{transform:rotate(180deg)}
 .profile-hero{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding:20px 16px}.profile-avatar-wrap{position:relative}.profile-hero .av{width:104px;height:104px;border-radius:50%;border:2px solid var(--accent);display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-size:36px;font-weight:700;overflow:hidden}.profile-hero .av img{width:100%;height:100%;object-fit:cover}.profile-avatar-wrap .roster-star{position:absolute;top:2px;right:0}.profile-hero h2{font-family:var(--display);font-size:28px;letter-spacing:.02em;margin:0}.profile-hero small{overflow-wrap:anywhere;max-width:100%}.profile-hero .hint{margin:0;font-size:13px}.profile-hero-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:8px}.hub-profile-editor{padding:16px}
 
-.roster-profile-link{display:flex;align-items:center;flex-direction:column;gap:4px;width:100%;padding:0;border:0;background:transparent;color:var(--fg);font-size:inherit;line-height:inherit}.roster-profile-link:hover b{text-decoration:underline}
+.roster-profile-link{display:flex;align-items:center;flex-direction:column;gap:4px;width:100%;padding:0;border:0;background:transparent;color:var(--fg);font-size:inherit;line-height:inherit}.roster-profile-link:hover b{text-decoration:none}
 .serving-next{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}.serving-next small{display:block;color:var(--muted);font-size:12px}
 .section-label{font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin:0}.info-card{position:relative;padding:16px}.card-edit{position:absolute;top:8px;right:8px;width:30px;height:30px}.kv{display:grid;grid-template-columns:auto 1fr;gap:10px 18px;margin:0}.kv dt{color:var(--muted);font-size:13.5px}.kv dd{margin:0;font-weight:600;min-width:0;overflow-wrap:anywhere}.about-edit{padding:16px}.about-edit input:not([type=checkbox]){width:100%;min-height:42px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .checklist{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg)}.serve-opt{display:flex;align-items:center;gap:12px;padding:11px 12px;border-top:1px solid var(--line);font-weight:600;font-size:14.5px;cursor:pointer}.serve-opt:first-child{border-top:0}.serve-opt input[type=checkbox]{width:22px;height:22px;min-height:22px;accent-color:var(--accent)}.access-box{text-align:center;align-items:center;padding:16px}.access-box .acts2{justify-content:center}.access-box .hint{margin:0}.access-flag{align-self:flex-start;font-size:12px;border:1px solid var(--line);border-radius:12px;padding:3px 9px}.admin-tag{color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent)}.place-list{list-style:none;margin:0;padding:0}.place-list li{padding:11px 14px;border-bottom:1px solid var(--line)}.place-list li:last-child{border:0}
 
 .profile-hero{position:relative}.profile-hero:has(.access-flag){padding-top:40px}.access-flag{position:absolute;top:8px;right:8px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted)}.access-flag.complete{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}.access-flag.pending{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}.access-flag.failed{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
 
-.ann-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}.ann-destinations .chipcheck{border-color:color-mix(in srgb,var(--t) 45%,var(--line));color:var(--t);background:var(--surface)}.ann-destinations .chipcheck[aria-pressed="true"]{border-color:var(--t);background:color-mix(in srgb,var(--t) 18%,var(--surface));color:var(--fg)}.ann-destinations .dot{width:9px;height:9px;border-radius:50%;background:var(--t)}.ann-destinations .chipcheck:disabled{opacity:.55}.ann-share-preview{white-space:pre-wrap;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);max-height:35vh;overflow:auto}
+.ann-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}.ann-destinations .chipcheck:disabled{opacity:.55}.ann-share-preview{white-space:pre-wrap;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);max-height:35vh;overflow:auto}
+
+button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border-radius:17px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;font-size:12.5px;font-weight:600;white-space:normal}button.team-pill[aria-pressed="true"],.comm button.team-pill[aria-pressed="true"]{background:var(--surface);border-color:var(--line);color:var(--fg);opacity:1}button.team-pill[aria-pressed="false"],.comm button.team-pill[aria-pressed="false"]{opacity:.45}button.team-pill .dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--t)}button.team-pill[aria-pressed="false"] .dot{background:transparent;border:1.5px solid var(--t)}button.team-pill:disabled{opacity:.4}.share-app{display:inline-flex;align-items:center;gap:6px;border-color:var(--accent);color:var(--accent);font-weight:700}.share-app svg{width:16px;height:16px}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=46"></script>
-<script src="/rosters.js?v=46"></script>
-<script src="/announcement-sharing.js?v=46"></script>
+<script src="/communications.js?v=47"></script>
+<script src="/rosters.js?v=47"></script>
+<script src="/announcement-sharing.js?v=47"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -286,7 +288,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "46";   // bump together with CACHE in sw.js
+const APP_VERSION = "47";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1007,8 +1009,8 @@ let deferredInstall = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredInstall = e; render(); });
 window.addEventListener("appinstalled", () => { deferredInstall = null; toast("Installed. Look for RCI Serve on your home screen."); render(); });
 
-function installGuide(){
-  if (isStandalone() || S.hideInstall) return "";
+function installGuide(force=false){
+  if (isStandalone() || (!force && S.hideInstall)) return "";
   const safari = isIOS() && !/CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
   const first = inAppBrowser() ? `<li>Open this link in <b>${isIOS() ? "Safari" : "Chrome"}</b> (not inside another app).</li>` : "";
   const steps = deferredInstall ? "" : safari
@@ -1026,6 +1028,9 @@ function badgeAsk(){
     <button class="btn decline" style="background:var(--stop);color:#FFFFFF;align-self:flex-start" data-act="allow-badge">Allow Notifications</button></section>`;
 }
 
+function viewInstall(){
+  return installGuide(true) || '<h1 class="page">RCI Serve</h1><section class="panel pad"><p>RCI Serve is already open as an installed app.</p><button class="btn primary" data-act="tab" data-view="home">Open Home</button></section>';
+}
 function teamTile(t){
   const d = S.teams[t.key] || {}, n = d.items ? pendingOf(t.key).length : 0;
   const next = upcoming().find(i => i.team === t.key && i.confirmed);
@@ -1106,7 +1111,7 @@ function viewServiceNotes(){
       ${notesToolbar()}
       <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Service Notes">${body || ""}</div>
       ${targets.length ? `<span class="hint" style="font-weight:600">Also send to <span class="hint" style="font-weight:400">(optional)</span></span>
-      <div class="chiprow">${targets.map(n => `<button type="button" class="chipcheck" data-act="notes-target" data-k="${n.key}" aria-pressed="${(p.targets || []).includes(n.key)}">${esc(n.label)}</button>`).join("")}</div>` : ""}
+      <div class="chiprow">${targets.map(n => `<button type="button" class="chipcheck team team-pill" style="${tvars(n.team())}" data-act="notes-target" data-k="${n.key}" aria-pressed="${(p.targets || []).includes(n.key)}"><span class="dot" aria-hidden="true"></span>${esc(n.label)}</button>`).join("")}</div>` : ""}
       <div class="cform-acts"><button class="btn primary" data-act="notes-save" id="notes-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save Notes"}</button><button class="btn" data-act="notes-cancel-edit" ${busy ? "disabled" : ""}>Cancel</button></div>`;
   }
   const empty = canEdit ? "No Service Notes for this date yet. Tap the pencil to add them." : "No Service Notes for this date yet.";
@@ -1155,7 +1160,7 @@ function viewHome(){
     const anns = myAnnouncements().filter(a => !S.annOff.has(a.team));
     if (annFilterChips.length > 1 || anns.length || annSendTargets().length){
       out += `<section class="sec"><div class="sec-head"><h2>Announcements</h2>${annEditBtn()}</div>
-        ${annFilterChips.length > 1 ? `<div class="chips" role="group" aria-label="Show announcements">${annFilterChips.map(t => `<button class="chip team${S.annOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="ann-filter" data-k="${t.key}" aria-pressed="${!S.annOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
+        ${annFilterChips.length > 1 ? `<div class="chips" role="group" aria-label="Show announcements">${annFilterChips.map(t => `<button class="chip team team-pill${S.annOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="ann-filter" data-k="${t.key}" aria-pressed="${!S.annOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
         ${anns.length ? `<div class="list">${anns.map(a => annCard(a, false)).join("")}</div>` : `<div class="empty">No announcements yet.</div>`}
         ${S.annEdit ? `<div class="panel pad" style="margin-top:10px">${annForm()}</div>` : ""}</section>`;
     }
@@ -1174,7 +1179,7 @@ function viewHome(){
     const byDate = {}; week.forEach(i => { (byDate[i.date] = byDate[i.date] || []).push(i); });
     const grouped = Object.keys(byDate).sort().map(d => `<div class="day-sep">${esc(fmtDay(d))}</div><div class="panel">${byDate[d].map(i => i.kind === "church" ? churchRow(i, isEditorOf(CHURCH_CAL), isAnyAdmin()) : weekCue(i)).join("")}</div>`).join("");
     out += `<section class="sec"><h2>Next 7 Days</h2>
-      ${weekChips.length > 1 ? `<div class="chips" role="group" aria-label="Show next 7 days">${weekChips.map(t => `<button class="chip team${S.weekOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="week-filter" data-k="${t.key}" aria-pressed="${!S.weekOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
+      ${weekChips.length > 1 ? `<div class="chips" role="group" aria-label="Show next 7 days">${weekChips.map(t => `<button class="chip team team-pill${S.weekOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="week-filter" data-k="${t.key}" aria-pressed="${!S.weekOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
       ${week.length ? `<div class="list">${grouped}</div>` : `<div class="empty">${reqs.length ? "Nothing confirmed this week yet." : "Nothing on your schedule this week."}</div>`}</section>`;
   }
   const errs = TEAMS.filter(t => S.teams[t.key]?.error && member(t));
@@ -1204,7 +1209,7 @@ function viewCalendar(){
   const canEditChurch = isEditorOf(CHURCH_CAL);
   const f = S.cal.form;
   return `<h1 class="page">My Calendar</h1>
-    ${chips.length > 1 ? `<div class="chips" role="group" aria-label="Show calendars">${chips.map(t => `<button class="chip team${off.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="filter" data-k="${t.key}" aria-pressed="${!off.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
+    ${chips.length > 1 ? `<div class="chips" role="group" aria-label="Show calendars">${chips.map(t => `<button class="chip team team-pill${off.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="filter" data-k="${t.key}" aria-pressed="${!off.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
     <section class="panel cal"><div class="cal-head"><button class="iconbtn" data-act="month" data-d="-1" aria-label="Previous month">${ICON.prev}</button><b>${esc(label)}</b><button class="iconbtn" data-act="month" data-d="1" aria-label="Next month">${ICON.next}</button></div>
       <div class="dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
       <div class="days">${cells}</div></section>
@@ -1235,7 +1240,7 @@ function annEditLine(a){
   return `<span class="ann-meta">${esc(a.team ? teamOf(a.team).name + " · " : "")}${esc(until)} · ${ctl}</span>`;
 }
 function annDestinationPill(t,selected,act,disabled=false){
-  return `<button type="button" class="chipcheck team" style="${tvars(t)}" data-act="${act}" data-k="${t.key}" aria-pressed="${selected}" ${disabled?'disabled':''}><span class="dot" aria-hidden="true"></span>${esc(t.name)}</button>`;
+  return `<button type="button" class="chipcheck team team-pill" style="${tvars(t)}" data-act="${act}" data-k="${t.key}" aria-pressed="${selected}" ${disabled?'disabled':''}><span class="dot" aria-hidden="true"></span>${esc(t.name)}</button>`;
 }
 function annForm(){
   const d = S.annDraft || {};
@@ -1267,7 +1272,7 @@ function churchForm(f){
     <label>Title<input type="text" data-field="title" value="${esc(f.title || "")}" placeholder="Event title" maxlength="120"></label>
     <label>Date<input type="date" data-field="date" value="${esc(f.date || "")}"></label>
     ${f.mode === "add" && teams.length ? `<span class="hint" style="font-weight:600">Send to</span>
-    <div class="chiprow">${teams.map(t => `<button type="button" class="chipcheck" data-act="church-target" data-k="${t.key}" aria-pressed="${f.targets.includes(t.key)}">${esc(t.name)}</button>`).join("")}</div>` : ""}
+    <div class="chiprow">${teams.map(t => `<button type="button" class="chipcheck team team-pill" style="${tvars(t)}" data-act="church-target" data-k="${t.key}" aria-pressed="${f.targets.includes(t.key)}"><span class="dot" aria-hidden="true"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
     <div class="cform-acts"><button class="btn" data-act="church-cancel" ${S.cal.busy ? "disabled" : ""}>Cancel</button>
       <button class="btn primary" data-act="church-save" ${S.cal.busy ? "disabled" : ""}>${S.cal.busy ? "Saving…" : "Save"}</button></div></section>`;
 }
@@ -1370,7 +1375,7 @@ function render(){
   }
   const tabsArr = tabsList();
   const body = S.view === "notes" ? viewServiceNotes() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
-    : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
+    : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${body}</div></main>` + tabs + AnnShare.modal();
@@ -1407,6 +1412,7 @@ document.addEventListener("click", async e => {
   else if (act === "leader-about") Rosters.openAbout(b.dataset.id);
   else if (act === "leader-remove") { const p = Rosters.aboutPerson(); if (p && Rosters.canManage()){ Rosters.deleteKey = 'leadership'; Rosters.deleteSelection = p.userId; render(); } }
   else if (act === "leader-about-back") { S.view = 'teams'; Rosters.aboutEditing = false; try { sessionStorage.setItem('rci-serve:view',S.view); } catch (_) {} render(); window.scrollTo(0,0); }
+  else if (act === "leader-share-app") void Rosters.shareApp();
   else if (act === "leader-check-access") void Rosters.checkAccess(Rosters.aboutPerson());
   else if (act === "leader-info-edit") { const p = Rosters.aboutPerson(); if (p && Rosters.canEditAbout(p)){ Rosters.aboutDraft = Rosters.detailsFor(p); Rosters.aboutEditing = true; render(); } }
   else if (act === "leader-info-cancel") { Rosters.aboutEditing = false; render(); }
@@ -1431,7 +1437,7 @@ document.addEventListener("click", async e => {
   else if (act === "refresh") loadAll();
   else if (act === "accept") accept(b.dataset.id);
   else if (act === "theme") toggleTheme();
-  else if (act === "hide-install"){ S.hideInstall = true; try { sessionStorage.setItem("rci-serve:noinstall", "1"); } catch(_){} render(); }
+  else if (act === "hide-install"){ if(S.view === "install"){ S.view="home"; try { sessionStorage.setItem("rci-serve:view",S.view); } catch (_) {} const url=new URL(location.href); url.searchParams.delete("install"); history.replaceState(history.state,"",url.pathname+url.search+url.hash); } S.hideInstall = true; try { sessionStorage.setItem("rci-serve:noinstall", "1"); } catch(_){} render(); }
   else if (act === "install" && deferredInstall){ deferredInstall.prompt(); deferredInstall = null; render(); }
   else if (act === "allow-badge"){ try { await Notification.requestPermission(); } catch(_){} updateBadge(); render(); }
   else if (act === "day"){ S.cal.sel = b.dataset.k; render(); }
@@ -1583,6 +1589,7 @@ document.addEventListener("visibilitychange", async () => {
 
 async function start(){
   try { S.view = sessionStorage.getItem("rci-serve:view") || "home"; S.hideInstall = sessionStorage.getItem("rci-serve:noinstall") === "1"; } catch(_){}
+  if(new URLSearchParams(location.search).has("install")) S.view="install";
   render();
   if (DEMO){ await loadAll(); return; }
   try {

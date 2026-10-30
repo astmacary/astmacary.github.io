@@ -98,7 +98,7 @@ const Comm = {
       this.extraAdmins[t.key] = Array.isArray(list) ? list.map(lc) : [];
     } catch (_) { /* Built-in administrators remain available if the optional roster cannot be read. */ }
   },
-  metadata(r) { return /^(pin:|hide:|leadership:|hub-admin:|hub-profile:|hub-card:)/.test(r.parent); },
+  metadata(r) { return /^(pin:|hide:|leadership:|hub-admin:|hub-profile:|hub-card:|hub-access:)/.test(r.parent); },
   board(d = this.data[this.selected]) { return (d?.board || []).filter(r => !this.metadata(r)); },
   hidden(id, d = this.data[this.selected], key = this.selected) {
     const admins = this.adminEmails(this.space(key));
@@ -189,7 +189,7 @@ const Comm = {
     const spaces = this.spaces(), t = this.space();
     if (!t) return '<h1 class="page">Messages</h1><div class="empty">Your boards will appear after your ministry access is confirmed.</div>';
     const d = this.data[t.key], privateOn = DEMO || this.privateReady[t.key];
-    const chips = spaces.map(s => `<button class="chipcheck" data-comm="space" data-key="${s.key}" aria-pressed="${s.key === t.key}">${esc(s.name)}${this.unread(s.key) ? ` <span aria-label="${this.unread(s.key)} unread messages">(${this.unread(s.key)})</span>` : ''}</button>`).join('');
+    const chips = spaces.map(s => `<button class="chipcheck team team-pill" style="${typeof tvars === 'function' ? tvars(s) : ''}" data-comm="space" data-key="${s.key}" aria-pressed="${s.key === t.key}"><span class="dot" aria-hidden="true"></span>${esc(s.name)}${this.unread(s.key) ? ` <span aria-label="${this.unread(s.key)} unread messages">(${this.unread(s.key)})</span>` : ''}</button>`).join('');
     let content = '';
     if (!d) content = '<div class="empty">Loading messages…</div>';
     else if (this.mode === 'contact') {

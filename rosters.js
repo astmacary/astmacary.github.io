@@ -100,6 +100,8 @@ const Rosters = {
     const cards = records.filter(r => r.parent.startsWith('hub-card:'));
     await Comm.resolveAuthors(cards);
     this.readCards(cards);
+    const access = records.filter(r => r.parent.startsWith('hub-access:'));
+    await Comm.resolveAuthors(access); this.readAccessEvents(access);
     const events = records.filter(r => r.parent.startsWith('leadership:'));
     await Comm.resolveAuthors(events);
     return this.manualPeople(events);
@@ -401,16 +403,47 @@ const Rosters = {
     if (!this.aboutId) try { this.aboutId = sessionStorage.getItem('rci-serve:about:'+(S.me?.id || '')) || ''; } catch (_) {}
     return this.data.leadership?.find(p => p.userId === this.aboutId);
   },
+  readAccessEvents(events) {
+    const latest = new Map();
+    for (const r of [...events].sort((a,b) => a.at.localeCompare(b.at) || Number(a.id)-Number(b.id))) try {
+      const p=JSON.parse(r.text);
+      if (!p.userId || r.parent !== 'hub-access:'+p.userId || !this.hubAdmins().includes(lc(r.email)) || !['verified','needs-attention','not-verified'].includes(p.status) || !Number.isFinite(Date.parse(p.checkedAt)) || p.scope !== 'serve-board-and-calendar-v1') continue;
+      latest.set(p.userId,{status:p.status,saved:true,checkedAt:p.checkedAt,label:p.status === 'verified' ? 'Access verified' : p.status === 'needs-attention' ? 'Access needs attention' : 'Access not verified',detail:p.status === 'verified' ? 'Microsoft access was verified and saved.' : 'Recheck Microsoft access before completing setup.'});
+    } catch (_) {}
+    for (const [id,state] of latest) if (!this.accessStates[id]?.busy) this.accessStates[id]=state;
+    return latest;
+  },
+  async saveAccessState(p,state) {
+    if (!this.canManage()) throw new Error('Only RCI Serve administrators can save access verification.');
+    if (!p?.userId || !['verified','needs-attention','not-verified'].includes(state.status)) throw new Error('A valid person and access result are required.');
+    const checkedAt=new Date().toISOString(), data={userId:p.userId,status:state.status,checkedAt,scope:'serve-board-and-calendar-v1'};
+    if (!DEMO) {
+      const base=await Comm.list({...CHURCH_CAL,key:'serve'},'Team Board');
+      const created=await API.g(base,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{Title:'Leadership access verification',ParentId:'hub-access:'+p.userId,Body:JSON.stringify(data)}})});
+      if (!created?.id) throw new Error('SharePoint did not confirm that the verification was saved.');
+    }
+    return {...state,saved:true,checkedAt};
+  },
+  async shareApp() {
+    if (!this.canManage()) return;
+    const url=location.origin+'/?install';
+    const text='Add RCI Serve to your phone: open this link in Safari (iPhone) or Chrome (Android), then choose Add to Home Screen or Install app. Sign in with the email your team leader has for you.';
+    try { if(navigator.share){await navigator.share({title:'RCI Serve',text,url});return;} } catch(e){if(e?.name==='AbortError')return;}
+    try { await navigator.clipboard.writeText(text+'\n'+url); toast('Link copied. Paste it into a text or email.'); } catch(_){prompt('Copy this RCI Serve link:',url);}
+  },
   accessPanel(p) {
     if (!this.canManage()) return '';
     const state = this.accessStates[p.userId];
-    return `<section class="panel sec access-box" aria-label="Access status"><h2 class="section-label">Access Status</h2><strong role="status">${esc(state?.label || 'Access not checked')}</strong><p class="hint">${esc(state?.detail || 'Check Microsoft access to the RCI Serve board and Church Calendar.')}</p><p class="hint">${esc(p.email || '')}</p><div class="acts2"><button class="btn" data-act="leader-check-access" ${state?.busy ? 'disabled' : ''}>${state?.busy ? 'Checking…' : 'Check Access'}</button><a class="btn" href="https://${CONFIG.siteHost}${CHURCH_CAL.sitePath}/_layouts/15/user.aspx" target="_blank" rel="noopener">Manage Access</a></div></section>`;
+    if (state?.status === 'verified' && state.saved) return '';
+    return `<section class="panel sec access-box" aria-label="Access status"><h2 class="section-label">Access Status</h2><strong role="status">${esc(state?.label || 'Access not checked')}</strong><p class="hint">${esc(state?.detail || 'Check Microsoft access to the RCI Serve board and Church Calendar.')}</p><p class="hint">${esc(p.email || '')}</p><div class="acts2"><button class="btn" data-act="leader-check-access" ${state?.busy ? 'disabled' : ''}>${state?.busy ? 'Checking…' : 'Check Access'}</button><a class="btn" href="https://${CONFIG.siteHost}${CHURCH_CAL.sitePath}/_layouts/15/user.aspx" target="_blank" rel="noopener">Manage Access</a><button class="btn share-app" data-act="leader-share-app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V3m-5 5 5-5 5 5M5 13v7h14v-7"/></svg>Share App</button></div></section>`;
   },
   async checkAccess(p) {
     if (!this.canManage() || !p) return;
+    const actor=S.me?.id || S.me?.emails.join('|');
+    const sameActor=()=>actor===(S.me?.id || S.me?.emails.join('|'));
     this.accessStates[p.userId] = {busy:true,label:'Checking access',detail:'Checking Microsoft permissions…'}; render();
     try {
-      if (DEMO) this.accessStates[p.userId] = {label:'Access verified',detail:'Demo access only. No Microsoft permissions were changed.'};
+      if (DEMO) this.accessStates[p.userId] = {status:'verified',label:'Access verified',detail:'Demo access only. No Microsoft permissions were changed.'};
       else {
         const person = await this.identity(p.email), token = await API.spToken(); if (!token) throw new Error('Microsoft access could not be checked.');
         const board = Comm.lists.serve.board, calendar = (await API.churchMeta()).listId;
@@ -418,9 +451,11 @@ const Rosters = {
         const q = '?@u='+encodeURIComponent("'"+login.replace(/'/g,"''")+"'");
         const read = async id => { const r = await fetch('https://'+CONFIG.siteHost+CHURCH_CAL.sitePath+"/_api/web/lists(guid'"+id+"')/getusereffectivepermissions(@u)"+q,{headers:{Authorization:'Bearer '+token,Accept:'application/json;odata=nometadata'}}); if (!r.ok) throw new Error('Microsoft did not return the access status.'); const raw = await r.json(); const value = raw.GetUserEffectivePermissions || raw.d?.GetUserEffectivePermissions || raw; if (value.Low === undefined) throw new Error('Microsoft returned an unknown access status.'); return (BigInt(value.Low)&1n) === 1n; };
         const [boardRead,calendarRead] = await Promise.all([read(board),read(calendar)]);
-        this.accessStates[p.userId] = boardRead && calendarRead ? {label:'Access verified',detail:'Microsoft confirmed access to the RCI Serve board and Church Calendar.'} : {label:'Access needs attention',detail:'Microsoft has not confirmed access to '+[!boardRead && 'the RCI Serve board',!calendarRead && 'Church Calendar'].filter(Boolean).join(' and ')+'.'};
+        this.accessStates[p.userId] = boardRead && calendarRead ? {status:'verified',label:'Access verified',detail:'Microsoft confirmed access to the RCI Serve board and Church Calendar.'} : {status:'needs-attention',label:'Access needs attention',detail:'Microsoft has not confirmed access to '+[!boardRead && 'the RCI Serve board',!calendarRead && 'Church Calendar'].filter(Boolean).join(' and ')+'.'};
       }
-    } catch(e) { this.accessStates[p.userId] = {label:'Access not verified',detail:e.message || 'Unable to check Microsoft access. Try again.'}; }
+      if(!sameActor()) throw new Error('The signed-in account changed. Check access again.');
+      try { this.accessStates[p.userId]=await this.saveAccessState(p,this.accessStates[p.userId]); } catch(e) { this.accessStates[p.userId]={...this.accessStates[p.userId],saved:false,detail:'Microsoft access was checked, but the result could not be saved to SharePoint. Please try again.'}; }
+    } catch(e) { this.accessStates[p.userId] = {status:'not-verified',saved:false,label:'Access not verified',detail:e.message || 'Unable to check Microsoft access. Try again.'}; }
     if (S.view === 'leader-about' && this.aboutId === p.userId) render();
   },
   aboutView() {
@@ -432,7 +467,7 @@ const Rosters = {
     const active = this.accessStates[p.userId];
     const upcoming = TEAMS.flatMap(t => S.teams[t.key]?.accessVerified ? (S.teams[t.key].items || []).filter(i => i.kind === 'assign' && i.confirmed && i.date >= todayKey() && i.email && (p.emails || [p.email]).map(lc).includes(lc(i.email))).map(i => ({...i,teamName:t.name})) : []).sort((a,b) => a.date.localeCompare(b.date)).slice(0,3);
     return `<div class="page-h">${back}<h1>About ${esc(d.first || p.name.split(' ')[0])}</h1></div>
-      <section class="panel profile-hero">${this.canManage() ? `<span class="access-flag ${active?.label === 'Access verified' ? 'complete' : active?.label === 'Access needs attention' ? 'failed' : 'pending'}">${esc(active?.label || 'Access not checked')}</span>` : ''}<span class="profile-avatar-wrap"><span class="av" data-roster-photo="leadership:${index}">${esc(initials(p.name))}</span>${this.star(p)}</span><h2>${esc(p.name)}</h2>${this.isHubAdmin(p) ? '<span class="pill admin-tag">★ Admin</span>' : ''}${p.email && !this.isSelf(p) ? `<a class="btn" href="mailto:${esc(p.email)}">Email Me</a>` : ''}</section>
+      <section class="panel profile-hero">${this.canManage() ? `<span title="${active?.checkedAt ? esc('Checked on '+new Date(active.checkedAt).toLocaleString()) : ''}" class="access-flag ${active?.label === 'Access verified' ? 'complete' : active?.label === 'Access needs attention' ? 'failed' : 'pending'}">${esc(active?.label || 'Access not checked')}</span>` : ''}<span class="profile-avatar-wrap"><span class="av" data-roster-photo="leadership:${index}">${esc(initials(p.name))}</span>${this.star(p)}</span><h2>${esc(p.name)}</h2>${this.isHubAdmin(p) ? '<span class="pill admin-tag">★ Admin</span>' : ''}${p.email && !this.isSelf(p) ? `<a class="btn" href="mailto:${esc(p.email)}">Email Me</a>` : ''}</section>
       ${this.accessPanel(p)}
       ${this.aboutEditing && canEdit ? `<form id="leader-info-form" class="panel sec about-edit"><h2 class="section-label">Edit ${esc(d.first || p.name)}’s Info</h2>${this.detailsFields(this.aboutDraft || d)}<label>Email</label><input value="${esc(p.email || '')}" disabled><span class="hint">Linked to their sign-in, so it cannot be changed here.</span><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>Save</button><button type="button" class="btn" data-act="leader-info-cancel">Cancel</button></div></form>` : ''}
       <section class="panel info-card">${canEdit && !this.aboutEditing ? `<button class="iconbtn card-edit" data-act="leader-info-edit" aria-label="Edit ${esc(p.name)}'s info" title="Edit">✎</button>` : ''}<dl class="kv"><dt>First Name</dt><dd>${esc(d.first || '—')}</dd><dt>Birthday</dt><dd>${esc(bd)}</dd><dt>Email</dt><dd>${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : '—'}</dd><dt>Phone</dt><dd>${d.phone ? `<a href="tel:${esc(d.phone.replace(/[^\d+]/g,''))}">${esc(d.phone)}</a>` : '—'}</dd></dl></section>
