@@ -104,6 +104,7 @@ const Rosters = {
       { userId: 'demo-other', name: 'Ministry Leader', email: 'leader@example.org' }
     ];
     await this.loadHubAdmins();
+    const directories = Promise.allSettled(myTeams().filter(t => S.teams[t.key]?.accessVerified && !S.teams[t.key]?.error && !S.teams[t.key]?.noAccess).map(t => this.data[t.key] ? Promise.resolve(this.data[t.key]) : this.ministry(t)));
     const lists = await Promise.all(TEAMS.map(t => this.adminEmails(t)));
     const emails = [...new Set([...this.hubAdmins(), ...lists.flat()])];
     const resolved = await Promise.allSettled(emails.map(e => this.identity(e)));
@@ -111,7 +112,20 @@ const Rosters = {
     try { manual = await this.manual(); } catch (_) { this.errors.leadership = 'Additional Leadership members could not be loaded. Refresh to try again.'; }
     const missing = resolved.filter(x => x.status === 'rejected').length;
     if (missing) this.errors.leadership = 'Some administrator names could not be matched to Microsoft accounts. Refresh to try again.';
-    return this.unique([...resolved.filter(x => x.status === 'fulfilled').map(x => x.value), ...manual]);
+    const profiles = (await directories).filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+    const people = this.unique([...resolved.filter(x => x.status === 'fulfilled').map(x => x.value), ...manual]);
+    for (const p of people) {
+      const profile = profiles.find(profile => profile.email && (p.emails || [p.email]).includes(lc(profile.email)) && profile.photoRaw);
+      if (profile) Object.assign(p, { photoRaw: profile.photoRaw, team: profile.team, rowId: profile.rowId });
+    }
+    // Identical names share one display card; their separate account identities retain all permissions.
+    const display = new Map();
+    for (const p of people) {
+      const key = lc(p.name).trim();
+      if (!display.has(key)) display.set(key, p);
+      else { const old = display.get(key); old.emails = [...new Set([...(old.emails || [old.email]), ...(p.emails || [p.email])])]; if (!old.photoRaw && p.photoRaw) Object.assign(old, { photoRaw: p.photoRaw, team: p.team, rowId: p.rowId }); }
+    }
+    return [...display.values()];
   },
   async load(key, refresh = false) {
     if (this.tasks[key]) return this.tasks[key];
@@ -119,6 +133,7 @@ const Rosters = {
     delete this.errors[key];
     const identity = S.me?.id || S.me?.emails.join("|");
     this.tasks[key] = (async () => {
+      await Promise.resolve();
       try {
         const t = TEAMS.find(t => t.key === key);
         const people = key === 'leadership' ? await this.leadership() : DEMO
@@ -140,7 +155,7 @@ const Rosters = {
   },
   section(key) {
     const opened = this.open.has(key), people = this.data[key];
-    return `<div class="roster-section"><button class="roster-toggle" data-act="roster-toggle" data-k="${key}" aria-expanded="${opened}" aria-controls="roster-${key}"><span>Team roster${people ? ' · ' + people.length : ''}</span><span aria-hidden="true">${opened ? '▴' : '▾'}</span></button>${opened ? `<div id="roster-${key}" class="roster-content">
+    return `<div class="roster-section"><button class="roster-toggle" data-act="roster-toggle" data-k="${key}" aria-label="${key === 'leadership' ? 'RCI Leadership' : esc(TEAMS.find(t => t.key === key)?.full || key)} team roster" aria-expanded="${opened}" aria-controls="roster-${key}"><span>Team roster${people ? ' · ' + people.length : ''}</span><span aria-hidden="true">${opened ? '▴' : '▾'}</span></button>${opened ? `<div id="roster-${key}" class="roster-content">
       ${this.tasks[key] ? '<p class="hint" role="status">Loading roster…</p>' : ''}
       ${this.errors[key] ? `<p class="hint" role="alert">${esc(this.errors[key])}</p>` : ''}
       ${people?.length ? `<ul class="team-roster">${people.map((p,i) => this.person(p,i,key)).join('')}</ul>` : !this.tasks[key] && !this.errors[key] ? '<p class="hint">No team members yet.</p>' : ''}
