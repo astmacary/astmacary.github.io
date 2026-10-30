@@ -247,12 +247,25 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .comm{display:flex;flex-direction:column;gap:14px}.comm h2,.comm h3{margin:0;font-size:17px}.comm-text{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}.comm-record+.comm-record{border-top:1px solid var(--line);padding-top:12px}.comm-topic{justify-content:flex-start;text-align:left;white-space:normal;overflow-wrap:anywhere}.comm .panel{margin:0}.comm time{display:block}
 .comm-head,.comm-record-head,.comm-topic-line{display:flex;align-items:center;justify-content:space-between;gap:12px}.comm-head h1{margin:0}.comm-actions{display:flex;gap:4px;align-items:center;margin-left:auto;flex:none}.comm-actions:empty{display:none}.comm-actions .iconbtn,.comm-head .iconbtn{flex:none}.comm-actions svg,.comm-head svg{width:19px;height:19px}.comm-topic-line .comm-topic{flex:1;min-width:0}.comm-edit-form{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:8px}.comm-edit-buttons{display:flex;gap:8px;flex-wrap:wrap}.comm-record-head{align-items:flex-start}
 .comm-hidden-label{display:block;border-left:3px solid var(--accent);padding-left:8px}
+
+.leadership-panel{border-color:var(--accent)}
+.roster-section{border-top:1px solid var(--line)}
+.roster-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:0;background:transparent;color:var(--fg);font-weight:600;text-align:left}
+.roster-content{padding:0 14px 14px}.roster-controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.team-roster{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px 10px}
+.roster-person{position:relative;display:flex;align-items:center;flex-direction:column;gap:7px;text-align:center;min-width:0;font-size:13px;overflow-wrap:anywhere}
+.roster-avatar{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-size:20px;font-weight:700;overflow:hidden}
+.roster-avatar img{width:100%;height:100%;object-fit:cover}.roster-star{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:14px;vertical-align:middle}
+.roster-person .roster-star{position:absolute;top:0;left:calc(50% + 18px)}
+#leadership-form{margin-top:12px}#leadership-email{width:100%;min-height:42px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg)}
+@media(max-width:420px){.team-roster{grid-template-columns:repeat(3,minmax(0,1fr))}}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=35"></script>
+<script src="/communications.js?v=36"></script>
+<script src="/rosters.js?v=36"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -261,7 +274,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "35";   // bump together with CACHE in sw.js
+const APP_VERSION = "36";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1282,22 +1295,12 @@ function viewAnnouncements(){
     <p class="hint">Announcements are posted and edited in each team's app.</p>`;
 }
 
-function viewTeams(){
-  const teams = myTeams();
-  return `<h1 class="page">Your Teams</h1>
-    <section class="panel">${teams.map(t => {
-      const n = S.teams[t.key]?.items ? pendingOf(t.key).length : 0, next = upcoming().find(i => i.team === t.key && i.confirmed);
-      return `<a class="tcard row team" style="${tvars(t)}" href="${t.path}?home${DEMO ? "&amp;demo" : ""}">${isEditorOf(t) ? `<span class="admin-star" title="Admin" aria-label="Admin">★</span>` : ""}<span class="t-ic">${ICON[t.icon]}</span>
-        <span class="info"><b>${esc(t.full)}</b><small>${n ? plural(n, "request needs", "requests need") + " a reply" : next ? "Next: " + esc(next.role) + ", " + esc(fmtShort(next.date)) : "Nothing scheduled yet"}</small></span>
-        ${n ? `<span class="count">${n}</span>` : ""}</a>`;
-    }).join("") || `<div class="empty">No teams found yet.</div>`}</section>
-    <p class="hint" style="text-align:center">Missing a team? Ask that team's leader to add your email address (${esc(S.me.emails[0] || "")}) to their roster. It shows up here the next time you open RCI Serve.</p>`;
-}
+function viewTeams(){ return Rosters.view(); }
 
 function viewProfile(){
   return `<h1 class="page">Profile</h1>
     <section class="panel prof"><span class="av">${S.photo ? `<img src="${S.photo}" alt="">` : esc(initials(S.me.name))}</span>
-      <span style="min-width:0"><b style="display:block;font-size:18px">${esc(S.me.name)}</b><small class="muted" style="word-break:break-all">${esc(S.me.emails[0] || "")}</small></span>
+      <span style="min-width:0"><b style="display:block;font-size:18px">${esc(S.me.name)} ${Rosters.star({emails:S.me.emails})}</b><small class="muted" style="word-break:break-all">${esc(S.me.emails[0] || "")}</small></span>
       <p class="hint">Your profile and photo are edited in each team's app (My Profile).</p></section>
     ${badgeAsk()}
     <section class="panel">
@@ -1352,7 +1355,7 @@ function render(){
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${S.view === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${body}</div></main>` + tabs;
-  hydrateFlyers();
+  hydrateFlyers(); if (S.view === "teams") Rosters.hydrate();
 }
 function hydrateFlyers(){
   document.querySelectorAll("[data-flyer]").forEach(async el => {
@@ -1379,9 +1382,19 @@ function openLightbox(url, alt){
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act;
-  if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
+  if (act === "roster-toggle") Rosters.toggle(b.dataset.k);
+  else if (act === "roster-refresh") { void Rosters.load(b.dataset.k, true); render(); }
+  else if (act === "leadership-add") { if (Rosters.canManage()){ Rosters.adding = true; render(); } }
+  else if (act === "leadership-cancel") { Rosters.adding = false; Rosters.draft = ''; render(); }
+  else if (act === "leadership-remove") {
+    const p = Rosters.data.leadership?.find(p => p.userId === b.dataset.id && p.manual);
+    if (p && Rosters.canManage() && confirm('Remove ' + p.name + ' from the Leadership roster?')) {
+      try { await Rosters.save(p, 'remove'); toast('Leadership member removed'); } catch (e) { toast(e.message, true); }
+    }
+  }
+  else if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "signin") API.signIn();
-  else if (act === "signout"){ Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
+  else if (act === "signout"){ Rosters.reset(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
   else if (act === "retry") location.reload();
   else if (act === "refresh") loadAll();
   else if (act === "accept") accept(b.dataset.id);
@@ -1544,6 +1557,7 @@ async function start(){
     const signedIn = await API.init();
     if (!signedIn){ S.phase = "signin"; render(); return; }
     S.me = await API.me();
+    void Rosters.loadHubAdmins().then(() => { render(); if (S.phase === 'ready') void Comm.load().then(() => { if (S.view === 'messages') render(); }); });
     const c = readCache();
     if (c && c.me.emails.some(x => S.me.emails.includes(x))){ S.teams = c.teams; S.church = { items: c.church || [], anns: c.churchAnns || [], error: "" }; S.phase = "ready"; render(); }   // show the saved picture right away
     API.photo().then(p => { S.photo = p; render(); });
