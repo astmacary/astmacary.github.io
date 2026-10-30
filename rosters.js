@@ -114,10 +114,10 @@ const Rosters = {
     return [...latest.values()].filter(p => p.action === 'add').map(p => ({ ...p, manual: true }));
   },
   async leadership() {
-    if (DEMO) { this.manualPeople(this.demoLeadershipEvents); return [
-      { userId: 'demo-admin', name: 'Demo Leader', email: CHURCH_CAL.editors[0], emails: [CHURCH_CAL.editors[0]] },
+    if (DEMO) { this.manualPeople(this.demoLeadershipEvents); return this.applyProfiles([
+      { userId: S.me?.id || 'demo-self', name: S.me?.name || 'Demo Leader', email: S.me?.emails[0] || CHURCH_CAL.editors[0], emails: [...(S.me?.emails || []), CHURCH_CAL.editors[0]] },
       { userId: 'demo-other', name: 'Ministry Leader', email: 'leader@example.org' }
-    ].filter(p => this.leadershipChanges.get(p.userId)?.action !== 'remove'); }
+    ].filter(p => this.leadershipChanges.get(p.userId)?.action !== 'remove')); }
     await this.loadHubAdmins();
     const directories = Promise.allSettled(myTeams().filter(t => S.teams[t.key]?.accessVerified && !S.teams[t.key]?.error && !S.teams[t.key]?.noAccess).map(t => this.data[t.key] ? Promise.resolve(this.data[t.key]) : this.ministry(t)));
     const lists = await Promise.all(TEAMS.map(t => this.adminEmails(t)));
@@ -170,7 +170,7 @@ const Rosters = {
   },
   count(key) {
     if (key === 'leadership') return this.data.leadership?.length;
-    if (DEMO && this.data[key]) return this.data[key].length;
+    if (DEMO) return this.data[key]?.length ?? 2;
     return this.unique((S.teams[key]?.items || []).filter(p => p.kind === 'profile' && !p.gone && p.fullName && (key !== 'worship' || lc(p.active) !== 'non active')).map(p => ({name:p.fullName,email:p.email}))).length;
   },
   icons: {

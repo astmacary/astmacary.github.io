@@ -263,8 +263,8 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=39"></script>
-<script src="/rosters.js?v=39"></script>
+<script src="/communications.js?v=40"></script>
+<script src="/rosters.js?v=40"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -273,7 +273,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "39";   // bump together with CACHE in sw.js
+const APP_VERSION = "40";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -808,7 +808,7 @@ function demoTeams(){
   const P = team => ({ team, rowId: "p", id: team+":p", kind: "profile", date: "", category: "", role: "", fullName: "Demo Person", email: me, pending: false, confirmed: false, gone: false });
   const N = (id, text, until) => ({ id, created: new Date(Date.now() - id*864e5).toISOString(), text, until: until || "", flyer: "" });
   return {
-    me: { name: "Demo Person", emails: [me] },
+    me: { id: "demo-self", name: "Demo Person", emails: [me] },
     teams: {
       productions: { items: [P("productions"), A("productions", sun(1), "FOH Audio Engineer", "p"), A("productions", sun(0), "ProPresenter Technician", "a", "Sunday Morning", "8:00 AM"), A("productions", sun(3), "Camera 2 Operator", "a")],
         announcements: [N(1, "NOV. 1 - NO SUNDAY SERVICE AT THE RAMP\nService will be at Reach Out Apostolic Tabernacle.", addDays(sun(0), 1))] },
