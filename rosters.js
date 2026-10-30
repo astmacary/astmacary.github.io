@@ -1,7 +1,7 @@
 /* Roster display stays within each ministry's existing SharePoint access.
    Manual Leadership entries are authenticated administrator events in the Serve board. */
 const Rosters = {
-  search: "", open: new Set(), data: {}, errors: {}, tasks: {}, identities: new Map(), photos: new Map(), extraEditors: {}, saving: false, profiles: {}, profileDetailEvents: [], cardDetailEvents: [], aboutId: '', aboutEditing: false, aboutDraft: null, accessStates: {}, editingProfile: false, profileDraft: null, profileSaving: false, deleteKey: '', leadershipChanges: new Map(), demoLeadershipEvents: [],
+  generation: 0, search: "", open: new Set(), data: {}, errors: {}, tasks: {}, identities: new Map(), photos: new Map(), extraEditors: {}, saving: false, profiles: {}, profileDetailEvents: [], cardDetailEvents: [], aboutId: '', aboutEditing: false, aboutDraft: null, accessStates: {}, editingProfile: false, profileDraft: null, profileSaving: false, deleteKey: '', leadershipChanges: new Map(), demoLeadershipEvents: [],
   places: ["Productions", "Security", "Ushers & Altar Workers", "Worship & Arts", "Men", "Women", "Elders", "Deacons", "Production Coordinator", "Benevolence", "Shepherd’s Care", "Salvation Army", "Marriage", "Evangelism", "Young Adults", "Youth", "Children Ministry", "Young Acolytes", "Parking Lot", "Property Management", "Medical", "Prayer", "Online", "New Members", "Marketing", "Armor Bearers", "Soul Care", "Recovery", "Greeters", "Guest Services", "Servant’s Heart", "Visitors Reception"].sort((a,b) => a.localeCompare(b,'en',{sensitivity:'base'})),
   baseHubAdmins: null, hubAdminTask: null,
   async loadHubAdmins() {
@@ -158,19 +158,22 @@ const Rosters = {
     if (!refresh && this.data[key]) return;
     delete this.errors[key];
     const identity = S.me?.id || S.me?.emails.join("|");
-    this.tasks[key] = (async () => {
+    const generation = this.generation;
+    const task = (async () => {
       await Promise.resolve();
       try {
         const t = TEAMS.find(t => t.key === key);
         const people = key === 'leadership' ? await this.leadership() : DEMO
           ? [{ rowId: 'demo-1', name: 'Demo Person', email: S.me.emails[0], team: key }, { rowId: 'demo-2', name: 'Team Member', email: 'member@example.org', team: key }]
           : await this.ministry(t);
-        if (identity === (S.me?.id || S.me?.emails.join("|"))) this.data[key] = people;
-      } catch (e) { this.errors[key] = e.message || 'Unable to load the roster.'; }
-      finally { delete this.tasks[key]; if (S.phase === 'ready' && ['teams','profile','leader-about'].includes(S.view) && !this.profileSaving) render(); }
+        if (generation === this.generation && identity === (S.me?.id || S.me?.emails.join("|"))) this.data[key] = people;
+      } catch (e) { if (generation === this.generation) this.errors[key] = e.message || 'Unable to load the roster.'; }
+      finally { if (this.tasks[key] === task) delete this.tasks[key]; if (generation === this.generation && S.phase === 'ready' && ['teams','profile','leader-about'].includes(S.view) && !this.profileSaving) render(); }
     })();
-    return this.tasks[key];
+    this.tasks[key] = task;
+    return task;
   },
+  invalidate() { this.generation++; this.tasks = {}; this.data = {}; this.errors = {}; },
   toggle(key) {
     if (this.open.has(key)) this.open.delete(key);
     else { this.open.add(key); void this.load(key); }
@@ -227,7 +230,7 @@ const Rosters = {
   },
   searchView() {
     const groups = this.searchGroups();
-    for (const g of groups) if (!this.data[g.key] && !this.errors[g.key]) void this.load(g.key);
+    for (const g of groups) if ((g.key === 'leadership' || DEMO || S.teams[g.key]?.accessVerified) && !this.data[g.key] && !this.errors[g.key]) void this.load(g.key);
     const count = groups.reduce((n,g) => n + g.people.length,0);
     const loading = groups.some(g => this.tasks[g.key]);
     return `<div class="roster-search-results"><p class="hint" role="status">${loading ? 'Searching rosters…' : count ? `${count} matching roster ${count === 1 ? 'entry' : 'entries'}` : 'No people found. Try another name.'}</p>${count ? '<div class="panel roster-search-columns">' : ''}${groups.map(g => `${this.errors[g.key] ? `<p class="hint" role="alert">${esc(g.full)}: ${esc(this.errors[g.key])} Use its refresh icon below to try again.</p>` : ''}${g.people.length ? `<section class="roster-search-group"><h2>${esc(g.full)}</h2><ul class="team-roster">${g.people.map(({p,index}) => this.person(p,index,g.key)).join('')}</ul></section>` : ''}`).join('')}${count ? '</div>' : ''}</div>`;
@@ -243,7 +246,7 @@ const Rosters = {
       void this.load('leadership');
       return '<h1 class="page">Your Teams</h1><p class="hint" role="status">Loading teams and roster counts…</p>';
     }
-    for (const t of teams) if (!this.data[t.key] && !this.errors[t.key]) void this.load(t.key);
+    for (const t of teams) if ((DEMO || S.teams[t.key]?.accessVerified) && !this.data[t.key] && !this.errors[t.key]) void this.load(t.key);
     return `<div class="teams-page-heading"><h1 class="page">Your Teams</h1><input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div>${this.search.trim() ? this.searchView() : ''}<div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.refreshIcon('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
       ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.refreshIcon(t.key,t.full)}</div>${this.leaderHeader(t.key)}${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}</div>${this.modal()}`;
   },
@@ -507,7 +510,7 @@ const Rosters = {
     this.cardDetailEvents.push({userId:targetId,...details,at,order:Date.now()});
     this.data.leadership = this.applyProfiles(this.data.leadership);
   },
-  reset() { this.search = ""; this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.profileDetailEvents = []; this.cardDetailEvents = []; this.aboutId = ''; this.aboutEditing = false; this.accessStates = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
+  reset() { this.invalidate(); this.search = ""; this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.profileDetailEvents = []; this.cardDetailEvents = []; this.aboutId = ''; this.aboutEditing = false; this.accessStates = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
 };
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'leadership-form') return;
