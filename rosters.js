@@ -179,9 +179,13 @@ const Rosters = {
     else { this.open.add(key); void this.load(key); }
     render();
   },
+  ministryHref(key,p) {
+    const team = myTeams().find(t => t.key === key);
+    return team && /^[1-9]\d*$/.test(String(p.rowId || '')) && (DEMO || S.teams[key]?.accessVerified) ? `${team.path}?person=${encodeURIComponent(p.rowId)}&from=serve-teams${DEMO ? '&demo' : ''}` : '';
+  },
   person(p, index, key) {
     const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${key === 'productions' ? '' : this.star(p)}<b>${esc(p.name)}</b>`;
-    return `<li class="roster-person">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : inside}</li>`;
+    return `<li class="roster-person">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : this.ministryHref(key,p) ? `<a class="roster-profile-link" data-ministry-profile href="${esc(this.ministryHref(key,p))}" aria-label="About ${esc(p.name)}">${inside}</a>` : inside}</li>`;
   },
   count(key) {
     if (key === 'leadership') return this.data.leadership?.length;
@@ -238,7 +242,10 @@ const Rosters = {
   leaderHeader(key) {
     const people = this.data[key] || [];
     const leaders = people.map((p,index) => ({p,index})).filter(({p}) => p.ministryLeader);
-    return leaders.length ? `<div class="team-leaders" aria-label="Ministry ${leaders.length === 1 ? 'leader' : 'leaders'}">${leaders.map(({p,index}) => `<span class="team-leader" title="Ministry leader: ${esc(p.name)}"><span class="roster-avatar" data-roster-photo="${key}:${index}">${esc(initials(p.name))}</span><span>${esc(p.name)}</span></span>`).join('')}</div>` : '';
+    return leaders.length ? `<div class="team-leaders" aria-label="Ministry ${leaders.length === 1 ? 'leader' : 'leaders'}">${leaders.map(({p,index}) => {
+      const href = this.ministryHref(key,p), tag = href ? 'a' : 'span';
+      return `<${tag} class="team-leader" ${href ? `data-ministry-profile href="${esc(href)}" aria-label="About ${esc(p.name)}"` : ''} title="Ministry leader: ${esc(p.name)}"><span class="roster-avatar" data-roster-photo="${key}:${index}">${esc(initials(p.name))}</span><span>${esc(p.name)}</span></${tag}>`;
+    }).join('')}</div>` : '';
   },
   view() {
     const teams = myTeams();
@@ -569,4 +576,9 @@ document.addEventListener('input', e => {
   if (e.target.id !== 'roster-search') return;
   Rosters.search = e.target.value;
   render();
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('[data-ministry-profile]')) return;
+  try { sessionStorage.setItem('rci-serve:teams-return',JSON.stringify({id:S.me?.id,search:Rosters.search,open:[...Rosters.open]})); } catch (_) {}
 });
