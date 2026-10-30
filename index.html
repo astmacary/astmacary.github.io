@@ -244,12 +244,13 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .updating .spinner{width:12px;height:12px;border-width:2px}
 .comm{display:flex;flex-direction:column;gap:14px}.comm h2,.comm h3{margin:0;font-size:17px}.comm-text{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}.comm-record+.comm-record{border-top:1px solid var(--line);padding-top:12px}.comm-topic{justify-content:flex-start;text-align:left;white-space:normal;overflow-wrap:anywhere}.comm .panel{margin:0}.comm time{display:block}
 .comm-head,.comm-record-head,.comm-topic-line{display:flex;align-items:center;justify-content:space-between;gap:12px}.comm-head h1{margin:0}.comm-actions{display:flex;gap:4px;align-items:center;margin-left:auto;flex:none}.comm-actions:empty{display:none}.comm-actions .iconbtn,.comm-head .iconbtn{flex:none}.comm-actions svg,.comm-head svg{width:19px;height:19px}.comm-topic-line .comm-topic{flex:1;min-width:0}.comm-edit-form{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:8px}.comm-edit-buttons{display:flex;gap:8px;flex-wrap:wrap}.comm-record-head{align-items:flex-start}
+.opening-placeholder{width:min(100%,430px);display:grid;gap:12px}.opening-placeholder span{display:block;height:74px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}.comm-hidden-label{display:block;border-left:3px solid var(--accent);padding-left:8px}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=32"></script>
+<script src="/communications.js?v=33"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -258,7 +259,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "32";   // bump together with CACHE in sw.js
+const APP_VERSION = "33";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -480,8 +481,8 @@ const API = {
   },
   async all(path){ let out = [], next = path; while (next){ const j = await this.g(next); out = out.concat(j.value || []); next = j["@odata.nextLink"]; } return out; },
   async me(){
-    const me = await this.g("/me?$select=displayName,mail,userPrincipalName");
-    return { name: me.displayName || this.account.name || "", emails: [...new Set([me.mail, me.userPrincipalName, this.account.username].filter(Boolean).map(lc))] };
+    const me = await this.g("/me?$select=id,displayName,mail,userPrincipalName");
+    return { id: me.id, name: me.displayName || this.account.name || "", emails: [...new Set([me.mail, me.userPrincipalName, this.account.username].filter(Boolean).map(lc))] };
   },
   async photo(){
     try { const r = await this.g("/me/photo/$value", { raw: true }); return URL.createObjectURL(await r.blob()); } catch(e){ return null; }
@@ -895,10 +896,10 @@ async function loadAll(){
     else { console.warn("Church Calendar", cr.reason); S.church = { items: S.church.items || [], anns: S.church.anns || [], error: cr.reason?.message || "Couldn't load" }; }
     saveCache();
   }
-  await Comm.load();
   S.loading = false; S.loadedAt = Date.now(); S.phase = "ready";
   if (!S.cal.sel){ const first = upcoming()[0]; S.cal.sel = first && first.date <= addDays(todayKey(), 31) ? first.date : todayKey(); }
   updateBadge(); render();
+  void Comm.load().then(() => { if (S.phase === 'ready' && !Comm.busy && !document.activeElement?.closest('input,textarea,select,[contenteditable="true"]')) render(); });
 }
 
 async function accept(id){
@@ -1333,7 +1334,7 @@ function render(){
     <button class="iconbtn me-btn" data-act="tab" data-view="profile" aria-label="Profile${n ? `, ${n} pending request${n > 1 ? "s" : ""}` : ""}">${S.photo ? `<img src="${S.photo}" alt="">` : esc(initials(S.me?.name))}${n ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div></header>`;
   if (S.phase !== "ready"){
     let body = "";
-    if (S.phase === "boot") body = `<div class="center"><span class="spinner" role="status" aria-label="Loading"></span><p>Opening RCI Serve…</p></div>`;
+    if (S.phase === "boot") body = `<div class="center"><div class="opening-placeholder" role="status" aria-label="Loading"><span></span><span></span></div><p>Opening RCI Serve…</p></div>`;
     if (S.phase === "signin") body = installGuide() || `<div class="center"><img class="wm wm-light" src="/icons/wordmark.png?v=${APP_VERSION}" alt="RCI Serve"><img class="wm wm-dark" src="/icons/wordmark-dark.png?v=${APP_VERSION}" alt="RCI Serve">
       <p>Every RCI team you serve on, in one place. Sign in once with the email your team leader has for you.</p>
       <button class="btn primary big" data-act="signin">Sign in with Microsoft</button>
