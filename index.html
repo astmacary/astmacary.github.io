@@ -249,23 +249,20 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .comm-hidden-label{display:block;border-left:3px solid var(--accent);padding-left:8px}
 
 .leadership-panel{border-color:var(--accent)}
-.roster-section{border-top:1px solid var(--line)}
-.roster-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:0;background:transparent;color:var(--fg);font-weight:600;text-align:left}
-.roster-content{padding:0 14px 14px}.roster-controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.team-roster{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px 10px}
-.roster-person{position:relative;display:flex;align-items:center;flex-direction:column;gap:7px;text-align:center;min-width:0;font-size:13px;overflow-wrap:anywhere}
-.roster-avatar{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-size:20px;font-weight:700;overflow:hidden}
-.roster-avatar img{width:100%;height:100%;object-fit:cover}.roster-star{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:14px;vertical-align:middle}
-.roster-person .roster-star{position:absolute;top:0;left:calc(50% + 18px)}
-#leadership-form{margin-top:12px}#leadership-email{width:100%;min-height:42px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg)}
-@media(max-width:420px){.team-roster{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.team-containers{display:flex;flex-direction:column;gap:6px}.team-heading{display:flex;align-items:center;gap:8px;padding:7px 9px;min-height:46px}.team-heading>b{flex:1;font-size:13px}.team-heading .t-ic{width:28px;height:28px}.team-heading .t-ic svg{width:16px;height:16px}.team-name{display:flex;align-items:center;gap:8px;flex:1;min-width:0;color:var(--fg);text-decoration:none}.team-name b{font-size:13px;line-height:1.2}.roster-actions{display:flex;align-items:center;gap:3px;margin-left:auto}.roster-actions .iconbtn{width:30px;height:30px;text-decoration:none}.roster-actions svg{width:15px;height:15px}
+.roster-section{border-top:1px solid var(--line)}.roster-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:5px 9px;min-height:30px;border:0;background:transparent;color:var(--muted);font-size:11px;font-weight:600;text-align:left}
+.roster-content{padding:5px 9px 8px}.team-roster{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px 6px}
+.roster-person{position:relative;display:flex;align-items:center;flex-direction:column;gap:4px;text-align:center;min-width:0;font-size:11px;line-height:1.2;overflow-wrap:anywhere}.roster-person b{font-weight:500}
+.roster-avatar{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-size:17px;font-weight:700;overflow:hidden}.roster-avatar img{width:100%;height:100%;object-fit:cover}.roster-star{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:12px;vertical-align:middle}.roster-person .roster-star{position:absolute;top:0;left:calc(50% + 13px)}
+.roster-overlay{position:fixed;inset:0;z-index:50;background:#0009;display:flex;align-items:center;justify-content:center;padding:16px}.roster-dialog{width:min(100%,420px);padding:16px;max-height:85vh;overflow:auto}.roster-dialog h2{font-size:18px;margin:0 0 12px}.roster-dialog input,.roster-dialog select{width:100%;min-height:42px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--bg)}
+@media(max-width:420px){.team-roster{grid-template-columns:repeat(3,minmax(0,1fr))}.team-heading{gap:5px;padding:6px}.team-name{gap:5px}.team-name b,.team-heading>b{font-size:12px}}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=37"></script>
-<script src="/rosters.js?v=37"></script>
+<script src="/communications.js?v=38"></script>
+<script src="/rosters.js?v=38"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -274,7 +271,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
-const APP_VERSION = "37";   // bump together with CACHE in sw.js
+const APP_VERSION = "38";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -850,7 +847,7 @@ const isEditorOf = t => !!S.me && t.editors.some(e => S.me.emails.includes(lc(e)
 /* On a team: an admin of it, has a (not archived) Roster / profile row, or has been scheduled in the last 120 days or later. */
 function member(t){
   const d = S.teams[t.key]; if (!d) return false;
-  if (isEditorOf(t)) return true;
+  if (isEditorOf(t) || Rosters.isHubAdmin(S.me || {})) return true;
   if (d.noAccess || !d.items) return false;
   const since = addDays(todayKey(), -120);
   return d.items.some(i => mineRow(i) && ((i.kind === "profile" && !i.gone) || (i.kind === "assign" && i.date >= since)));
@@ -1386,12 +1383,10 @@ document.addEventListener("click", async e => {
   else if (act === "roster-refresh") { void Rosters.load(b.dataset.k, true); render(); }
   else if (act === "leadership-add") { if (Rosters.canManage()){ Rosters.adding = true; render(); } }
   else if (act === "leadership-cancel") { Rosters.adding = false; Rosters.draft = ''; render(); }
-  else if (act === "leadership-remove") {
-    const p = Rosters.data.leadership?.find(p => p.userId === b.dataset.id && p.manual);
-    if (p && Rosters.canManage() && confirm('Remove ' + p.name + ' from the Leadership roster?')) {
-      try { await Rosters.save(p, 'remove'); toast('Leadership member removed'); } catch (e) { toast(e.message, true); }
-    }
+  else if (act === "roster-delete") {
+    if (Rosters.canManageTeam(b.dataset.k)){ Rosters.deleteKey = b.dataset.k; Rosters.deleteSelection = ''; void Rosters.load(b.dataset.k); render(); }
   }
+  else if (act === "roster-delete-cancel") { Rosters.deleteKey = ''; render(); }
   else if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "signin") API.signIn();
   else if (act === "signout"){ Rosters.reset(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
