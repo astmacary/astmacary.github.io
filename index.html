@@ -289,6 +289,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    open inside the same installed app, with the same sign-in.
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
+const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
 const APP_VERSION = "51";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
@@ -1593,14 +1594,18 @@ document.addEventListener("visibilitychange", async () => {
 async function start(){
   try { S.view = sessionStorage.getItem("rci-serve:view") || "home"; S.hideInstall = sessionStorage.getItem("rci-serve:noinstall") === "1"; } catch(_){}
   if(new URLSearchParams(location.search).has("install")) S.view="install";
-  if(new URLSearchParams(location.search).has("teams")) S.view="teams";
+  if (OPEN_TEAMS) {
+    S.view = 'teams';
+    const url = new URL(location.href); url.searchParams.delete('teams');
+    history.replaceState(history.state,'',url.pathname + url.search + url.hash);
+  }
   render();
   if (DEMO){ await loadAll(); return; }
   try {
     const signedIn = await API.init();
     if (!signedIn){ S.phase = "signin"; render(); return; }
     S.me = await API.me();
-    if(new URLSearchParams(location.search).has('teams')) try {
+    if (OPEN_TEAMS) try {
       const saved = JSON.parse(sessionStorage.getItem('rci-serve:teams-return') || 'null');
       if (saved?.id === S.me.id) { Rosters.search = typeof saved.search === 'string' ? saved.search : ''; Rosters.open = new Set((Array.isArray(saved.open) ? saved.open : []).filter(k => ['leadership',...TEAMS.map(t=>t.key)].includes(k))); }
       sessionStorage.removeItem('rci-serve:teams-return');
