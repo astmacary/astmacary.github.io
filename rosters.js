@@ -71,11 +71,13 @@ const Rosters = {
     if (!d?.accessVerified || d.error || d.noAccess || !myTeams().some(x => x.key === t.key)) throw new Error('This ministry roster is not available for your account.');
     const meta = API.sites[t.key];
     if (!meta) throw new Error('Refresh your teams and try again.');
-    const fields = ['Photo', 'Birthday', 'PhoneNumber', ...(t.key === 'productions' ? ['Name'] : []), ...(t.key === 'worship' ? ['ActiveStatus'] : [])];
+    const columns = (await API.g(`/sites/${meta.siteId}/lists/${meta.listId}/columns?$select=name,displayName`)).value || [];
+    const leaderColumn = columns.find(c => c.displayName === 'Ministry Leader' || c.name === 'MinistryLeader');
+    const fields = [...(leaderColumn ? [leaderColumn.name] : []), 'Photo', 'Birthday', 'PhoneNumber', ...(t.key === 'productions' ? ['Name'] : []), ...(t.key === 'worship' ? ['ActiveStatus'] : [])];
     const rows = await API.all(`/sites/${meta.siteId}/lists/${meta.listId}/items?$expand=fields($select=${fields.join(',')})&$top=500`);
     const byId = new Map(rows.map(r => [String(r.id), r.fields || {}]));
     return this.unique(d.items.filter(p => p.kind === 'profile' && !p.gone && p.fullName && (t.key !== 'worship' || lc(byId.get(p.rowId)?.ActiveStatus) !== 'non active')).map(p => ({
-      name: p.fullName, email: p.email, rowId: p.rowId, team: t.key, photoRaw: byId.get(p.rowId)?.Photo || '', first: t.key === 'productions' && typeof byId.get(p.rowId)?.Name === 'string' ? byId.get(p.rowId).Name : '', birthday: (byId.get(p.rowId)?.Birthday || '').slice(0,10), phone: byId.get(p.rowId)?.PhoneNumber || ''
+      name: p.fullName, email: p.email, rowId: p.rowId, team: t.key, ministryLeader: !!leaderColumn && [true,1,'1'].includes(byId.get(p.rowId)?.[leaderColumn.name]), photoRaw: byId.get(p.rowId)?.Photo || '', first: t.key === 'productions' && typeof byId.get(p.rowId)?.Name === 'string' ? byId.get(p.rowId).Name : '', birthday: (byId.get(p.rowId)?.Birthday || '').slice(0,10), phone: byId.get(p.rowId)?.PhoneNumber || ''
     })));
   },
   async adminEmails(t) {
@@ -125,7 +127,7 @@ const Rosters = {
       { userId: 'demo-other', name: 'Ministry Leader', email: 'leader@example.org' }
     ].filter(p => this.leadershipChanges.get(p.userId)?.action !== 'remove')); }
     await this.loadHubAdmins();
-    const directories = Promise.allSettled(myTeams().filter(t => S.teams[t.key]?.accessVerified && !S.teams[t.key]?.error && !S.teams[t.key]?.noAccess).map(t => this.data[t.key] ? Promise.resolve(this.data[t.key]) : this.ministry(t)));
+    const directories = Promise.allSettled(myTeams().filter(t => S.teams[t.key]?.accessVerified && !S.teams[t.key]?.error && !S.teams[t.key]?.noAccess).map(t => this.data[t.key] ? Promise.resolve(this.data[t.key]) : this.load(t.key).then(() => this.data[t.key] || [])));
     const lists = await Promise.all(TEAMS.map(t => this.adminEmails(t)));
     const emails = [...new Set([...this.hubAdmins(), ...lists.flat()])];
     const resolved = await Promise.allSettled(emails.map(e => this.identity(e)));
@@ -175,7 +177,7 @@ const Rosters = {
     render();
   },
   person(p, index, key) {
-    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${this.star(p)}<b>${esc(p.name)}</b>`;
+    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${key === 'productions' ? '' : this.star(p)}<b>${esc(p.name)}</b>`;
     return `<li class="roster-person">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : inside}</li>`;
   },
   count(key) {
@@ -228,7 +230,12 @@ const Rosters = {
     for (const g of groups) if (!this.data[g.key] && !this.errors[g.key]) void this.load(g.key);
     const count = groups.reduce((n,g) => n + g.people.length,0);
     const loading = groups.some(g => this.tasks[g.key]);
-    return `<div class="roster-search-results"><p class="hint" role="status">${loading ? 'Searching rosters…' : count ? `${count} matching roster ${count === 1 ? 'entry' : 'entries'}` : 'No people found. Try another name.'}</p>${groups.map(g => `${this.errors[g.key] ? `<p class="hint" role="alert">${esc(g.full)}: ${esc(this.errors[g.key])} Use its refresh icon below to try again.</p>` : ''}${g.people.length ? `<section class="panel roster-search-group"><h2>${esc(g.full)}</h2><ul class="team-roster">${g.people.map(({p,index}) => this.person(p,index,g.key)).join('')}</ul></section>` : ''}`).join('')}</div>`;
+    return `<div class="roster-search-results"><p class="hint" role="status">${loading ? 'Searching rosters…' : count ? `${count} matching roster ${count === 1 ? 'entry' : 'entries'}` : 'No people found. Try another name.'}</p>${count ? '<div class="panel roster-search-columns">' : ''}${groups.map(g => `${this.errors[g.key] ? `<p class="hint" role="alert">${esc(g.full)}: ${esc(this.errors[g.key])} Use its refresh icon below to try again.</p>` : ''}${g.people.length ? `<section class="roster-search-group"><h2>${esc(g.full)}</h2><ul class="team-roster">${g.people.map(({p,index}) => this.person(p,index,g.key)).join('')}</ul></section>` : ''}`).join('')}${count ? '</div>' : ''}</div>`;
+  },
+  leaderHeader(key) {
+    const people = this.data[key] || [];
+    const leaders = people.map((p,index) => ({p,index})).filter(({p}) => p.ministryLeader);
+    return leaders.length ? `<div class="team-leaders" aria-label="Ministry ${leaders.length === 1 ? 'leader' : 'leaders'}">${leaders.map(({p,index}) => `<span class="team-leader" title="Ministry leader: ${esc(p.name)}"><span class="roster-avatar" data-roster-photo="${key}:${index}">${esc(initials(p.name))}</span><span>${esc(p.name)}</span></span>`).join('')}</div>` : '';
   },
   view() {
     const teams = myTeams();
@@ -236,8 +243,9 @@ const Rosters = {
       void this.load('leadership');
       return '<h1 class="page">Your Teams</h1><p class="hint" role="status">Loading teams and roster counts…</p>';
     }
-    return `<h1 class="page">Your Teams</h1><div class="roster-search"><label for="roster-search">Find a team member</label><input id="roster-search" type="search" placeholder="Search people across your teams" value="${esc(this.search)}" autocomplete="off"></div>${this.search.trim() ? this.searchView() : ''}<div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.refreshIcon('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
-      ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.refreshIcon(t.key,t.full)}</div>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}</div>${this.modal()}`;
+    for (const t of teams) if (!this.data[t.key] && !this.errors[t.key]) void this.load(t.key);
+    return `<div class="teams-page-heading"><h1 class="page">Your Teams</h1><input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div>${this.search.trim() ? this.searchView() : ''}<div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.refreshIcon('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
+      ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.refreshIcon(t.key,t.full)}</div>${this.leaderHeader(t.key)}${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}</div>${this.modal()}`;
   },
   async deleteMember(key, person) {
     if (key === 'leadership') { await this.save(person, 'remove'); return; }
