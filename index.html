@@ -266,7 +266,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .roster-profile-link{text-decoration:none;display:flex;align-items:center;flex-direction:column;gap:4px;width:100%;padding:0;border:0;background:transparent;color:var(--fg);font-size:inherit;line-height:inherit}.roster-profile-link:hover b{text-decoration:none}
 .serving-next{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}.serving-next small{display:block;color:var(--muted);font-size:12px}
 .section-label{font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin:0}.info-card{position:relative;padding:16px}.card-edit{position:absolute;top:8px;right:8px;width:30px;height:30px}.kv{display:grid;grid-template-columns:auto 1fr;gap:10px 18px;margin:0}.kv dt{color:var(--muted);font-size:13.5px}.kv dd{margin:0;font-weight:600;min-width:0;overflow-wrap:anywhere}.about-edit{padding:16px}.about-edit input:not([type=checkbox]){width:100%;min-height:42px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
-.checklist{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg)}.serve-opt{display:flex;align-items:center;gap:12px;padding:11px 12px;border-top:1px solid var(--line);font-weight:600;font-size:14.5px;cursor:pointer}.serve-opt:first-child{border-top:0}.serve-opt input[type=checkbox]{width:22px;height:22px;min-height:22px;accent-color:var(--accent)}.access-box{text-align:center;align-items:center;padding:16px}.access-box .acts2{justify-content:center}.access-box .hint{margin:0}.access-flag{align-self:flex-start;font-size:12px;border:1px solid var(--line);border-radius:12px;padding:3px 9px}.admin-tag{color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent)}.place-list{list-style:none;margin:0;padding:0}.place-list li{padding:11px 14px;border-bottom:1px solid var(--line)}.place-list li:last-child{border:0}
+.checklist{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg)}.serve-opt{display:flex;align-items:center;gap:12px;padding:11px 12px;border-top:1px solid var(--line);font-weight:600;font-size:14.5px;cursor:pointer}.serve-opt:first-child{border-top:0}.serve-opt input[type=checkbox]{width:22px;height:22px;min-height:22px;accent-color:var(--accent)}.access-box{text-align:center;align-items:center;padding:16px}.access-box .acts2{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:8px}.access-share-actions{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}.access-box .hint{margin:0}.access-flag{align-self:flex-start;font-size:12px;border:1px solid var(--line);border-radius:12px;padding:3px 9px}.admin-tag{color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent)}.place-list{list-style:none;margin:0;padding:0}.place-list li{padding:11px 14px;border-bottom:1px solid var(--line)}.place-list li:last-child{border:0}
 
 .profile-hero{position:relative}.profile-hero:has(.access-flag){padding-top:40px}.access-flag{position:absolute;top:8px;right:8px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted)}.access-flag.complete{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}.access-flag.pending{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}.access-flag.failed{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
 
@@ -279,7 +279,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
 <script src="/communications.js?v=47"></script>
-<script src="/rosters.js?v=54"></script>
+<script src="/rosters.js?v=55"></script>
 <script src="/announcement-sharing.js?v=47"></script>
 <script>
 /* ============================================================
@@ -290,7 +290,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "54";   // bump together with CACHE in sw.js
+const APP_VERSION = "55";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",

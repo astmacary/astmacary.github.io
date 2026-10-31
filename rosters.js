@@ -1,7 +1,7 @@
 /* Roster display stays within each ministry's existing SharePoint access.
    Manual Leadership entries are authenticated administrator events in the Serve board. */
 const Rosters = {
-  generation: 0, search: "", open: new Set(), data: {}, errors: {}, tasks: {}, identities: new Map(), photos: new Map(), extraEditors: {}, saving: false, profiles: {}, profileDetailEvents: [], cardDetailEvents: [], aboutId: '', aboutEditing: false, aboutDraft: null, accessStates: {}, editingProfile: false, profileDraft: null, profileSaving: false, deleteKey: '', leadershipChanges: new Map(), demoLeadershipEvents: [],
+  generation: 0, search: "", open: new Set(), data: {}, errors: {}, tasks: {}, identities: new Map(), photos: new Map(), extraEditors: {}, saving: false, profiles: {}, leadershipSettings: {}, profileDetailEvents: [], cardDetailEvents: [], aboutId: '', aboutEditing: false, aboutDraft: null, accessStates: {}, editingProfile: false, profileDraft: null, profileSaving: false, deleteKey: '', leadershipChanges: new Map(), demoLeadershipEvents: [],
   places: ["Productions", "Security", "Ushers & Altar Workers", "Worship & Arts", "Men", "Women", "Elders", "Deacons", "Production Coordinator", "Benevolence", "Shepherd’s Care", "Salvation Army", "Marriage", "Evangelism", "Young Adults", "Youth", "Children Ministry", "Young Acolytes", "Parking Lot", "Property Management", "Medical", "Prayer", "Online", "New Members", "Marketing", "Armor Bearers", "Soul Care", "Recovery", "Greeters", "Guest Services", "Servant’s Heart", "Visitors Reception"].sort((a,b) => a.localeCompare(b,'en',{sensitivity:'base'})),
   baseHubAdmins: null, hubAdminTask: null,
   async loadHubAdmins() {
@@ -102,6 +102,7 @@ const Rosters = {
     const cards = records.filter(r => r.parent.startsWith('hub-card:'));
     await Comm.resolveAuthors(cards);
     this.readCards(cards);
+    this.readLeadershipSettings(cards);
     const access = records.filter(r => r.parent.startsWith('hub-access:'));
     await Comm.resolveAuthors(access); this.readAccessEvents(access);
     const events = records.filter(r => r.parent.startsWith('leadership:'));
@@ -184,13 +185,17 @@ const Rosters = {
     return team && /^[1-9]\d*$/.test(String(p.rowId || '')) && (DEMO || S.teams[key]?.accessVerified) ? `${team.path}?person=${encodeURIComponent(p.rowId)}&from=serve-teams${DEMO ? '&demo' : ''}` : '';
   },
   orderPeople(key, people) {
-    if (key === 'leadership') return people;
+    if (key === 'leadership') {
+      if (!people.some(p => Number.isInteger(p.leadershipOrder))) return people;
+      const rank = p => p.ministryLeader === true && Number.isInteger(p.leadershipOrder) ? p.leadershipOrder : Infinity;
+      return [...people].sort((a,b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+    }
     const priority = p => key === 'ushers' && lc(p.name).trim() === 'tammy marshall' ? 0 : p.ministryLeader === true ? 1 : 2;
     return [...people].sort((a,b) => priority(a) - priority(b) || a.name.localeCompare(b.name));
   },
   person(p, index, key) {
-    const leader = key !== 'leadership' && p.ministryLeader === true;
-    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${key === 'productions' ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? '<span class="ministry-leader-tag">Ministry Leader</span>' : ''}`;
+    const leader = p.ministryLeader === true;
+    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${['productions','leadership'].includes(key) ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? '<span class="ministry-leader-tag">Ministry Leader</span>' : ''}`;
     return `<li class="roster-person${leader ? ' roster-ministry-leader' : ''}">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : this.ministryHref(key,p) ? `<a class="roster-profile-link" data-ministry-profile href="${esc(this.ministryHref(key,p))}" aria-label="About ${esc(p.name)}">${inside}</a>` : inside}</li>`;
   },
   count(key) {
@@ -339,11 +344,29 @@ const Rosters = {
     this.profiles = profiles;
     return profiles;
   },
+  readLeadershipSettings(events) {
+    const settings = {};
+    for (const r of [...events].sort((a,b) => a.at.localeCompare(b.at) || Number(a.id)-Number(b.id))) try {
+      if (!this.hubAdmins().includes(lc(r.email))) continue;
+      const p = JSON.parse(r.text);
+      if (p.type !== 'leadership-settings' || !p.userId || r.parent !== 'hub-card:' + p.userId || typeof p.ministryLeader !== 'boolean') continue;
+      if (p.order !== undefined && (!Number.isInteger(p.order) || p.order < 1 || p.order > 1000)) continue;
+      if (p.displayName !== undefined && (typeof p.displayName !== 'string' || !p.displayName.trim() || p.displayName.length > 120)) continue;
+      settings[p.userId] = {ministryLeader:p.ministryLeader, ...(p.order !== undefined ? {order:p.order} : {}), ...(p.displayName !== undefined ? {displayName:p.displayName.trim()} : {}),at:r.at,id:Number(r.id)};
+    } catch (_) {}
+    this.leadershipSettings = settings;
+    return settings;
+  },
+  leadershipSetting(p) {
+    return [...new Set(p.userIds || [p.userId])].map(id => this.leadershipSettings[id]).filter(Boolean).sort((a,b) => a.at.localeCompare(b.at) || a.id-b.id).at(-1);
+  },
   applyProfiles(people) {
     return people.map(p => {
       const settings = [...new Set(p.userIds || [p.userId])].map(id => this.profiles[id]).filter(Boolean).sort((a,b) => a.at.localeCompare(b.at)).at(-1);
       const updated = settings ? {...p,name:settings.name,...(settings.photo !== undefined ? {hubPhoto:settings.photo} : {})} : p;
-      return {...updated,...this.detailsFor(updated)};
+      const leadership = this.leadershipSetting(updated);
+      const result = {...updated,...this.detailsFor(updated)};
+      return leadership ? {...result,ministryLeader:leadership.ministryLeader,leadershipOrder:leadership.ministryLeader ? leadership.order : undefined,...(leadership.displayName ? {name:leadership.displayName} : {})} : result;
     });
   },
   canEditProfile() {
@@ -352,7 +375,7 @@ const Rosters = {
   ownProfile() {
     const person = this.data.leadership?.find(p => this.isSelf(p)) || {userId:S.me?.id,name:S.me?.name,emails:S.me?.emails};
     const stored = this.editingProfile ? this.profileDraft : this.profiles[S.me?.id];
-    return {...this.detailsFor(person),...(stored || {}),name:stored?.name || person.name || S.me?.name || '',photo:stored && Object.prototype.hasOwnProperty.call(stored,'photo') ? stored.photo || '' : S.photo};
+    return {...this.detailsFor(person),...(stored || {}),name:this.leadershipSetting(person)?.displayName || stored?.name || person.name || S.me?.name || '',photo:stored && Object.prototype.hasOwnProperty.call(stored,'photo') ? stored.photo || '' : S.photo};
   },
   profileEditor() {
     if (!this.canEditProfile()) return '<p class="hint">Your ministry profile is edited in that team’s app.</p>';
@@ -470,7 +493,7 @@ const Rosters = {
     if (!this.canManage()) return '';
     const state = this.accessStates[p.userId];
     if (state?.status === 'verified' && state.saved) return '';
-    return `<section class="panel sec access-box" aria-label="Access status"><h2 class="section-label">Access Status</h2><strong role="status">${esc(state?.label || 'Access not checked')}</strong><p class="hint">${esc(state?.detail || 'Check Microsoft access to the RCI Serve board and Church Calendar.')}</p><p class="hint">${esc(p.email || '')}</p><div class="acts2"><button class="btn" data-act="leader-check-access" ${state?.busy ? 'disabled' : ''}>${state?.busy ? 'Checking…' : 'Check Access'}</button><a class="btn" href="https://${CONFIG.siteHost}${CHURCH_CAL.sitePath}/_layouts/15/user.aspx" target="_blank" rel="noopener">Manage Access</a><button class="btn share-app" data-act="leader-share-app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V3m-5 5 5-5 5 5M5 13v7h14v-7"/></svg>Share App</button></div></section>`;
+    return `<section class="panel sec access-box" aria-label="Access status"><h2 class="section-label">Access Status</h2><strong role="status">${esc(state?.label || 'Access not checked')}</strong><p class="hint">${esc(state?.detail || 'Check Microsoft access to the RCI Serve board and Church Calendar.')}</p><p class="hint">${esc(p.email || '')}</p><div class="acts2"><button class="btn" data-act="leader-check-access" ${state?.busy ? 'disabled' : ''}>${state?.busy ? 'Checking…' : 'Check Access'}</button><div class="access-share-actions"><a class="btn" href="https://${CONFIG.siteHost}${CHURCH_CAL.sitePath}/_layouts/15/user.aspx" target="_blank" rel="noopener">Manage Access</a><button class="btn share-app" data-act="leader-share-app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V3m-5 5 5-5 5 5M5 13v7h14v-7"/></svg>Share App</button></div></div></section>`;
   },
   async checkAccess(p) {
     if (!this.canManage() || !p) return;
@@ -520,7 +543,7 @@ const Rosters = {
     this.cardDetailEvents.push({userId:targetId,...details,at,order:Date.now()});
     this.data.leadership = this.applyProfiles(this.data.leadership);
   },
-  reset() { this.invalidate(); this.search = ""; this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.profileDetailEvents = []; this.cardDetailEvents = []; this.aboutId = ''; this.aboutEditing = false; this.accessStates = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
+  reset() { this.invalidate(); this.search = ""; this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.leadershipSettings = {}; this.profileDetailEvents = []; this.cardDetailEvents = []; this.aboutId = ''; this.aboutEditing = false; this.accessStates = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
 };
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'leadership-form') return;
