@@ -195,7 +195,9 @@ const Rosters = {
   },
   person(p, index, key) {
     const leader = p.ministryLeader === true;
-    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${['productions','leadership'].includes(key) ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? '<span class="ministry-leader-tag">Ministry Leader</span>' : ''}`;
+    const leadershipTitles = {'bishop s.y. younger':'Senior Pastor','bishop younger':'Senior Pastor','pastor marvin st. macary':'Executive Pastor','pastor william westgate':'Associate Pastor','pastor claude gardner':'Associate Pastor'};
+    const leaderTitle = key === 'leadership' ? leadershipTitles[lc(p.name).trim()] || 'Ministry Leader' : 'Ministry Leader';
+    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${['productions','leadership'].includes(key) ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}`;
     return `<li class="roster-person${leader ? ' roster-ministry-leader' : ''}">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : this.ministryHref(key,p) ? `<a class="roster-profile-link" data-ministry-profile href="${esc(this.ministryHref(key,p))}" aria-label="About ${esc(p.name)}">${inside}</a>` : inside}</li>`;
   },
   count(key) {
