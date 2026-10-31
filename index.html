@@ -279,7 +279,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
 <script src="/communications.js?v=47"></script>
-<script src="/rosters.js?v=55"></script>
+<script src="/rosters.js?v=56"></script>
 <script src="/announcement-sharing.js?v=47"></script>
 <script>
 /* ============================================================
@@ -290,7 +290,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "55";   // bump together with CACHE in sw.js
+const APP_VERSION = "56";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",

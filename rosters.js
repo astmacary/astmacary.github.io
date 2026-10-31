@@ -59,10 +59,10 @@ const Rosters = {
     email = lc(email);
     if (!this.identities.has(email)) this.identities.set(email, (async () => {
       const quoted = email.replace(/'/g, "''");
-      const rows = await API.all('/users?$select=id,displayName,mail,userPrincipalName&$filter=' + encodeURIComponent(`mail eq '${quoted}' or userPrincipalName eq '${quoted}'`));
+      const rows = await API.all('/users?$select=id,displayName,givenName,mail,userPrincipalName&$filter=' + encodeURIComponent(`mail eq '${quoted}' or userPrincipalName eq '${quoted}'`));
       if (rows.length !== 1) throw new Error('No single Microsoft account matches this sign-in email.');
       const u = rows[0];
-      return { userId: u.id, principal: u.userPrincipalName, name: u.displayName, email, emails: [email, u.mail, u.userPrincipalName].filter(Boolean).map(lc) };
+      return { userId: u.id, principal: u.userPrincipalName, name: u.displayName, first: u.givenName || '', email, emails: [email, u.mail, u.userPrincipalName].filter(Boolean).map(lc) };
     })().catch(e => { this.identities.delete(email); throw e; }));
     return this.identities.get(email);
   },
@@ -142,7 +142,7 @@ const Rosters = {
       const profile = profiles.find(profile => profile.email && (p.emails || [p.email]).includes(lc(profile.email)) && profile.photoRaw);
       if (profile) Object.assign(p, { photoRaw: profile.photoRaw, team: profile.team, rowId: profile.rowId });
       const related = profiles.filter(profile => profile.email && (p.emails || [p.email]).includes(lc(profile.email)));
-      p.first = related.find(x => x.first)?.first || '';
+      p.first = related.find(x => x.first)?.first || p.first || '';
       p.birthday = related.find(x => x.birthday)?.birthday || ''; p.phone = related.find(x => x.phone)?.phone || '';
     }
     // Identical names share one display card; their separate account identities retain all permissions.
