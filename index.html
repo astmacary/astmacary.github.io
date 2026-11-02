@@ -260,7 +260,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .roster-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .roster-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font:inherit;color:inherit;padding:0;background:none;border:none;cursor:pointer;text-decoration:none}
 .roster-row .roster-avatar{width:44px;height:44px;flex:none;font-size:15px}
-.roster-row .rr-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.roster-row .rr-info{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
 .roster-row .rr-name{display:flex;align-items:center;gap:6px;font-size:14.5px;overflow-wrap:break-word}
 .roster-row .ministry-leader-tag{font-size:10px}
 .roster-person{position:relative;display:flex;align-items:center;flex-direction:column;gap:4px;text-align:center;min-width:0;font-size:11px;line-height:1.2;overflow-wrap:anywhere}.roster-person b{font-weight:500}.roster-ministry-leader .roster-avatar{border:2px solid var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}.ministry-leader-tag{display:inline-block;max-width:100%;padding:2px 5px;border-radius:5px;background:var(--accent-soft);color:var(--accent);font-size:9px;font-weight:700;line-height:1.2}.roster-ministry-leader b{font-weight:700}
@@ -299,7 +299,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "62";   // bump together with CACHE in sw.js
+const APP_VERSION = "63";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
