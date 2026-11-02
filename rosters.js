@@ -29,6 +29,19 @@ const Rosters = {
     } catch (_) {}
     return [...current];
   },
+  leadershipTags: {
+    'ashley.stmacary@therampchurch.com': 'Production Director',
+    'cassie.carter.inc@gmail.com': 'Worship & Arts Director',
+    'lee.gilbert@therampchurch.com': 'Security Leader',
+    'gilbertwilfred7@gmail.com': 'Security Leader',
+    'tammyrambler@gmail.com': 'Ushers & Altar Workers Leader',
+    'delisa.rogers@therampchurch.com': 'Assistant Ushers & Altar Workers Leader'
+  },
+  tagFor(p) {
+    for (const e of (p.emails || [p.email]).filter(Boolean).map(lc)) if (this.leadershipTags[e]) return this.leadershipTags[e];
+    return '';
+  },
+  isLeadershipMember() { return DEMO || !!this.data.leadership?.some(p => this.isSelf(p)); },
   hubAdmins() { return CHURCH_CAL.editors.map(lc); },
   isHubAdmin(p) { return (p.emails || [p.email]).filter(Boolean).some(e => this.hubAdmins().includes(lc(e))); },
   canManage() { return DEMO || !!S.me?.emails.some(e => this.hubAdmins().includes(lc(e))); },
@@ -197,7 +210,8 @@ const Rosters = {
     const leader = p.ministryLeader === true;
     const leadershipTitles = {'bishop s.y. younger':'Senior Pastor','bishop younger':'Senior Pastor','pastor marvin st. macary':'Executive Pastor','pastor william westgate':'Associate Pastor','pastor claude gardner':'Associate Pastor'};
     const leaderTitle = key === 'leadership' ? leadershipTitles[lc(p.name).trim()] || 'Ministry Leader' : 'Ministry Leader';
-    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${['productions','leadership'].includes(key) ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}`;
+    const roleTag = key === 'leadership' ? this.tagFor(p) : '';
+    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${['productions','leadership'].includes(key) ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}${roleTag && roleTag !== leaderTitle ? `<span class="roster-role-tag">${esc(roleTag)}</span>` : ''}`;
     return `<li class="roster-person${leader ? ' roster-ministry-leader' : ''}">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : this.ministryHref(key,p) ? `<a class="roster-profile-link" data-ministry-profile href="${esc(this.ministryHref(key,p))}" aria-label="About ${esc(p.name)}">${inside}</a>` : inside}</li>`;
   },
   count(key) {
@@ -527,7 +541,7 @@ const Rosters = {
     const active = this.accessStates[p.userId];
     const upcoming = TEAMS.flatMap(t => S.teams[t.key]?.accessVerified ? (S.teams[t.key].items || []).filter(i => i.kind === 'assign' && i.confirmed && i.date >= todayKey() && i.email && (p.emails || [p.email]).map(lc).includes(lc(i.email))).map(i => ({...i,teamName:t.name})) : []).sort((a,b) => a.date.localeCompare(b.date)).slice(0,3);
     return `<div class="page-h">${back}<h1>About ${esc(d.first || p.name.split(' ')[0])}</h1></div>
-      <section class="panel profile-hero">${this.canManage() ? `<span title="${active?.checkedAt ? esc('Checked on '+new Date(active.checkedAt).toLocaleString()) : ''}" class="access-flag ${active?.label === 'Access verified' ? 'complete' : active?.label === 'Access needs attention' ? 'failed' : 'pending'}">${esc(active?.label || 'Access not checked')}</span>` : ''}<span class="profile-avatar-wrap"><span class="av" data-roster-photo="leadership:${index}">${esc(initials(p.name))}</span>${this.star(p)}</span><h2>${esc(p.name)}</h2>${this.isHubAdmin(p) ? '<span class="pill admin-tag">★ Admin</span>' : ''}${p.email && !this.isSelf(p) ? `<a class="btn" href="mailto:${esc(p.email)}">Email Me</a>` : ''}</section>
+      <section class="panel profile-hero">${this.canManage() ? `<span title="${active?.checkedAt ? esc('Checked on '+new Date(active.checkedAt).toLocaleString()) : ''}" class="access-flag ${active?.label === 'Access verified' ? 'complete' : active?.label === 'Access needs attention' ? 'failed' : 'pending'}">${esc(active?.label || 'Access not checked')}</span>` : ''}<span class="profile-avatar-wrap"><span class="av" data-roster-photo="leadership:${index}">${esc(initials(p.name))}</span>${this.star(p)}</span><h2>${esc(p.name)}</h2>${this.tagFor(p) ? `<span class="pill admin-tag">${esc(this.tagFor(p))}</span>` : ''}${this.isHubAdmin(p) ? '<span class="pill admin-tag">★ Admin</span>' : ''}${p.email && !this.isSelf(p) ? `<a class="btn" href="mailto:${esc(p.email)}">Email Me</a>` : ''}</section>
       ${this.accessPanel(p)}
       ${this.aboutEditing && canEdit ? `<form id="leader-info-form" class="panel sec about-edit"><h2 class="section-label">Edit ${esc(d.first || p.name)}’s Info</h2>${this.detailsFields(this.aboutDraft || d)}<label>Email</label><input value="${esc(p.email || '')}" disabled><span class="hint">Linked to their sign-in, so it cannot be changed here.</span><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>Save</button><button type="button" class="btn" data-act="leader-info-cancel">Cancel</button></div></form>` : ''}
       <section class="panel info-card">${canEdit && !this.aboutEditing ? `<button class="iconbtn card-edit" data-act="leader-info-edit" aria-label="Edit ${esc(p.name)}'s info" title="Edit">✎</button>` : ''}<dl class="kv"><dt>First Name</dt><dd>${esc(d.first || '—')}</dd><dt>Birthday</dt><dd>${esc(bd)}</dd><dt>Email</dt><dd>${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : '—'}</dd><dt>Phone</dt><dd>${d.phone ? `<a href="tel:${esc(d.phone.replace(/[^\d+]/g,''))}">${esc(d.phone)}</a>` : '—'}</dd></dl></section>

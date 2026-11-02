@@ -7,8 +7,11 @@ const Comm = {
   lists: {"serve": {"board": "2ec3f7fa-168b-43f4-a1a6-552242ddef87", "contacts": "e507b7a1-8fd9-4495-a75b-14f11fde39ef"}, "productions": {"board": "c2cf8dce-848e-44a5-82f9-22be525b3a27", "contacts": "3483d881-7779-4d60-9c0d-566f453b448f"}, "security": {"board": "e7acd4bb-1b3f-49fd-919f-6f8ee9e7d80d", "contacts": "878e6cc8-5db9-4875-bd56-32566efd84ea"}, "ushers": {"board": "695182cc-9ac4-4897-a4e7-1cab655b8e6b", "contacts": "e0601cbd-55d0-45f3-9e90-3a014155d2fd"}, "worship": {"board": "29e8d328-dadd-4eaf-a4ad-fc484d00adff", "contacts": "23b8b906-50a4-4382-829d-2dd0486ec01c"}},
   spaces() {
     const ministries = myTeams().map(t => t.key === 'ushers' ? {...t,name:'Ushers & Altar Workers'} : t).filter(t => (DEMO || S.teams[t.key]?.accessVerified) && S.teams[t.key]?.items && !S.teams[t.key]?.error && !S.teams[t.key]?.noAccess);
+    // The RCI Serve board itself is limited to people on the RCI Leadership roster.
+    if (!DEMO && !Rosters.data.leadership && !Rosters.errors.leadership) void Rosters.load('leadership');
+    const serveAllowed = Rosters.isLeadershipMember();
     return ministries.length || isEditorOf(CHURCH_CAL)
-      ? [{ ...CHURCH_CAL, key: 'serve', name: 'RCI Serve', full: 'RCI Serve' }, ...ministries] : [];
+      ? [...(serveAllowed ? [{ ...CHURCH_CAL, key: 'serve', name: 'RCI Serve', full: 'RCI Serve' }] : []), ...ministries] : [];
   },
   space(key = this.selected) { return this.spaces().find(t => t.key === key); },
   seenKey(key) { return `rci-serve:messages:${DEMO ? 'demo:' : ''}${S.me?.emails?.[0] || ''}:${key}`; },
