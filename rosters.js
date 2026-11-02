@@ -35,13 +35,34 @@ const Rosters = {
     'lee.gilbert@therampchurch.com': 'Security Leader',
     'gilbertwilfred7@gmail.com': 'Security Leader',
     'tammyrambler@gmail.com': 'Ushers & Altar Workers Leader',
-    'delisa.rogers@therampchurch.com': 'Assistant Ushers & Altar Workers Leader'
+    'delisa.rogers@therampchurch.com': 'Assist. Ushers & Altar Workers Leader'
   },
   tagFor(p) {
     for (const e of (p.emails || [p.email]).filter(Boolean).map(lc)) if (this.leadershipTags[e]) return this.leadershipTags[e];
     return '';
   },
   isLeadershipMember() { return DEMO || !!this.data.leadership?.some(p => this.isSelf(p)); },
+  hiddenLeadership: ['bishop s.y. younger', 'bishop younger'],
+  layout: null,
+  layoutKey() { return 'rci-serve:teams-layout:' + ((S.me && S.me.emails && S.me.emails[0]) || ''); },
+  getLayout() {
+    if (this.layout === null) try { this.layout = localStorage.getItem(this.layoutKey()) || 'grid'; } catch (_) { this.layout = 'grid'; }
+    return this.layout;
+  },
+  layoutToggle() {
+    const v = this.getLayout();
+    return `<div class="view-toggle" role="group" aria-label="Teams view">${[['grid',ICON.grid,'Photo view'],['list',ICON.list,'List view']].map(([k,ic,l]) =>
+      `<button type="button" class="iconbtn ${v === k ? 'on' : ''}" data-act="teams-layout" data-view="${k}" aria-pressed="${v === k}" aria-label="${l}" title="${l}">${ic}</button>`).join('')}</div>`;
+  },
+  personRow(p, index, key) {
+    const leader = p.ministryLeader === true;
+    const leadershipTitles = {'bishop s.y. younger':'Senior Pastor','bishop younger':'Senior Pastor','pastor marvin st. macary':'Executive Pastor','pastor william westgate':'Associate Pastor','pastor claude gardner':'Associate Pastor'};
+    const leaderTitle = key === 'leadership' ? leadershipTitles[lc(p.name).trim()] || 'Ministry Leader' : 'Ministry Leader';
+    const roleTag = key === 'leadership' ? this.tagFor(p) : '';
+    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span><span class="rr-info"><span class="rr-name"><b>${esc(p.name)}</b>${['productions','leadership'].includes(key) ? '' : this.star(p)}</span>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}${roleTag && roleTag !== leaderTitle ? `<span class="ministry-leader-tag">${esc(roleTag)}</span>` : ''}</span>`;
+    const href = key !== 'leadership' ? this.ministryHref(key,p) : '';
+    return `<li class="roster-row-item${leader ? ' roster-ministry-leader' : ''}">${key === 'leadership' ? `<button type="button" class="roster-row" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : href ? `<a class="roster-row" data-ministry-profile href="${esc(href)}" aria-label="About ${esc(p.name)}">${inside}</a>` : `<span class="roster-row">${inside}</span>`}</li>`;
+  },
   hubAdmins() { return CHURCH_CAL.editors.map(lc); },
   isHubAdmin(p) { return (p.emails || [p.email]).filter(Boolean).some(e => this.hubAdmins().includes(lc(e))); },
   canManage() { return DEMO || !!S.me?.emails.some(e => this.hubAdmins().includes(lc(e))); },
@@ -180,7 +201,8 @@ const Rosters = {
         const people = key === 'leadership' ? await this.leadership() : DEMO
           ? [{ rowId: 'demo-1', name: 'Demo Person', email: S.me.emails[0], team: key }, { rowId: 'demo-2', name: 'Team Member', email: 'member@example.org', team: key }]
           : await this.ministry(t);
-        if (generation === this.generation && identity === (S.me?.id || S.me?.emails.join("|"))) this.data[key] = this.orderPeople(key, people);
+        const visible = key === 'leadership' ? people.filter(p => !this.hiddenLeadership.includes(lc(p.name).trim())) : people;
+        if (generation === this.generation && identity === (S.me?.id || S.me?.emails.join("|"))) this.data[key] = this.orderPeople(key, visible);
       } catch (e) { if (generation === this.generation) this.errors[key] = e.message || 'Unable to load the roster.'; }
       finally { if (this.tasks[key] === task) delete this.tasks[key]; if (generation === this.generation && S.phase === 'ready' && ['teams','profile','leader-about'].includes(S.view) && !this.profileSaving) render(); }
     })();
@@ -211,7 +233,7 @@ const Rosters = {
     const leadershipTitles = {'bishop s.y. younger':'Senior Pastor','bishop younger':'Senior Pastor','pastor marvin st. macary':'Executive Pastor','pastor william westgate':'Associate Pastor','pastor claude gardner':'Associate Pastor'};
     const leaderTitle = key === 'leadership' ? leadershipTitles[lc(p.name).trim()] || 'Ministry Leader' : 'Ministry Leader';
     const roleTag = key === 'leadership' ? this.tagFor(p) : '';
-    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${['productions','leadership'].includes(key) ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}${roleTag && roleTag !== leaderTitle ? `<span class="roster-role-tag">${esc(roleTag)}</span>` : ''}`;
+    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${['productions','leadership'].includes(key) ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}${roleTag && roleTag !== leaderTitle ? `<span class="ministry-leader-tag">${esc(roleTag)}</span>` : ''}`;
     return `<li class="roster-person${leader ? ' roster-ministry-leader' : ''}">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : this.ministryHref(key,p) ? `<a class="roster-profile-link" data-ministry-profile href="${esc(this.ministryHref(key,p))}" aria-label="About ${esc(p.name)}">${inside}</a>` : inside}</li>`;
   },
   count(key) {
@@ -243,7 +265,7 @@ const Rosters = {
     return `<div id="roster-${key}" class="roster-section" ${opened ? '' : 'hidden'}>${opened ? `<div class="roster-content">
       ${loading ? '<p class="hint" role="status">Loading roster…</p>' : ''}
       ${this.errors[key] ? `<p class="hint" role="alert">${esc(this.errors[key])} Use the refresh icon at the top of the app to try again.</p>` : ''}
-      ${loaded && people.length ? `<ul class="team-roster">${people.map((p,i) => this.person(p,i,key)).join('')}</ul>` : loaded && !loading && !this.errors[key] ? '<p class="hint">No team members yet.</p>' : !loading && !this.errors[key] ? '<p class="hint" role="status">Waiting for roster access to be verified…</p>' : ''}
+      ${loaded && people.length ? (this.getLayout() === 'list' ? `<ul class="roster-rows">${people.map((p,i) => this.personRow(p,i,key)).join('')}</ul>` : `<ul class="team-roster">${people.map((p,i) => this.person(p,i,key)).join('')}</ul>`) : loaded && !loading && !this.errors[key] ? '<p class="hint">No team members yet.</p>' : !loading && !this.errors[key] ? '<p class="hint" role="status">Waiting for roster access to be verified…</p>' : ''}
     </div>` : ''}</div>`;
   },
 
@@ -278,7 +300,7 @@ const Rosters = {
       return '<h1 class="page">Your Teams</h1><p class="hint" role="status">Loading teams and roster counts…</p>';
     }
     for (const t of teams) if ((DEMO || S.teams[t.key]?.accessVerified) && !this.data[t.key] && !this.errors[t.key]) void this.load(t.key);
-    return `<div class="teams-page-heading"><h1 class="page">Your Teams</h1><input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div>${this.search.trim() ? this.searchView() : ''}<div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.rosterToggle('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
+    return `<div class="teams-page-heading"><h1 class="page">Your Teams</h1><div class="teams-page-heading-r">${this.layoutToggle()}<input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div></div>${this.search.trim() ? this.searchView() : ''}<div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.rosterToggle('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
       ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.rosterToggle(t.key,t.full)}</div>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}</div>${this.modal()}`;
   },
   async deleteMember(key, person) {
@@ -620,6 +642,10 @@ document.addEventListener('input', e => {
   render();
 });
 
+document.addEventListener('click', e => {
+  const layoutBtn = e.target.closest('[data-act="teams-layout"]');
+  if (layoutBtn) { Rosters.layout = layoutBtn.dataset.view; try { localStorage.setItem(Rosters.layoutKey(), Rosters.layout); } catch (_) {} render(); }
+});
 document.addEventListener('click', e => {
   if (!e.target.closest('[data-ministry-profile]')) return;
   try { sessionStorage.setItem('rci-serve:teams-return',JSON.stringify({id:S.me?.id,search:Rosters.search,open:[...Rosters.open]})); } catch (_) {}
