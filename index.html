@@ -143,6 +143,8 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .pill.ok{background:var(--ok-soft);color:var(--ok)}
 .pill.warn{background:var(--warn-soft);color:var(--warn)}
 .pill.today{background:var(--accent);color:var(--accent-ink)}
+.imp-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:12px;border:2px solid var(--accent);background:var(--accent-soft);color:var(--fg)}
+.imp-bar span{display:flex;flex-direction:column;gap:2px;min-width:0}.imp-bar b{font-size:14px}.imp-bar small{font-size:12px;color:var(--muted)}.imp-bar .btn{flex:none}
 .note{display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:13px}
 .note svg{flex:none;width:16px;height:16px;margin-top:2px}
 .empty{padding:16px 14px;color:var(--muted);font-size:14px}
@@ -290,7 +292,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "57";   // bump together with CACHE in sw.js
+const APP_VERSION = "58";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -502,6 +504,9 @@ const API = {
     catch(e){ await this.msal.acquireTokenRedirect({ scopes: SCOPES, redirectUri: location.origin + "/" }); throw e; }
   },
   async g(path, opts={}){
+    if (S.imp && String(opts.method || "GET").toUpperCase() !== "GET"){
+      const err = new Error("You're previewing as a team member, so changes are turned off. Tap Exit Preview to make changes."); err.preview = true; throw err;
+    }
     const url = path.startsWith("https://") ? path : "https://graph.microsoft.com/v1.0" + path;
     const res = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + await this.token(), ...(opts.headers||{}) } });
     if (!res.ok){
@@ -867,12 +872,59 @@ const isEditorOf = t => !!S.me && (DEMO || t.editors.some(e => S.me.emails.inclu
 /* On a team: an admin of it, has a (not archived) Roster / profile row, or has been scheduled in the last 120 days or later. */
 function member(t){
   const d = S.teams[t.key]; if (!d) return false;
+  if (S.imp) return true;   // previewing: a team member on all four teams
   if (isEditorOf(t) || Rosters.isHubAdmin(S.me || {})) return true;
   if (d.noAccess || !d.items) return false;
   const since = addDays(todayKey(), -120);
   return d.items.some(i => mineRow(i) && ((i.kind === "profile" && !i.gone) || (i.kind === "assign" && i.date >= since)));
 }
 const myTeams = () => TEAMS.filter(member);
+
+/* ---------- Preview as a team member (admins only) ----------
+   Shows RCI Serve the way a regular volunteer sees it: on all four teams, admin of nothing.
+   The data still loads with the admin's own sign-in, but every change (Graph POST/PATCH/PUT/DELETE) is blocked while previewing,
+   and nothing is written to the shared state the team apps read. Remembered for this app window only (session storage). */
+const PREVIEW_PERSON = { id: "rci-serve-preview-member", name: "Team Member", emails: ["team.member@preview.rci-serve"] };
+const IMP_KEY = "rci-serve:preview-member";
+const canImpersonate = () => !DEMO && !S.imp && !!S.me && (isAnyAdmin() || Rosters.canManage());
+function wantsImp(){ try { return sessionStorage.getItem(IMP_KEY) === "1"; } catch(_){ return false; } }
+function resetIdentityViews(){
+  S.annEdit = false; S.annDraft = null;
+  Rosters.reset();
+  AnnShare.sourceId = ''; AnnShare.snapshot = null; AnnShare.selected.clear(); AnnShare.sent.clear();
+  Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; Comm.thread = ''; Comm.selected = 'serve';
+  void Rosters.loadHubAdmins().then(() => {
+    render();
+    if (S.phase !== "ready") return;
+    void Rosters.load('leadership');
+    void Comm.load().then(() => render());
+  });
+}
+function impStart(){
+  if (!canImpersonate()) return;
+  S.realMe = S.me; S.realPhoto = S.photo;
+  S.me = { ...PREVIEW_PERSON, emails: [...PREVIEW_PERSON.emails] }; S.photo = null; S.imp = true;
+  try { sessionStorage.setItem(IMP_KEY, "1"); } catch(_){}
+  resetIdentityViews();
+  if ("clearAppBadge" in navigator) navigator.clearAppBadge().catch(() => {});
+  S.view = "home"; try { sessionStorage.setItem("rci-serve:view", "home"); } catch(_){}
+  render(); window.scrollTo(0, 0);
+}
+function impStop(){
+  try { sessionStorage.removeItem(IMP_KEY); } catch(_){}
+  if (!S.imp) return;
+  S.me = S.realMe; S.photo = S.realPhoto; S.realMe = null; S.realPhoto = null; S.imp = false;
+  resetIdentityViews();
+  updateBadge(); render(); window.scrollTo(0, 0);
+}
+function impBanner(){
+  return `<div class="imp-bar" role="status"><span><b>Previewing as a team member</b><small>On all 4 teams · not an admin · changes are turned off. Team apps still open as you.</small></span><button class="btn" data-act="imp-stop">Exit Preview</button></div>`;
+}
+function impCard(){
+  return `<section class="panel pad"><b>Preview as a Team Member</b>
+    <p class="hint">See RCI Serve the way a volunteer sees it: someone who serves on Productions, Security, Ushers &amp; Altar Workers and Worship &amp; Arts, but isn't an admin on anything. Nothing can be changed while previewing.</p>
+    <button class="btn" style="align-self:flex-start" data-act="imp-start">Preview as Team Member</button></section>`;
+}
 const myItems = () => myTeams().flatMap(t => (S.teams[t.key].items || []).filter(i => i.kind === "assign" && mineRow(i) && (i.pending || i.confirmed)));
 const upcoming = () => myItems().filter(i => i.date >= todayKey()).sort((a,b) => a.date.localeCompare(b.date) || a.team.localeCompare(b.team));
 const pendingOf = k => upcoming().filter(i => i.pending && (!k || i.team === k));
@@ -881,13 +933,14 @@ const totalPending = () => pendingOf().length;
 /* Shared with the team apps (same address): who's signed in, which teams they're on, and each team's request count.
    The team apps read this to show the Switch Team button and to add the other teams' counts to the app-icon number. */
 function saveShared(){
-  if (!S.me) return;
+  if (!S.me || S.imp) return;
   try {
     const teams = myTeams().map(t => ({ key: t.key, count: S.teams[t.key]?.items ? pendingOf(t.key).length : 0, admin: isEditorOf(t) }));
     localStorage.setItem("rci-serve:state", JSON.stringify({ emails: S.me.emails, name: S.me.name, at: Date.now(), teams }));
   } catch(e){}
 }
 function saveCache(){
+  if (S.imp) return;
   try {
     const teams = {};
     for (const t of TEAMS){ const d = S.teams[t.key]; if (!d) continue;
@@ -900,7 +953,7 @@ function readCache(){
 }
 function updateBadge(){
   saveShared();
-  if (DEMO || !("setAppBadge" in navigator)) return;
+  if (DEMO || S.imp || !("setAppBadge" in navigator)) return;
   const n = totalPending();
   (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
 }
@@ -1331,6 +1384,7 @@ function viewProfile(){
       ${canEdit ? `<div class="profile-hero-actions"><button class="btn" data-act="hub-profile-change-photo">Change Photo</button>${!Rosters.editingProfile ? '<button class="btn" data-act="hub-profile-edit">Edit profile</button>' : ''}</div><input id="hub-profile-photo" type="file" accept="image/*" aria-label="Profile photo" hidden><p class="hint">Your teammates see this on the Leadership roster.</p>` : ''}</section>
     ${Rosters.profileEditor()}
     ${badgeAsk()}
+    ${S.imp ? impBanner() : canImpersonate() ? impCard() : ""}
     <section class="panel">
       ${DEMO ? "" : `<button class="setrow" data-act="signout" style="color:var(--bad)"><span>Sign out</span></button>`}
     </section>`;
@@ -1381,7 +1435,7 @@ function render(){
     : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
-  app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${body}</div></main>` + tabs + AnnShare.modal();
+  app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${S.imp && S.view !== "profile" ? impBanner() : ""}${body}</div></main>` + tabs + AnnShare.modal();
   if (rosterSearchFocus !== null && S.view === "teams") { const input = document.getElementById("roster-search"); input?.focus({preventScroll:true}); input?.setSelectionRange(rosterSearchFocus,rosterSearchFocus); }
   hydrateFlyers(); if (["teams","leader-about"].includes(S.view)) Rosters.hydrate();
 }
@@ -1410,7 +1464,9 @@ function openLightbox(url, alt){
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act;
-  if (act === "ann-share") AnnShare.open(b.dataset.id);
+  if (act === "imp-start") impStart();
+  else if (act === "imp-stop") impStop();
+  else if (act === "ann-share") AnnShare.open(b.dataset.id);
   else if (act === "ann-share-close") AnnShare.close();
   else if (act === "ann-share-target") { if (!AnnShare.busy && !AnnShare.sent.has(b.dataset.k)){ AnnShare.selected.has(b.dataset.k) ? AnnShare.selected.delete(b.dataset.k) : AnnShare.selected.add(b.dataset.k); render(); } }
   else if (act === "leader-about") Rosters.openAbout(b.dataset.id);
@@ -1436,7 +1492,7 @@ document.addEventListener("click", async e => {
   else if (act === "hub-profile-photo-remove") { if (Rosters.profileDraft){ Rosters.profileDraft.photo = null; render(); } }
   else if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "signin") API.signIn();
-  else if (act === "signout"){ Rosters.reset(); AnnShare.sourceId=''; AnnShare.snapshot=null; AnnShare.selected.clear(); AnnShare.sent.clear(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
+  else if (act === "signout"){ try { sessionStorage.removeItem(IMP_KEY); } catch(_){} if (S.imp){ impStop(); return; } Rosters.reset(); AnnShare.sourceId=''; AnnShare.snapshot=null; AnnShare.selected.clear(); AnnShare.sent.clear(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
   else if (act === "retry") location.reload();
   else if (act === "refresh") loadAll();
   else if (act === "accept") accept(b.dataset.id);
@@ -1605,15 +1661,17 @@ async function start(){
     const signedIn = await API.init();
     if (!signedIn){ S.phase = "signin"; render(); return; }
     S.me = await API.me();
+    const restoreImp = wantsImp();
+    if (restoreImp && canImpersonate()) impStart();
     if (OPEN_TEAMS) try {
       const saved = JSON.parse(sessionStorage.getItem('rci-serve:teams-return') || 'null');
       if (saved?.id === S.me.id) { Rosters.search = typeof saved.search === 'string' ? saved.search : ''; Rosters.open = new Set((Array.isArray(saved.open) ? saved.open : []).filter(k => ['leadership',...TEAMS.map(t=>t.key)].includes(k))); }
       sessionStorage.removeItem('rci-serve:teams-return');
     } catch (_) {}
-    void Rosters.loadHubAdmins().then(() => { render(); if (S.phase === 'ready') void Comm.load().then(() => { if (S.view === 'messages') render(); }); });
+    void Rosters.loadHubAdmins().then(() => { if (restoreImp && !S.imp && canImpersonate()) impStart(); render(); if (S.phase === 'ready') void Comm.load().then(() => { if (S.view === 'messages') render(); }); });
     const c = readCache();
-    if (c && c.me.emails.some(x => S.me.emails.includes(x))){ S.teams = c.teams; S.church = { items: c.church || [], anns: c.churchAnns || [], error: "" }; S.phase = "ready"; render(); }   // show the saved picture right away
-    API.photo().then(p => { S.photo = p; render(); });
+    if (c && !S.imp && c.me.emails.some(x => S.me.emails.includes(x))){ S.teams = c.teams; S.church = { items: c.church || [], anns: c.churchAnns || [], error: "" }; S.phase = "ready"; render(); }   // show the saved picture right away
+    API.photo().then(p => { if (S.imp) S.realPhoto = p; else S.photo = p; render(); });
     await loadAll();
   } catch(e){
     console.error(e);
