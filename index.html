@@ -288,7 +288,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
 <script src="/communications.js?v=48"></script>
-<script src="/rosters.js?v=60"></script>
+<script src="/rosters.js?v=61"></script>
 <script src="/announcement-sharing.js?v=47"></script>
 <script>
 /* ============================================================
@@ -299,7 +299,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "65";   // bump together with CACHE in sw.js
+const APP_VERSION = "66";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1421,6 +1421,7 @@ function viewProfile(){
     ${S.imp ? impBanner() + impCard() : canImpersonate() ? impCard() : ""}
     ${Rosters.profileEditor()}
     ${badgeAsk()}
+    ${Rosters.canManage() ? `<section class="panel"><button class="setrow" data-act="tab" data-view="access-log"><span>RCI Serve Access Check</span></button></section>` : ""}
     <section class="panel">
       ${DEMO ? "" : `<button class="setrow" data-act="signout" style="color:var(--bad)"><span>Sign out</span></button>`}
     </section>`;
@@ -1468,7 +1469,7 @@ function render(){
   }
   const tabsArr = tabsList();
   const body = S.view === "notes" ? viewServiceNotes() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
-    : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
+    : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "access-log" ? AccessLog.view() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${S.imp && S.view !== "profile" ? impBanner() : ""}${body}</div></main>` + tabs + AnnShare.modal();
@@ -1699,6 +1700,7 @@ async function start(){
     const signedIn = await API.init();
     if (!signedIn){ S.phase = "signin"; render(); return; }
     S.me = await API.me();
+    void AccessLog.recordLogin();
     const restoreImp = wantsImp();
     if (restoreImp && canImpersonate()) impStart(restoreImp);
     if (OPEN_TEAMS) try {

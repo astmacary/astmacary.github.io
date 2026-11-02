@@ -646,6 +646,111 @@ document.addEventListener('click', e => {
   const layoutBtn = e.target.closest('[data-act="teams-layout"]');
   if (layoutBtn) { Rosters.layout = layoutBtn.dataset.view; try { localStorage.setItem(Rosters.layoutKey(), Rosters.layout); } catch (_) {} render(); }
 });
+
+/* "RCI Serve Access Check Status" — a SharePoint list (same site as Church Calendar) tracking who's been
+   invited to RCI Serve and who has actually signed in. Resolved by display name since no list ID was given. */
+const ACCESS_LOG_LIST = "RCI Serve Access Check Status";
+const AccessLog = {
+  _meta: null, _metaTask: null, rows: null, loadTask: null, error: '', draft: { name: '', email: '' }, saving: false,
+  async meta() {
+    if (this._meta) return this._meta;
+    if (this._metaTask) return this._metaTask;
+    this._metaTask = (async () => {
+      const siteId = API.sites.church?.siteId || (await API.g(`/sites/${CONFIG.siteHost}:${CHURCH_CAL.sitePath}?$select=id`)).id;
+      const base = `/sites/${siteId}/lists`;
+      const listId = (await API.g(`${base}/${encodeURIComponent(ACCESS_LOG_LIST)}?$select=id`)).id;
+      let cols = [];
+      try { cols = (await API.g(`${base}/${listId}/columns?$select=name,displayName`)).value || []; } catch (_) {}
+      const col = label => cols.find(c => c.displayName === label)?.name || label.replace(/[^A-Za-z0-9]/g, '');
+      return (this._meta = {
+        base: `${base}/${listId}/items`,
+        name: col('Name'), email: col('Email'), status: col('Access Status'),
+        invited: col('Invitation Date'), first: col('First Successful Login'), last: col('Last Successful Login')
+      });
+    })().finally(() => { this._metaTask = null; });
+    return this._metaTask;
+  },
+  async load(refresh) {
+    if (DEMO) { this.rows = []; return; }
+    if (this.loadTask && !refresh) return this.loadTask;
+    this.loadTask = (async () => {
+      try {
+        const m = await this.meta();
+        const sel = [m.name, m.email, m.status, m.invited, m.first, m.last].join(',');
+        const raw = await API.all(`${m.base}?$expand=fields($select=${sel})&$top=2000`);
+        this.rows = raw.map(r => ({
+          id: String(r.id), name: r.fields[m.name] || '', email: lc(r.fields[m.email] || ''),
+          status: r.fields[m.status] || '', invited: r.fields[m.invited] || '', first: r.fields[m.first] || '', last: r.fields[m.last] || ''
+        })).sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+        this.error = '';
+      } catch (err) { this.error = err.message || 'Unable to load the access check list.'; }
+    })().finally(() => { this.loadTask = null; render(); });
+    return this.loadTask;
+  },
+  findByEmail(emails) {
+    const mine = emails.map(lc);
+    return this.rows?.find(r => mine.includes(r.email));
+  },
+  async invite(name, email) {
+    if (!Rosters.canManage()) throw new Error('Only RCI Serve administrators can invite someone.');
+    name = String(name || '').trim(); email = lc(String(email || '').trim());
+    if (!name) throw new Error('Enter a name.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address.');
+    if (!this.rows) await this.load();
+    if (this.findByEmail([email])) throw new Error('This person is already on the list.');
+    const m = await this.meta();
+    await API.g(m.base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: { [m.name]: name, [m.email]: email, [m.status]: 'Invited', [m.invited]: new Date().toISOString() } }) });
+    await this.load(true);
+  },
+  async recordLogin() {
+    if (DEMO || !S.me) return;
+    try {
+      const m = await this.meta();
+      if (!this.rows) await this.load();
+      const now = new Date().toISOString();
+      const existing = this.findByEmail(S.me.emails);
+      if (existing) {
+        const fields = { [m.status]: 'Successfully logged in', [m.last]: now };
+        if (!existing.first) fields[m.first] = now;
+        if (!existing.name && S.me.name) fields[m.name] = S.me.name;
+        await API.g(`${m.base}/${existing.id}/fields`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
+      } else {
+        await API.g(m.base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: { [m.name]: S.me.name || '', [m.email]: S.me.emails[0] || '', [m.status]: 'Successfully logged in', [m.first]: now, [m.last]: now } }) });
+      }
+      await this.load(true);
+    } catch (err) { console.warn('Access check list: could not record sign-in.', err); }
+  },
+  view() {
+    if (!Rosters.canManage()) return '<h1 class="page">Access Check</h1><section class="panel pad"><p>Only RCI Serve administrators can view this.</p></section>';
+    if (this.rows === null && !this.error) void this.load();
+    const rows = this.rows || [];
+    const fmt = d => d ? new Date(d).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+    return `<h1 class="page">RCI Serve Access Check</h1>
+      <section class="panel pad"><div class="sec"><h2 class="section-label">Invite Someone</h2></div><p class="hint">Adds them to the Access Check list as "Invited." It does not send an email or change app access.</p>
+        <form id="access-invite-form" class="sec"><label for="access-invite-name">Name</label><input id="access-invite-name" name="name" maxlength="120" value="${esc(this.draft.name)}" required><label for="access-invite-email">Email</label><input id="access-invite-email" name="email" type="email" maxlength="200" value="${esc(this.draft.email)}" required><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add to list'}</button></div></form></section>
+      ${this.error ? `<section class="panel pad"><div class="err">${esc(this.error)}</div><button class="btn" data-act="access-log-refresh">Try again</button></section>` : ''}
+      <section class="panel"><div class="sec" style="padding:14px 14px 0">${rows.length ? `<small class="muted">${rows.length} ${rows.length === 1 ? 'person' : 'people'}</small>` : ''}</div>
+        ${rows.length ? `<ul class="access-log-list">${rows.map(r => `<li class="access-log-row"><div><b>${esc(r.name || r.email)}</b><small class="muted">${esc(r.email)}</small></div><div class="access-log-meta"><span class="pill ${r.status === 'Successfully logged in' ? 'ok' : 'warn'}">${esc(r.status || 'Invited')}</span>${r.status === 'Successfully logged in' ? `<small class="muted">Last signed in ${fmt(r.last)}</small>` : `<small class="muted">Invited ${fmt(r.invited)}</small>`}</div></li>`).join('')}</ul>`
+          : this.error ? '' : '<div class="empty" style="padding:14px">No one on the list yet.</div>'}
+      </section>`;
+  }
+};
+document.addEventListener('submit', async e => {
+  if (e.target.id !== 'access-invite-form') return;
+  e.preventDefault(); if (AccessLog.saving || !Rosters.canManage()) return;
+  const f = new FormData(e.target);
+  AccessLog.saving = true; render();
+  try { await AccessLog.invite(String(f.get('name') || ''), String(f.get('email') || '')); AccessLog.draft = { name: '', email: '' }; toast('Added to the Access Check list.'); }
+  catch (err) { toast(err.message || 'Unable to add this person.', true); }
+  AccessLog.saving = false; render();
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'access-invite-name') AccessLog.draft.name = e.target.value;
+  if (e.target.id === 'access-invite-email') AccessLog.draft.email = e.target.value;
+});
+document.addEventListener('click', e => {
+  if (e.target.closest('[data-act="access-log-refresh"]')) void AccessLog.load(true);
+});
 document.addEventListener('click', e => {
   if (!e.target.closest('[data-ministry-profile]')) return;
   try { sessionStorage.setItem('rci-serve:teams-return',JSON.stringify({id:S.me?.id,search:Rosters.search,open:[...Rosters.open]})); } catch (_) {}
