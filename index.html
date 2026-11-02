@@ -299,7 +299,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "64";   // bump together with CACHE in sw.js
+const APP_VERSION = "65";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1108,7 +1108,7 @@ function installGuide(force=false){
   const steps = deferredInstall ? "" : safari
     ? `<ol>${first}<li>Tap the two lines on the web address bar below.</li><li>Tap the <b>Share</b> button.</li><li>Tap the <b>View More</b> drop-down menu.</li><li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open RCI Serve from your home screen and sign in.</li></ol>`
     : `<ol>${first}<li>Tap the <b>Share</b> button on the web address bar at the top.</li><li>Tap the <b>View More</b> drop-down menu.</li><li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li><li>Open RCI Serve from your home screen and sign in.</li></ol>`;
-  return `<section class="panel pad install"><div class="sec"><h2 style="font-size:18px">Add RCI Serve to Your Home Screen</h2></div>
+  return `<section class="panel pad install"><div class="sec"><h2 style="font-size:18px">Add RCI Serve App to Your Home Screen</h2></div>
     <p class="hint" style="color:var(--fg)">One icon for every team you serve on. You sign in once, and you can switch between your teams without leaving the app.</p>
     ${steps}<div class="acts2">${deferredInstall ? `<button class="btn primary big" data-act="install">Install App</button>` : ""}<button class="btn" data-act="hide-install">Not now</button></div></section>`;
 }
