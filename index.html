@@ -299,7 +299,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "63";   // bump together with CACHE in sw.js
+const APP_VERSION = "64";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -880,7 +880,7 @@ const isEditorOf = t => !!S.me && (DEMO || t.editors.some(e => S.me.emails.inclu
 /* On a team: an admin of it, has a (not archived) Roster / profile row, or has been scheduled in the last 120 days or later. */
 function member(t){
   const d = S.teams[t.key]; if (!d) return false;
-  if (S.imp) return true;   // previewing: a team member on all four teams
+  if (S.imp) return (S.impTeams || []).includes(t.key);   // previewing: a member of the teams Ashley picked
   if (isEditorOf(t) || Rosters.isHubAdmin(S.me || {})) return true;
   if (d.noAccess || !d.items) return false;
   const since = addDays(todayKey(), -120);
@@ -896,7 +896,17 @@ const PREVIEW_PERSON = { id: "rci-serve-preview-member", name: "Team Member", em
 const IMP_KEY = "rci-serve:preview-member";
 const PREVIEW_ALLOWED = ["ashley.stmacary@therampchurch.com", "astmacary@gmail.com"];   // only Ashley can preview
 const canImpersonate = () => !DEMO && !S.imp && !!S.me && S.me.emails.some(e => PREVIEW_ALLOWED.includes(lc(e)));
-function wantsImp(){ try { return sessionStorage.getItem(IMP_KEY) === "1"; } catch(_){ return false; } }
+/* The saved preview: a list of team keys (an older "1" means all four). null = not previewing. */
+function wantsImp(){
+  try {
+    const v = sessionStorage.getItem(IMP_KEY); if (!v) return null;
+    if (v === "1") return TEAMS.map(t => t.key);
+    const keys = impKeys(JSON.parse(v)); return keys.length ? keys : null;
+  } catch(_){ return null; }
+}
+const impKeys = list => TEAMS.map(t => t.key).filter(k => (list || []).includes(k));   // valid keys, in the usual team order
+const impTeamNames = keys => impKeys(keys).map(k => TEAMS.find(t => t.key === k).name);
+function impPicked(){ if (!S.impPick) S.impPick = new Set(S.imp ? S.impTeams : TEAMS.map(t => t.key)); return S.impPick; }
 function resetIdentityViews(){
   S.annEdit = false; S.annDraft = null;
   Rosters.reset();
@@ -909,11 +919,21 @@ function resetIdentityViews(){
     void Comm.load().then(() => render());
   });
 }
-function impStart(){
+function impStart(keys){
+  keys = impKeys(keys);
+  if (!keys.length) { toast("Pick at least one team to preview.", true); return; }
+  if (S.imp){   // already previewing: just change the teams
+    S.impTeams = keys; S.impPick = null;
+    try { sessionStorage.setItem(IMP_KEY, JSON.stringify(keys)); } catch(_){}
+    resetIdentityViews(); toast("Now previewing: " + impTeamNames(keys).join(" + "));
+    S.view = "home"; try { sessionStorage.setItem("rci-serve:view", "home"); } catch(_){}
+    render(); window.scrollTo(0, 0); return;
+  }
   if (!canImpersonate()) return;
+  S.impTeams = keys; S.impPick = null;
   S.realMe = S.me; S.realPhoto = S.photo;
   S.me = { ...PREVIEW_PERSON, emails: [...PREVIEW_PERSON.emails] }; S.photo = null; S.imp = true;
-  try { sessionStorage.setItem(IMP_KEY, "1"); } catch(_){}
+  try { sessionStorage.setItem(IMP_KEY, JSON.stringify(keys)); } catch(_){}
   resetIdentityViews();
   if ("clearAppBadge" in navigator) navigator.clearAppBadge().catch(() => {});
   S.view = "home"; try { sessionStorage.setItem("rci-serve:view", "home"); } catch(_){}
@@ -922,17 +942,24 @@ function impStart(){
 function impStop(){
   try { sessionStorage.removeItem(IMP_KEY); } catch(_){}
   if (!S.imp) return;
-  S.me = S.realMe; S.photo = S.realPhoto; S.realMe = null; S.realPhoto = null; S.imp = false;
+  S.me = S.realMe; S.photo = S.realPhoto; S.realMe = null; S.realPhoto = null; S.imp = false; S.impTeams = null; S.impPick = null;
   resetIdentityViews();
   updateBadge(); render(); window.scrollTo(0, 0);
 }
 function impBanner(){
-  return `<div class="imp-bar" role="status"><span><b>Previewing as a team member</b><small>On all 4 teams · not an admin · changes are turned off. Team apps still open as you.</small></span><button class="btn" data-act="imp-stop">Exit Preview</button></div>`;
+  const names = impTeamNames(S.impTeams), on = names.length === TEAMS.length ? "On all 4 teams" : "On " + names.join(" + ");
+  return `<div class="imp-bar" role="status"><span><b>Previewing as a team member</b><small>${esc(on)} · not an admin · changes are turned off. Team apps still open as you.</small></span><button class="btn" data-act="imp-stop">Exit Preview</button></div>`;
 }
+/* Ashley picks any team or combination of teams; the preview person is a regular member of exactly those. */
 function impCard(){
-  return `<section class="panel pad"><b>Preview as a Team Member</b>
-    <p class="hint">See RCI Serve the way a volunteer sees it: someone who serves on Productions, Security, Ushers &amp; Altar Workers and Worship &amp; Arts, but isn't an admin on anything. Nothing can be changed while previewing.</p>
-    <button class="btn" style="align-self:flex-start" data-act="imp-start">Preview as Team Member</button></section>`;
+  const pick = impPicked(), n = pick.size, all = n === TEAMS.length;
+  const same = S.imp && n === S.impTeams.length && S.impTeams.every(k => pick.has(k));
+  return `<section class="panel pad"><b>${S.imp ? "Change Preview Teams" : "Preview as a Team Member"}</b>
+    <p class="hint">See RCI Serve the way a volunteer sees it: someone who serves on the teams you pick below, but isn't an admin on anything. Nothing can be changed while previewing.</p>
+    <div class="chips" role="group" aria-label="Teams to preview">${TEAMS.map(t => `<button class="chip team team-pill${pick.has(t.key) ? "" : " off"}" style="${tvars(t)}" data-act="imp-pick" data-k="${t.key}" aria-pressed="${pick.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="btn" data-act="imp-all" ${all ? "disabled" : ""}>All Teams</button>
+      <button class="btn primary" data-act="imp-start" ${!n || same ? "disabled" : ""}>${S.imp ? "Switch Preview" : "Preview as Team Member"}</button></div>
+    <p class="hint">${n ? `Previewing as a member of ${esc(all ? "all 4 teams" : impTeamNames([...pick]).join(" + "))}.` : "Pick at least one team."}</p></section>`;
 }
 const myItems = () => myTeams().flatMap(t => (S.teams[t.key].items || []).filter(i => i.kind === "assign" && mineRow(i) && (i.pending || i.confirmed)));
 const upcoming = () => myItems().filter(i => i.date >= todayKey()).sort((a,b) => a.date.localeCompare(b.date) || a.team.localeCompare(b.team));
@@ -1391,7 +1418,7 @@ function viewProfile(){
     <section class="panel profile-hero"><span class="profile-avatar-wrap"><span class="av">${profile.photo ? `<img src="${profile.photo}" alt="">` : esc(initials(profile.name))}</span>${Rosters.star({emails:S.me.emails})}</span>
       <h2>${esc(profile.name)}</h2><small class="muted">${esc(S.me.emails[0] || "")}</small>
       ${canEdit ? `<div class="profile-hero-actions"><button class="btn" data-act="hub-profile-change-photo">Change Photo</button>${!Rosters.editingProfile ? '<button class="btn" data-act="hub-profile-edit">Edit profile</button>' : ''}</div><input id="hub-profile-photo" type="file" accept="image/*" aria-label="Profile photo" hidden><p class="hint">Your teammates see this on the Leadership roster.</p>` : ''}</section>
-    ${S.imp ? impBanner() : canImpersonate() ? impCard() : ""}
+    ${S.imp ? impBanner() + impCard() : canImpersonate() ? impCard() : ""}
     ${Rosters.profileEditor()}
     ${badgeAsk()}
     <section class="panel">
@@ -1473,7 +1500,9 @@ function openLightbox(url, alt){
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act;
-  if (act === "imp-start") impStart();
+  if (act === "imp-start") impStart([...impPicked()]);
+  else if (act === "imp-pick") { const p = impPicked(), k = b.dataset.k; p.has(k) ? p.delete(k) : p.add(k); render(); }
+  else if (act === "imp-all") { S.impPick = new Set(TEAMS.map(t => t.key)); render(); }
   else if (act === "imp-stop") impStop();
   else if (act === "ann-share") AnnShare.open(b.dataset.id);
   else if (act === "ann-share-close") AnnShare.close();
@@ -1671,13 +1700,13 @@ async function start(){
     if (!signedIn){ S.phase = "signin"; render(); return; }
     S.me = await API.me();
     const restoreImp = wantsImp();
-    if (restoreImp && canImpersonate()) impStart();
+    if (restoreImp && canImpersonate()) impStart(restoreImp);
     if (OPEN_TEAMS) try {
       const saved = JSON.parse(sessionStorage.getItem('rci-serve:teams-return') || 'null');
       if (saved?.id === S.me.id) { Rosters.search = typeof saved.search === 'string' ? saved.search : ''; Rosters.open = new Set((Array.isArray(saved.open) ? saved.open : []).filter(k => ['leadership',...TEAMS.map(t=>t.key)].includes(k))); }
       sessionStorage.removeItem('rci-serve:teams-return');
     } catch (_) {}
-    void Rosters.loadHubAdmins().then(() => { if (restoreImp && !S.imp && canImpersonate()) impStart(); render(); if (S.phase === 'ready') void Comm.load().then(() => { if (S.view === 'messages') render(); }); });
+    void Rosters.loadHubAdmins().then(() => { if (restoreImp && !S.imp && canImpersonate()) impStart(restoreImp); render(); if (S.phase === 'ready') void Comm.load().then(() => { if (S.view === 'messages') render(); }); });
     const c = readCache();
     if (c && !S.imp && c.me.emails.some(x => S.me.emails.includes(x))){ S.teams = c.teams; S.church = { items: c.church || [], anns: c.churchAnns || [], error: "" }; S.phase = "ready"; render(); }   // show the saved picture right away
     API.photo().then(p => { if (S.imp) S.realPhoto = p; else S.photo = p; render(); });
