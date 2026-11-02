@@ -35,14 +35,14 @@ const Rosters = {
     'lee.gilbert@therampchurch.com': 'Security Leader',
     'gilbertwilfred7@gmail.com': 'Security Leader',
     'tammyrambler@gmail.com': 'Ushers & Altar Workers Leader',
-    'delisa.rogers@therampchurch.com': 'Assist. Ushers & Altar Workers Leader'
+    'delisa.rogers@therampchurch.com': 'Ushers & Altar Workers Leader'
   },
   tagFor(p) {
     for (const e of (p.emails || [p.email]).filter(Boolean).map(lc)) if (this.leadershipTags[e]) return this.leadershipTags[e];
     return '';
   },
   isLeadershipMember() { return DEMO || !!this.data.leadership?.some(p => this.isSelf(p)); },
-  hiddenLeadership: ['bishop s.y. younger', 'bishop younger'],
+  hiddenLeadership: ['bishop younger'],
   layout: null,
   layoutKey() { return 'rci-serve:teams-layout:' + ((S.me && S.me.emails && S.me.emails[0]) || ''); },
   getLayout() {
