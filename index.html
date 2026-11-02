@@ -292,7 +292,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "58";   // bump together with CACHE in sw.js
+const APP_VERSION = "59";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -886,7 +886,8 @@ const myTeams = () => TEAMS.filter(member);
    and nothing is written to the shared state the team apps read. Remembered for this app window only (session storage). */
 const PREVIEW_PERSON = { id: "rci-serve-preview-member", name: "Team Member", emails: ["team.member@preview.rci-serve"] };
 const IMP_KEY = "rci-serve:preview-member";
-const canImpersonate = () => !DEMO && !S.imp && !!S.me && (isAnyAdmin() || Rosters.canManage());
+const PREVIEW_ALLOWED = ["ashley.stmacary@therampchurch.com", "astmacary@gmail.com"];   // only Ashley can preview
+const canImpersonate = () => !DEMO && !S.imp && !!S.me && S.me.emails.some(e => PREVIEW_ALLOWED.includes(lc(e)));
 function wantsImp(){ try { return sessionStorage.getItem(IMP_KEY) === "1"; } catch(_){ return false; } }
 function resetIdentityViews(){
   S.annEdit = false; S.annDraft = null;
@@ -1382,9 +1383,9 @@ function viewProfile(){
     <section class="panel profile-hero"><span class="profile-avatar-wrap"><span class="av">${profile.photo ? `<img src="${profile.photo}" alt="">` : esc(initials(profile.name))}</span>${Rosters.star({emails:S.me.emails})}</span>
       <h2>${esc(profile.name)}</h2><small class="muted">${esc(S.me.emails[0] || "")}</small>
       ${canEdit ? `<div class="profile-hero-actions"><button class="btn" data-act="hub-profile-change-photo">Change Photo</button>${!Rosters.editingProfile ? '<button class="btn" data-act="hub-profile-edit">Edit profile</button>' : ''}</div><input id="hub-profile-photo" type="file" accept="image/*" aria-label="Profile photo" hidden><p class="hint">Your teammates see this on the Leadership roster.</p>` : ''}</section>
+    ${S.imp ? impBanner() : canImpersonate() ? impCard() : ""}
     ${Rosters.profileEditor()}
     ${badgeAsk()}
-    ${S.imp ? impBanner() : canImpersonate() ? impCard() : ""}
     <section class="panel">
       ${DEMO ? "" : `<button class="setrow" data-act="signout" style="color:var(--bad)"><span>Sign out</span></button>`}
     </section>`;
