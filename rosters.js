@@ -731,7 +731,7 @@ const AccessLog = {
   },
   accessSection(key, label, rows, emptyText) {
     const opened = this.open.has(key);
-    return `<section class="panel"><div class="team-title" style="padding:12px 14px 0"><h2 class="section-label" style="margin:0;flex:1">${esc(label)}</h2><button class="roster-heading-toggle" data-act="access-toggle" data-k="${key}" aria-label="${esc(label)} list" aria-expanded="${opened}" aria-controls="access-${key}"><span class="roster-count">${rows.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button></div><div id="access-${key}" style="padding:0 14px 14px" ${opened ? '' : 'hidden'}>${opened ? this.accessList(rows, key, emptyText) : ''}</div></section>`;
+    return `<section class="panel"><div class="team-title" style="padding:12px 14px 0"><h2 class="section-label" style="margin:0">${esc(label)}</h2><button class="roster-heading-toggle" data-act="access-toggle" data-k="${key}" aria-label="${esc(label)} list" aria-expanded="${opened}" aria-controls="access-${key}" style="flex:none"><span class="roster-count">${rows.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button></div><div id="access-${key}" style="padding:0 14px 14px" ${opened ? '' : 'hidden'}>${opened ? this.accessList(rows, key, emptyText) : ''}</div></section>`;
   },
   view() {
     if (!Rosters.canManage()) return '<h1 class="page">Access Check</h1><section class="panel pad"><p>Only RCI Serve administrators can view this.</p></section>';
