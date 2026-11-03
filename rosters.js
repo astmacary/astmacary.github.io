@@ -720,19 +720,26 @@ const AccessLog = {
       await this.load(true);
     } catch (err) { console.warn('Access check list: could not record sign-in.', err); }
   },
+  accessRow(r, kind) {
+    const fmt = d => d ? new Date(d).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+    const detail = kind === 'active' ? `Last signed in ${fmt(r.last)}` : `Invited ${fmt(r.invited)}`;
+    return `<li class="roster-row-item"><span class="roster-row"><span class="roster-avatar">${esc(initials(r.name || r.email))}</span><span class="rr-info"><span class="rr-name"><b>${esc(r.name || r.email)}</b></span><small class="muted">${esc(r.email)}</small><small class="muted">${esc(detail)}</small></span></span></li>`;
+  },
+  accessList(rows, kind, emptyText) {
+    return rows.length ? `<ul class="roster-rows access-rows">${rows.map(r => this.accessRow(r, kind)).join('')}</ul>` : `<div class="empty" style="padding:14px">${esc(emptyText)}</div>`;
+  },
   view() {
     if (!Rosters.canManage()) return '<h1 class="page">Access Check</h1><section class="panel pad"><p>Only RCI Serve administrators can view this.</p></section>';
     if (this.rows === null && !this.error) void this.load();
     const rows = this.rows || [];
-    const fmt = d => d ? new Date(d).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+    const invited = rows.filter(r => r.status !== 'Successfully logged in');
+    const active = rows.filter(r => r.status === 'Successfully logged in');
     return `<h1 class="page">RCI Serve Access Check</h1>
       <section class="panel pad"><div class="sec"><h2 class="section-label">Invite Someone</h2></div><p class="hint">Adds them to the Access Check list as "Invited." It does not send an email or change app access.</p>
         <form id="access-invite-form" class="sec"><label for="access-invite-name">Name</label><input id="access-invite-name" name="name" maxlength="120" value="${esc(this.draft.name)}" required><label for="access-invite-email">Email</label><input id="access-invite-email" name="email" type="email" maxlength="200" value="${esc(this.draft.email)}" required><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add to list'}</button></div></form></section>
       ${this.error ? `<section class="panel pad"><div class="err">${esc(this.error)}</div><button class="btn" data-act="access-log-refresh">Try again</button></section>` : ''}
-      <section class="panel"><div class="sec" style="padding:14px 14px 0">${rows.length ? `<small class="muted">${rows.length} ${rows.length === 1 ? 'person' : 'people'}</small>` : ''}</div>
-        ${rows.length ? `<ul class="access-log-list">${rows.map(r => `<li class="access-log-row"><div><b>${esc(r.name || r.email)}</b><small class="muted">${esc(r.email)}</small></div><div class="access-log-meta"><span class="pill ${r.status === 'Successfully logged in' ? 'ok' : 'warn'}">${esc(r.status || 'Invited')}</span>${r.status === 'Successfully logged in' ? `<small class="muted">Last signed in ${fmt(r.last)}</small>` : `<small class="muted">Invited ${fmt(r.invited)}</small>`}</div></li>`).join('')}</ul>`
-          : this.error ? '' : '<div class="empty" style="padding:14px">No one on the list yet.</div>'}
-      </section>`;
+      <section class="panel pad"><div class="sec"><h2 class="section-label">Invited${invited.length ? ` (${invited.length})` : ''}</h2></div>${this.accessList(invited, 'invited', 'No one is waiting on an invite.')}</section>
+      <section class="panel pad"><div class="sec"><h2 class="section-label">Has Access${active.length ? ` (${active.length})` : ''}</h2></div>${this.accessList(active, 'active', 'No one has signed in yet.')}</section>`;
   }
 };
 document.addEventListener('submit', async e => {

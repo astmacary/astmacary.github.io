@@ -258,6 +258,7 @@ nav.tabs .count{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;heig
 .roster-content{padding:9px}.team-roster{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px 6px}
 .view-toggle{display:inline-flex;gap:2px;flex:none}.view-toggle .iconbtn{width:32px;height:32px;border:none;background:transparent;color:var(--accent);opacity:.8}.view-toggle .iconbtn svg{width:16px;height:16px}.view-toggle .iconbtn.on{background:var(--accent-soft);color:var(--accent);opacity:1}
 .roster-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.access-rows{gap:4px}.access-rows .roster-row{gap:10px;padding:4px 0}.access-rows .roster-avatar{width:34px;height:34px;font-size:12px}.access-rows .rr-name{font-size:13px}.access-rows .rr-info small{font-size:11.5px}
 .roster-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font:inherit;color:inherit;padding:0;background:none;border:none;cursor:pointer;text-decoration:none}
 .roster-row .roster-avatar{width:44px;height:44px;flex:none;font-size:15px}
 .roster-row .rr-info{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
@@ -288,7 +289,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
 <script src="/communications.js?v=48"></script>
-<script src="/rosters.js?v=61"></script>
+<script src="/rosters.js?v=62"></script>
 <script src="/announcement-sharing.js?v=47"></script>
 <script>
 /* ============================================================
@@ -299,7 +300,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "69";   // bump together with CACHE in sw.js
+const APP_VERSION = "70";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
