@@ -651,7 +651,8 @@ document.addEventListener('click', e => {
    invited to RCI Serve and who has actually signed in. Resolved by display name since no list ID was given. */
 const ACCESS_LOG_LIST = "RCI Serve Access Check Status";
 const AccessLog = {
-  _meta: null, _metaTask: null, rows: null, loadTask: null, error: '', draft: { name: '', email: '' }, saving: false,
+  _meta: null, _metaTask: null, rows: null, loadTask: null, error: '', draft: { name: '', email: '' }, saving: false, open: new Set(['invited', 'active']),
+  toggle(key) { this.open.has(key) ? this.open.delete(key) : this.open.add(key); render(); },
   async meta() {
     if (this._meta) return this._meta;
     if (this._metaTask) return this._metaTask;
@@ -728,6 +729,10 @@ const AccessLog = {
   accessList(rows, kind, emptyText) {
     return rows.length ? `<ul class="roster-rows access-rows">${rows.map(r => this.accessRow(r, kind)).join('')}</ul>` : `<div class="empty" style="padding:14px">${esc(emptyText)}</div>`;
   },
+  accessSection(key, label, rows, emptyText) {
+    const opened = this.open.has(key);
+    return `<section class="panel"><div class="team-title" style="padding:12px 14px 0"><h2 class="section-label" style="margin:0;flex:1">${esc(label)}</h2><button class="roster-heading-toggle" data-act="access-toggle" data-k="${key}" aria-label="${esc(label)} list" aria-expanded="${opened}" aria-controls="access-${key}"><span class="roster-count">${rows.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button></div><div id="access-${key}" style="padding:0 14px 14px" ${opened ? '' : 'hidden'}>${opened ? this.accessList(rows, key, emptyText) : ''}</div></section>`;
+  },
   view() {
     if (!Rosters.canManage()) return '<h1 class="page">Access Check</h1><section class="panel pad"><p>Only RCI Serve administrators can view this.</p></section>';
     if (this.rows === null && !this.error) void this.load();
@@ -738,8 +743,8 @@ const AccessLog = {
       <section class="panel pad"><div class="sec"><h2 class="section-label">Invite Someone</h2></div><p class="hint">Adds them to the Access Check list as "Invited." It does not send an email or change app access.</p>
         <form id="access-invite-form" class="sec"><label for="access-invite-name">Name</label><input id="access-invite-name" name="name" maxlength="120" value="${esc(this.draft.name)}" required><label for="access-invite-email">Email</label><input id="access-invite-email" name="email" type="email" maxlength="200" value="${esc(this.draft.email)}" required><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add to list'}</button></div></form></section>
       ${this.error ? `<section class="panel pad"><div class="err">${esc(this.error)}</div><button class="btn" data-act="access-log-refresh">Try again</button></section>` : ''}
-      <section class="panel pad"><div class="sec"><h2 class="section-label">Invited${invited.length ? ` (${invited.length})` : ''}</h2></div>${this.accessList(invited, 'invited', 'No one is waiting on an invite.')}</section>
-      <section class="panel pad"><div class="sec"><h2 class="section-label">Has Access${active.length ? ` (${active.length})` : ''}</h2></div>${this.accessList(active, 'active', 'No one has signed in yet.')}</section>`;
+      ${this.accessSection('invited', 'Invited', invited, 'No one is waiting on an invite.')}
+      ${this.accessSection('active', 'Has Access', active, 'No one has signed in yet.')}`;
   }
 };
 document.addEventListener('submit', async e => {
@@ -757,6 +762,8 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('click', e => {
   if (e.target.closest('[data-act="access-log-refresh"]')) void AccessLog.load(true);
+  const toggleBtn = e.target.closest('[data-act="access-toggle"]');
+  if (toggleBtn) AccessLog.toggle(toggleBtn.dataset.k);
 });
 document.addEventListener('click', e => {
   if (!e.target.closest('[data-ministry-profile]')) return;
