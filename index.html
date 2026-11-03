@@ -299,7 +299,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "67";   // bump together with CACHE in sw.js
+const APP_VERSION = "68";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -500,16 +500,38 @@ const API = {
       cache: { cacheLocation: "localStorage" }   // the same place the team apps keep their sign-in, so one sign-in covers all of them
     });
     await this.msal.initialize();
-    const r = await this.msal.handleRedirectPromise();
+    this.redirecting = null;
+    // A sign-in left half-finished (in this app or another RCI app on this site, which share the
+    // sign-in) makes every new one fail with "interaction_in_progress". If this page isn't coming
+    // back from Microsoft, nothing can be in progress, so clear that marker first.
+    if (!/[#&?](code|error)=/.test(location.hash + location.search)) this.clearStuck();
+    let r = null;
+    try { r = await this.msal.handleRedirectPromise(); }
+    catch(e){ if (e && e.errorCode === "interaction_in_progress"){ this.clearStuck(); r = await this.msal.handleRedirectPromise(); } else throw e; }
     this.account = r?.account || this.msal.getActiveAccount() || this.msal.getAllAccounts()[0] || null;
     if (this.account) this.msal.setActiveAccount(this.account);
     return !!this.account;
   },
-  signIn(){ return this.msal.loginRedirect({ scopes: SCOPES, redirectUri: location.origin + "/" }); },
+  signIn(){ this.clearStuck(); return this.msal.loginRedirect({ scopes: SCOPES, redirectUri: location.origin + "/" }); },
   signOut(){ return this.msal.logoutRedirect({ account: this.account, postLogoutRedirectUri: location.origin + "/" }); },
   async token(){
     try { return (await this.msal.acquireTokenSilent({ scopes: SCOPES, account: this.account })).accessToken; }
-    catch(e){ await this.msal.acquireTokenRedirect({ scopes: SCOPES, redirectUri: location.origin + "/" }); throw e; }
+    catch(e){ return this.reauth(); }
+  },
+  /* Microsoft wants the person to sign in again (about once a day for web apps). Many requests can
+     find that out at once; only the first starts the sign-in, the rest wait while the page leaves. */
+  reauth(){
+    if (!this.redirecting) this.redirecting = (async () => {
+      const go = () => this.msal.acquireTokenRedirect({ scopes: SCOPES, redirectUri: location.origin + "/" });
+      try { await go(); }
+      catch(e){ if (e && e.errorCode === "interaction_in_progress"){ this.clearStuck(); await go(); } else { this.redirecting = null; throw e; } }
+    })();
+    return this.redirecting.then(() => new Promise(() => {}));
+  },
+  clearStuck(){
+    for (const store of [window.sessionStorage, window.localStorage]){
+      try { Object.keys(store).filter(k => k === "msal.interaction.status").forEach(k => store.removeItem(k)); } catch(_){}
+    }
   },
   async g(path, opts={}){
     if (S.imp && String(opts.method || "GET").toUpperCase() !== "GET"){
