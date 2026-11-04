@@ -293,7 +293,7 @@ document.addEventListener('click', async e => {
     const range = commRanges[b.dataset.target];
     if (range) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); }
     const cmd = b.dataset.cmd, val = cmd === 'foreColor' ? (b.dataset.val === 'reset' ? getComputedStyle(ed).color : b.dataset.val) : null;
-    try { document.execCommand('styleWithCSS', false, true); document.execCommand(cmd, false, val); } catch (_) {}
+    try { document.execCommand('styleWithCSS', false, cmd === 'foreColor'); document.execCommand(cmd, false, val); } catch (_) {}
     return;
   }
   if (Comm.busy) return;
