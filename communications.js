@@ -43,7 +43,7 @@ function commPreview(html){
 }
 
 const Comm = {
-  selected: 'serve', thread: '', mode: 'board', data: {}, meta: {}, drafts: {}, busy: false, edit: null, meId: '', identityKey: '', extraAdmins: {}, showHidden: false, generation: 0, moderationReady: true,
+  selected: 'serve', thread: '', mode: 'board', data: {}, meta: {}, drafts: {}, busy: false, edit: null, meId: '', identityKey: '', extraAdmins: {}, showHidden: false, composeOpen: false, generation: 0, moderationReady: true,
   // Verified in SharePoint: author-only reads, member Contribute, designated leader Design.
   privateReady: { serve: true, productions: true, security: true, ushers: true, worship: true },
   lists: {"serve": {"board": "2ec3f7fa-168b-43f4-a1a6-552242ddef87", "contacts": "e507b7a1-8fd9-4495-a75b-14f11fde39ef"}, "productions": {"board": "c2cf8dce-848e-44a5-82f9-22be525b3a27", "contacts": "3483d881-7779-4d60-9c0d-566f453b448f"}, "security": {"board": "e7acd4bb-1b3f-49fd-919f-6f8ee9e7d80d", "contacts": "878e6cc8-5db9-4875-bd56-32566efd84ea"}, "ushers": {"board": "695182cc-9ac4-4897-a4e7-1cab655b8e6b", "contacts": "e0601cbd-55d0-45f3-9e90-3a014155d2fd"}, "worship": {"board": "29e8d328-dadd-4eaf-a4ad-fc484d00adff", "contacts": "23b8b906-50a4-4382-829d-2dd0486ec01c"}},
@@ -117,7 +117,7 @@ const Comm = {
     const draft = this.drafts[this.draftKey(kind, parent)] || {};
     const contact = kind === 'contact';
     return `<form class="panel pad comm-form" data-kind="${kind}" data-parent="${esc(parent)}">
-      <h2>${contact ? 'Contact your leaders privately' : parent ? 'Write a reply' : 'Start a conversation'}</h2>
+      <h2>${contact ? 'Contact your leaders privately' : parent ? 'Write a reply' : 'Make a post'}</h2>
       ${!parent ? `<div class="field"><label for="comm-title">${contact ? 'Subject' : 'Title'}</label><input id="comm-title" name="title" maxlength="120" value="${esc(draft.title || '')}" required></div>` : ''}
       <div class="field"><label for="comm-body">${parent ? 'Reply' : 'Message'}</label>${commToolbar('comm-body')}<div class="panel notes notes-editor" id="comm-body" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${parent ? 'Reply' : 'Message'}">${cleanHtml(draft.body || '')}</div></div>
       ${contact ? '<p class="hint">Your message is private to you and this space’s leaders. Authorized site administrators retain access.</p>' : '<p class="hint">Visible to members of this board.</p>'}
@@ -247,7 +247,8 @@ const Comm = {
     } else {
       const seen = this.seen(t.key), roots = this.roots(d);
       const activity = r => this.board(d).filter(x => x.id === r.id || x.parent === r.id).reduce((at,x) => x.at > at ? x.at : at,r.at);
-      content = this.form('post') + (roots.length ? roots.sort((a,b) => Number(this.pinned(b.id,d)) - Number(this.pinned(a.id,d)) || activity(b).localeCompare(activity(a))).map(r => {
+      const composer = `<button type="button" class="btn comm-compose-toggle" data-comm="toggle-compose" aria-expanded="${this.composeOpen}">${this.composeOpen ? '− Hide' : '+ Make a post'}</button>` + (this.composeOpen ? this.form('post') : '');
+      content = composer + (roots.length ? roots.sort((a,b) => Number(this.pinned(b.id,d)) - Number(this.pinned(a.id,d)) || activity(b).localeCompare(activity(a))).map(r => {
         const replies = this.visibleBoard(d).filter(x => x.parent === r.id), fresh = [r,...replies].some(x => !seen.has(x.id) && !this.own(x));
         return `<article class="panel pad"><div class="comm-topic-line"><button class="btn comm-topic" data-comm="thread" data-id="${esc(r.id)}">${this.pinned(r.id,d) ? '📌 ' : ''}${esc(r.title)}${fresh ? ' • Unread' : ''}</button>${this.actions(r,'board')}</div>${this.hiddenRow(r,d) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === 'board' ? this.editForm(r,'board') : ''}<p class="hint">${esc(r.name)} · ${plural(replies.length,'reply','replies')}</p><div class="comm-text notes">${cleanHtml(r.text)}</div></article>`;
       }).join('') : '<div class="empty">No conversations yet. Start the first one.</div>');
@@ -306,9 +307,10 @@ document.addEventListener('click', async e => {
   if (['edit','delete','pin','hide'].includes(action)) { await Comm.act(action,b.dataset.kind,b.dataset.id); return; }
   if (action === 'toggle-hidden' && Comm.isAdmin()) { Comm.showHidden = !Comm.showHidden; Comm.thread = ''; Comm.edit = null; }
   if (action === 'cancel-edit') Comm.edit = null;
-  if (action === 'space') { if (!Comm.space(b.dataset.key)) return; Comm.selected = b.dataset.key; Comm.thread = ''; Comm.edit = null; Comm.showHidden = false; }
-  if (action === 'mode') { Comm.mode = b.dataset.mode; Comm.thread = ''; Comm.edit = null; Comm.showHidden = false; }
-  if (action === 'back') Comm.thread = '';
+  if (action === 'space') { if (!Comm.space(b.dataset.key)) return; Comm.selected = b.dataset.key; Comm.thread = ''; Comm.edit = null; Comm.showHidden = false; Comm.composeOpen = false; }
+  if (action === 'mode') { Comm.mode = b.dataset.mode; Comm.thread = ''; Comm.edit = null; Comm.showHidden = false; Comm.composeOpen = false; }
+  if (action === 'back') { Comm.thread = ''; Comm.composeOpen = false; }
+  if (action === 'toggle-compose') Comm.composeOpen = !Comm.composeOpen;
   if (action === 'thread') { Comm.thread = b.dataset.id; Comm.markThread(); }
   if (action === 'refresh') { Comm.edit = null; b.disabled = true; await Comm.load(); }
   render();
