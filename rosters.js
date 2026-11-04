@@ -270,7 +270,7 @@ const Rosters = {
   },
 
   modal() {
-    if (this.adding && this.canManage()) return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Add Leadership member</h2><form id="leadership-form" class="sec"><label for="leadership-name">Display name</label><input id="leadership-name" type="text" name="name" maxlength="120" value="${esc(this.draftName || '')}" required autocomplete="name"><label for="leadership-email">Sign-in email</label><input id="leadership-email" type="email" name="email" value="${esc(this.draft || '')}" required autocomplete="email"><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add member'}</button><button class="btn" type="button" data-act="leadership-cancel">Cancel</button></div></form></section></div>`;
+    if (this.adding && this.canManage()) return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Add Leadership member</h2><form id="leadership-form" class="sec"><label for="leadership-name">Full Name</label><input id="leadership-name" type="text" name="name" maxlength="120" value="${esc(this.draftName || '')}" required autocomplete="name"><label for="leadership-email">Sign-in email</label><input id="leadership-email" type="email" name="email" value="${esc(this.draft || '')}" required autocomplete="email"><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add member'}</button><button class="btn" type="button" data-act="leadership-cancel">Cancel</button></div></form></section></div>`;
     if (!this.deleteKey || !this.canManageTeam(this.deleteKey)) return '';
     const key = this.deleteKey, label = key === 'leadership' ? 'RCI Leadership' : TEAMS.find(t => t.key === key)?.full, people = this.data[key] || [];
     return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Delete ${esc(label)} member</h2><form id="roster-delete-form" class="sec">
@@ -591,7 +591,7 @@ document.addEventListener('submit', async e => {
   Rosters.draftName = String(f.get('name') || '').trim();
   Rosters.saving = true; render();
   try {
-    if (!Rosters.draftName) throw new Error('Enter a display name.');
+    if (!Rosters.draftName) throw new Error('Enter a full name.');
     const p = await Rosters.identity(Rosters.draft);
     await Rosters.save({ ...p, name: Rosters.draftName }, 'add');
     Rosters.adding = false; Rosters.draft = ''; Rosters.draftName = ''; toast('Leadership member added');
