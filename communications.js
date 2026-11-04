@@ -34,7 +34,13 @@ document.addEventListener("selectionchange", () => {
 });
 document.addEventListener("mousedown", e => { if (e.target.closest(".tool")) e.preventDefault(); });
 /* Plain-text rendering of a sanitized message body, for length checks and the truncated board-preview snippet. */
-function commPreview(html){ const d = document.createElement("div"); d.innerHTML = cleanHtml(html || ""); return (d.textContent || "").trim(); }
+function commPreview(html){
+  const spaced = cleanHtml(html || "")
+    .replace(/<(p|div|li|h1|h2|h3|h4|tr|blockquote|br)[^>]*>/gi, " $&")
+    .replace(/<\/(p|div|li|h1|h2|h3|h4|tr|blockquote)>/gi, "$& ");
+  const d = document.createElement("div"); d.innerHTML = spaced;
+  return (d.textContent || "").replace(/\s+/g, " ").trim();
+}
 
 const Comm = {
   selected: 'serve', thread: '', mode: 'board', data: {}, meta: {}, drafts: {}, busy: false, edit: null, meId: '', identityKey: '', extraAdmins: {}, showHidden: false, generation: 0, moderationReady: true,
