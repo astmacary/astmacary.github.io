@@ -270,7 +270,7 @@ const Rosters = {
   },
 
   modal() {
-    if (this.adding && this.canManage()) return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Add Leadership member</h2><form id="leadership-form" class="sec"><label for="leadership-email">Sign-in email</label><input id="leadership-email" type="email" name="email" value="${esc(this.draft || '')}" required autocomplete="email"><p class="hint">Adds their name and photo to Leadership. App access stays the same.</p><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add member'}</button><button class="btn" type="button" data-act="leadership-cancel">Cancel</button></div></form></section></div>`;
+    if (this.adding && this.canManage()) return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Add Leadership member</h2><form id="leadership-form" class="sec"><label for="leadership-name">Display name</label><input id="leadership-name" type="text" name="name" maxlength="120" value="${esc(this.draftName || '')}" required autocomplete="name"><label for="leadership-email">Sign-in email</label><input id="leadership-email" type="email" name="email" value="${esc(this.draft || '')}" required autocomplete="email"><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add member'}</button><button class="btn" type="button" data-act="leadership-cancel">Cancel</button></div></form></section></div>`;
     if (!this.deleteKey || !this.canManageTeam(this.deleteKey)) return '';
     const key = this.deleteKey, label = key === 'leadership' ? 'RCI Leadership' : TEAMS.find(t => t.key === key)?.full, people = this.data[key] || [];
     return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Delete ${esc(label)} member</h2><form id="roster-delete-form" class="sec">
@@ -581,14 +581,21 @@ const Rosters = {
     this.cardDetailEvents.push({userId:targetId,...details,at,order:Date.now()});
     this.data.leadership = this.applyProfiles(this.data.leadership);
   },
-  reset() { this.invalidate(); this.search = ""; this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.leadershipSettings = {}; this.profileDetailEvents = []; this.cardDetailEvents = []; this.aboutId = ''; this.aboutEditing = false; this.accessStates = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
+  reset() { this.invalidate(); this.search = ""; this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.draftName = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.leadershipSettings = {}; this.profileDetailEvents = []; this.cardDetailEvents = []; this.aboutId = ''; this.aboutEditing = false; this.accessStates = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
 };
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'leadership-form') return;
   e.preventDefault(); if (Rosters.saving || !Rosters.canManage()) return;
-  Rosters.draft = String(new FormData(e.target).get('email') || '').trim();
+  const f = new FormData(e.target);
+  Rosters.draft = String(f.get('email') || '').trim();
+  Rosters.draftName = String(f.get('name') || '').trim();
   Rosters.saving = true; render();
-  try { const p = await Rosters.identity(Rosters.draft); await Rosters.save(p, 'add'); Rosters.adding = false; Rosters.draft = ''; toast('Leadership member added'); }
+  try {
+    if (!Rosters.draftName) throw new Error('Enter a display name.');
+    const p = await Rosters.identity(Rosters.draft);
+    await Rosters.save({ ...p, name: Rosters.draftName }, 'add');
+    Rosters.adding = false; Rosters.draft = ''; Rosters.draftName = ''; toast('Leadership member added');
+  }
   catch (err) { toast(err.message || 'Unable to add this member.', true); }
   Rosters.saving = false; render();
 });
