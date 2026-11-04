@@ -1,5 +1,41 @@
 /* Communication records stay in their own ministry's SharePoint site.
    SharePoint permissions, not these UI checks, enforce access. See COMMUNICATIONS.md. */
+/* Rich-text formatting for messages: mirrors the Production Notes editor's toolbar/colors/sanitizer
+   pattern, but with its own names (COMM_COLORS/commToolbar/commRanges/commPreview) so this file never
+   collides with the page-global KEEP/cleanHtml/NOTES_COLORS/notesToolbar some apps already define.
+   It still calls the page's own global cleanHtml()/KEEP (present in every app) to sanitize. */
+const COMM_COLORS = [
+  { label: "Red", hex: "#C0392B" },
+  { label: "Orange", hex: "#D98E04" },
+  { label: "Green", hex: "#1E8449" },
+  { label: "Blue", hex: "#2E5EAA" },
+  { label: "Purple", hex: "#6C3483" }
+];
+function commToolbar(target){
+  return `<div class="notes-tools" role="toolbar" aria-label="Formatting">
+      <button type="button" class="tool" data-comm="comm-fmt" data-target="${target}" data-cmd="bold" aria-label="Bold"><b>B</b></button>
+      <button type="button" class="tool" data-comm="comm-fmt" data-target="${target}" data-cmd="italic" aria-label="Italic"><i>I</i></button>
+      <button type="button" class="tool" data-comm="comm-fmt" data-target="${target}" data-cmd="insertUnorderedList" aria-label="Bulleted list">• List</button>
+      <button type="button" class="tool" data-comm="comm-fmt" data-target="${target}" data-cmd="insertOrderedList" aria-label="Numbered list">1. List</button>
+      <button type="button" class="tool" data-comm="comm-fmt" data-target="${target}" data-cmd="outdent" aria-label="Decrease indent">⇤</button>
+      <button type="button" class="tool" data-comm="comm-fmt" data-target="${target}" data-cmd="indent" aria-label="Increase indent">⇥</button>
+    </div>
+    <div class="notes-tools" role="toolbar" aria-label="Text color">
+      <span class="hint" style="margin:0 2px 0 0">Color</span>
+      ${COMM_COLORS.map(c => `<button type="button" class="tool swatch" data-comm="comm-fmt" data-target="${target}" data-cmd="foreColor" data-val="${c.hex}" style="background:${c.hex}" aria-label="${c.label} text" title="${c.label}"></button>`).join("")}
+      <button type="button" class="tool swatch reset" data-comm="comm-fmt" data-target="${target}" data-cmd="foreColor" data-val="reset" aria-label="Default text color" title="Default">×</button>
+    </div>`;
+}
+/* Remembers the cursor position in each composer so a toolbar click (which steals focus) still applies there. */
+const commRanges = {};
+document.addEventListener("selectionchange", () => {
+  const sel = getSelection(); if (!sel.rangeCount) return;
+  ["comm-body","comm-edit-body"].forEach(id => { const ed = document.getElementById(id); if (ed && ed.contains(sel.anchorNode)) commRanges[id] = sel.getRangeAt(0).cloneRange(); });
+});
+document.addEventListener("mousedown", e => { if (e.target.closest(".tool")) e.preventDefault(); });
+/* Plain-text rendering of a sanitized message body, for length checks and the truncated board-preview snippet. */
+function commPreview(html){ const d = document.createElement("div"); d.innerHTML = cleanHtml(html || ""); return (d.textContent || "").trim(); }
+
 const Comm = {
   selected: 'serve', thread: '', mode: 'board', data: {}, meta: {}, drafts: {}, busy: false, edit: null, meId: '', identityKey: '', extraAdmins: {}, showHidden: false, generation: 0, moderationReady: true,
   // Verified in SharePoint: author-only reads, member Contribute, designated leader Design.
@@ -77,7 +113,7 @@ const Comm = {
     return `<form class="panel pad comm-form" data-kind="${kind}" data-parent="${esc(parent)}">
       <h2>${contact ? 'Contact your leaders privately' : parent ? 'Write a reply' : 'Start a conversation'}</h2>
       ${!parent ? `<div class="field"><label for="comm-title">${contact ? 'Subject' : 'Title'}</label><input id="comm-title" name="title" maxlength="120" value="${esc(draft.title || '')}" required></div>` : ''}
-      <div class="field"><label for="comm-body">${parent ? 'Reply' : 'Message'}</label><textarea id="comm-body" name="body" maxlength="4000" required>${esc(draft.body || '')}</textarea></div>
+      <div class="field"><label for="comm-body">${parent ? 'Reply' : 'Message'}</label>${commToolbar('comm-body')}<div class="panel notes notes-editor" id="comm-body" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${parent ? 'Reply' : 'Message'}">${cleanHtml(draft.body || '')}</div></div>
       ${contact ? '<p class="hint">Your message is private to you and this space’s leaders. Authorized site administrators retain access.</p>' : '<p class="hint">Visible to members of this board.</p>'}
       <button class="btn primary" type="submit" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Sending…' : contact ? 'Send private message' : parent ? 'Post reply' : 'Post message'}</button>
     </form>`;
@@ -133,7 +169,7 @@ const Comm = {
   editForm(r, kind) {
     const edit = this.edit;
     if (!edit || edit.id !== r.id || edit.kind !== kind) return '';
-    return `<form class="comm-edit-form"><h3>Edit message</h3>${!r.parent ? `<div class="field"><label for="comm-edit-title">${kind === 'contacts' ? 'Subject' : 'Title'}</label><input id="comm-edit-title" name="title" maxlength="120" value="${esc(edit.title)}" required></div>` : ''}<div class="field"><label for="comm-edit-body">Message</label><textarea id="comm-edit-body" name="body" maxlength="4000" required>${esc(edit.text)}</textarea></div><div class="comm-edit-buttons"><button class="btn primary" type="submit" ${this.busy ? 'disabled' : ''}>Save changes</button><button class="btn" type="button" data-comm="cancel-edit">Cancel</button></div></form>`;
+    return `<form class="comm-edit-form"><h3>Edit message</h3>${!r.parent ? `<div class="field"><label for="comm-edit-title">${kind === 'contacts' ? 'Subject' : 'Title'}</label><input id="comm-edit-title" name="title" maxlength="120" value="${esc(edit.title)}" required></div>` : ''}<div class="field"><label for="comm-edit-body">Message</label>${commToolbar('comm-edit-body')}<div class="panel notes notes-editor" id="comm-edit-body" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message">${cleanHtml(edit.text)}</div></div><div class="comm-edit-buttons"><button class="btn primary" type="submit" ${this.busy ? 'disabled' : ''}>Save changes</button><button class="btn" type="button" data-comm="cancel-edit">Cancel</button></div></form>`;
   },
   async fresh(kind, id) {
     const base = this.meta[this.selected]?.[kind];
@@ -178,8 +214,9 @@ const Comm = {
     if (this.busy || !edit || !this.space()) return;
     const d = this.data[this.selected], r = d?.[edit.kind]?.find(x => x.id === edit.id);
     if (!r || !this.canChange(r,edit.kind)) return;
-    const text = edit.text.trim(), title = edit.title.trim();
-    if (!text || text.length > 4000 || !r.parent && (!title || title.length > 120)) return;
+    const text = cleanHtml(edit.text || '').trim(), title = edit.title.trim(), plain = commPreview(text);
+    if (!r.parent && (!title || title.length > 120)) { toast(!title ? 'Enter a title.' : 'Title is too long.', true); return; }
+    if (!plain || plain.length > 4000 || text.length > 20000) { toast(!plain ? 'Write a message first.' : 'Message is too long.', true); return; }
     this.generation++; this.busy = true; render();
     try {
       if (!DEMO) { const {base,row} = await this.fresh(edit.kind,edit.id); if (edit.etag && row.etag && edit.etag !== row.etag) throw new Error('Message changed elsewhere.'); await API.g(`${base}/${encodeURIComponent(edit.id)}/fields`,{method:'PATCH',headers:{'Content-Type':'application/json',...(row.etag ? {'If-Match':row.etag} : {})},body:JSON.stringify({Title:r.parent ? r.title : title,Body:text})}); }
@@ -187,7 +224,7 @@ const Comm = {
     } catch (_) { toast('Could not save your changes. Your edit is still here. Please try again.',true); }
     finally { this.busy = false; render(); }
   },
-  record(r, kind = 'board') { return `<div class="comm-record"><div class="comm-record-head"><div><b>${esc(r.name)}</b><time class="hint">${esc(r.at ? new Date(r.at).toLocaleString() : '')}</time></div>${this.actions(r,kind)}</div>${kind === 'board' && this.hiddenRow(r) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === kind ? this.editForm(r,kind) : `<p class="comm-text">${esc(r.text)}</p>`}</div>`; },
+  record(r, kind = 'board') { return `<div class="comm-record"><div class="comm-record-head"><div><b>${esc(r.name)}</b><time class="hint">${esc(r.at ? new Date(r.at).toLocaleString() : '')}</time></div>${this.actions(r,kind)}</div>${kind === 'board' && this.hiddenRow(r) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === kind ? this.editForm(r,kind) : `<div class="comm-text notes">${cleanHtml(r.text)}</div>`}</div>`; },
   view() {
     const spaces = this.spaces(), t = this.space();
     if (!t) return '<h1 class="page">Messages</h1><div class="empty">Your boards will appear after your ministry access is confirmed.</div>';
@@ -206,7 +243,7 @@ const Comm = {
       const activity = r => this.board(d).filter(x => x.id === r.id || x.parent === r.id).reduce((at,x) => x.at > at ? x.at : at,r.at);
       content = this.form('post') + (roots.length ? roots.sort((a,b) => Number(this.pinned(b.id,d)) - Number(this.pinned(a.id,d)) || activity(b).localeCompare(activity(a))).map(r => {
         const replies = this.visibleBoard(d).filter(x => x.parent === r.id), fresh = [r,...replies].some(x => !seen.has(x.id) && !this.own(x));
-        return `<article class="panel pad"><div class="comm-topic-line"><button class="btn comm-topic" data-comm="thread" data-id="${esc(r.id)}">${this.pinned(r.id,d) ? '📌 ' : ''}${esc(r.title)}${fresh ? ' • Unread' : ''}</button>${this.actions(r,'board')}</div>${this.hiddenRow(r,d) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === 'board' ? this.editForm(r,'board') : ''}<p class="hint">${esc(r.name)} · ${plural(replies.length,'reply','replies')}</p><p class="comm-text">${esc(r.text.slice(0,180))}</p></article>`;
+        return `<article class="panel pad"><div class="comm-topic-line"><button class="btn comm-topic" data-comm="thread" data-id="${esc(r.id)}">${this.pinned(r.id,d) ? '📌 ' : ''}${esc(r.title)}${fresh ? ' • Unread' : ''}</button>${this.actions(r,'board')}</div>${this.hiddenRow(r,d) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === 'board' ? this.editForm(r,'board') : ''}<p class="hint">${esc(r.name)} · ${plural(replies.length,'reply','replies')}</p><p class="comm-text">${esc(commPreview(r.text).slice(0,180))}</p></article>`;
       }).join('') : '<div class="empty">No conversations yet. Start the first one.</div>');
     }
     return `<div class="comm"><div class="comm-head"><h1 class="page">Messages</h1><button class="iconbtn" data-comm="refresh" aria-label="Refresh messages" title="Refresh messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-5L23 10M1 14l4.6 6A9 9 0 0 0 20.5 15"/></svg></button></div><div class="chiprow" aria-label="Choose a board">${chips}</div><h2>${esc(t.name)}</h2><div class="chiprow"><button class="chipcheck" data-comm="mode" data-mode="board" aria-pressed="${this.mode === 'board'}">Team board</button><button class="chipcheck" data-comm="mode" data-mode="contact" aria-pressed="${this.mode === 'contact'}">Contact leaders privately</button>${this.mode === 'board' && this.isAdmin() ? `<button class="chipcheck" data-comm="toggle-hidden" aria-pressed="${this.showHidden}">${this.showHidden ? 'Hide hidden messages' : 'Show hidden messages'}</button>` : ''}</div>${content}</div>`;
@@ -215,8 +252,10 @@ const Comm = {
     if (this.busy) return;
     const t = this.space(), kind = form.dataset.kind, parent = form.dataset.parent || '';
     if (!t || !['contact','post','reply'].includes(kind)) return;
-    const data = new FormData(form), body = String(data.get('body') || '').trim(), title = String(data.get('title') || '').trim();
-    if (!body || body.length > 4000 || (!parent && (!title || title.length > 120))) return;
+    const data = new FormData(form), title = String(data.get('title') || '').trim();
+    const edInput = form.querySelector('#comm-body'), body = cleanHtml(edInput ? edInput.innerHTML : '').trim(), plain = commPreview(body);
+    if (!parent && (!title || title.length > 120)) { toast(!title ? 'Enter a title.' : 'Title is too long.', true); return; }
+    if (!plain || plain.length > 4000 || body.length > 20000) { toast(!plain ? 'Write a message first.' : 'Message is too long.', true); return; }
     const d = this.data[t.key], contact = kind === 'contact';
     if (!d || (contact ? !(DEMO || this.privateReady[t.key]) || d.contactError : d.error)) return;
     if (kind === 'reply' && !this.roots(d).some(r => r.id === parent)) return;
@@ -239,15 +278,25 @@ const Comm = {
   }
 };
 document.addEventListener('input', e => {
-  if (e.target.closest('.comm-edit-form') && Comm.edit) { const data = new FormData(e.target.closest('.comm-edit-form')); Comm.edit.title = String(data.get('title') || ''); Comm.edit.text = String(data.get('body') || ''); return; }
-  const form = e.target.closest('.comm-form,.comm-edit-form'); if (!form) return;
-  const data = new FormData(form);
-  Comm.drafts[Comm.draftKey(form.dataset.kind,form.dataset.parent)] = { title: String(data.get('title') || ''), body: String(data.get('body') || '') };
+  if (e.target.closest('.comm-edit-form') && Comm.edit) { const form = e.target.closest('.comm-edit-form'), title = form.querySelector('#comm-edit-title'), ed = form.querySelector('#comm-edit-body'); Comm.edit.title = String(title ? title.value : ''); Comm.edit.text = ed ? ed.innerHTML : ''; return; }
+  const form = e.target.closest('.comm-form'); if (!form) return;
+  const title = form.querySelector('#comm-title'), ed = form.querySelector('#comm-body');
+  Comm.drafts[Comm.draftKey(form.dataset.kind,form.dataset.parent)] = { title: String(title ? title.value : ''), body: ed ? ed.innerHTML : '' };
 });
 document.addEventListener('submit', e => { if (e.target.matches('.comm-edit-form')) { e.preventDefault(); Comm.saveEdit(); return; } if (!e.target.matches('.comm-form')) return; e.preventDefault(); Comm.send(e.target); });
 document.addEventListener('click', async e => {
-  const b = e.target.closest('[data-comm]'); if (!b || Comm.busy) return;
+  const b = e.target.closest('[data-comm]'); if (!b) return;
   const action = b.dataset.comm;
+  if (action === 'comm-fmt') {
+    const ed = document.getElementById(b.dataset.target); if (!ed) return;
+    ed.focus();
+    const range = commRanges[b.dataset.target];
+    if (range) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); }
+    const cmd = b.dataset.cmd, val = cmd === 'foreColor' ? (b.dataset.val === 'reset' ? getComputedStyle(ed).color : b.dataset.val) : null;
+    try { document.execCommand('styleWithCSS', false, true); document.execCommand(cmd, false, val); } catch (_) {}
+    return;
+  }
+  if (Comm.busy) return;
   if (['edit','delete','pin','hide'].includes(action)) { await Comm.act(action,b.dataset.kind,b.dataset.id); return; }
   if (action === 'toggle-hidden' && Comm.isAdmin()) { Comm.showHidden = !Comm.showHidden; Comm.thread = ''; Comm.edit = null; }
   if (action === 'cancel-edit') Comm.edit = null;
