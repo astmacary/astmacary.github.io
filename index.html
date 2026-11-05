@@ -312,7 +312,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "86";   // bump together with CACHE in sw.js
+const APP_VERSION = "87";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1324,8 +1324,9 @@ function viewHome(){
       ${week.length ? `<div class="list">${grouped}</div>` : `<div class="empty">${reqs.length ? "Nothing confirmed this week yet." : "Nothing on your schedule this week."}</div>`}</section>`;
   }
   if (isAnyAdmin()){
-    /* Payroll: specific named people, admin-only, covering the current Monday–Sunday serving week (turns
-       over to the next week once Monday arrives), grouped by date only — one collapsible header per day
+    /* Payroll: specific named people, admin-only, covering today through the end of the current
+       Mon–Sunday serving week (past days in the week are hidden; the window turns over once Monday
+       arrives), grouped by date only — one collapsible header per day
        (no service-category split, so every service that day shares one container), listing who's
        confirmed to serve that day as a plain name list, team by team (Productions together, then
        Worship & Arts, in TEAMS order) rather than alphabetically. A person confirmed in more than one
@@ -1333,14 +1334,14 @@ function viewHome(){
        for the people who always carry one fixed title). The always-include group that has nothing
        confirmed anywhere this week gets a flat row instead. Filterable by team, same pill row as
        Announcements/Next 7 Days. */
-    const { start, end } = weekRange();
+    const { end } = weekRange(), today = todayKey();
     const ALWAYS = ["Ashley St. Macary", "Morgan Mosby", "Shaquille Ward"];
     const CONDITIONAL = ["Patrick Shorts", "Brad Cox", "Otario Wells", "Ronald Richardson", "Korey Mickie"];
     const NAMES = [...ALWAYS, ...CONDITIONAL].map(lc);
     const teamOrder = t => TEAMS.findIndex(x => x.key === t);
     const hits = [];
     for (const t of TEAMS) (S.teams[t.key]?.items || []).forEach(i => {
-      if (i.kind === "assign" && i.confirmed && i.date >= start && i.date <= end && NAMES.includes(lc(i.fullName))) hits.push({ ...i, team: t.key });
+      if (i.kind === "assign" && i.confirmed && i.date >= today && i.date <= end && NAMES.includes(lc(i.fullName))) hits.push({ ...i, team: t.key });
     });
     const payrollChips = TEAMS.filter(t => hits.some(h => h.team === t.key));
     const seen = new Set();
