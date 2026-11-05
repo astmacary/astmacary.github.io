@@ -159,6 +159,14 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .ann-text{margin:0;white-space:pre-line;color:var(--muted);font-size:12.5px;line-height:1.35;overflow-wrap:anywhere}
 .day-sep{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 2px;padding-left:2px}
 .day-sep:first-child{margin-top:0}
+.day-sep-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;border:0;background:none;padding:0;min-height:32px;color:inherit;font:inherit}
+.day-sep-toggle .day-sep{margin:0}
+.day-sep-toggle .roster-chevron{width:26px;height:26px}
+.day-sep-toggle[aria-expanded="true"] .roster-chevron{transform:rotate(180deg)}
+.payroll-list{padding:10px 14px;display:flex;flex-direction:column;gap:9px}
+.payroll-item{display:flex;align-items:baseline;gap:8px;font-size:14px}
+.payroll-item .dot{width:8px;height:8px;border-radius:50%;background:var(--t);flex:none;align-self:center}
+.payroll-item small{color:var(--muted);font-size:12px}
 .pill.today-pill{background:var(--accent);color:var(--accent-ink);font-weight:800}
 .pill.new-pill{background:var(--accent);color:var(--accent-ink);font-size:10.5px;padding:1px 7px;vertical-align:2px;margin-right:4px}
 .ann-meta{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:6px;font-size:13px;font-weight:500;color:var(--muted)}
@@ -303,7 +311,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "83";   // bump together with CACHE in sw.js
+const APP_VERSION = "84";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -897,7 +905,7 @@ function saveFilter(key, set){
 }
 const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams: {}, church: { items: [], anns: [], error: "" }, loading: false, loadedAt: 0,
             busy: new Set(), cal: { month: null, sel: null, off: loadFilter("cal"), form: null, busy: false }, hideInstall: false,
-            annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"), payrollOff: loadFilter("payroll"),
+            annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"), payrollOff: loadFilter("payroll"), payrollDayOff: loadFilter("payroll-day"),
             notesPage: null, notesBack: "home" };
 /* Teams this signed-in person can "Send to": only the ones they actually admin. */
 const sendableTeams = () => TEAMS.filter(isEditorOf);
@@ -1197,17 +1205,17 @@ function weekCue(i){
     <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
     <div class="row-right">${statusPill(i, today)}${teamActs(t)}</div></div>`;
 }
-/* Payroll row — one person confirmed on one service this Mon–Sun week, grouped under that
-   service's date/category header (see viewHome). */
+/* Payroll role overrides — these people always show under one fixed title, even when the specific
+   position they confirmed that day was something else (e.g. a secondary slot they also covered). */
+const PAYROLL_ROLE = { "ashley st. macary": "Production Director", "morgan mosby": "Creative Director" };
+/* Payroll name line — a plain list entry (not its own bordered row), one per person per service. */
 function payrollRow(h){
-  const t = teamOf(h.team);
-  return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
-    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(h.fullName)}</b><small>${esc(h.role || "Position")}</small></div></div>`;
+  const t = teamOf(h.team), role = PAYROLL_ROLE[lc(h.fullName)] || h.role || "Position";
+  return `<div class="payroll-item team" style="${tvars(t)}"><span class="dot"></span><b>${esc(h.fullName)}</b><small>${esc(role)}</small></div>`;
 }
-/* Flat row for an always-include person with nothing confirmed anywhere this week. */
+/* Flat list entry for an always-include person with nothing confirmed anywhere this week. */
 function payrollUnscheduledRow(name){
-  return `<div class="row team" style="--tl:var(--line);--td:var(--line)"><span class="bar"></span>
-    <div class="info"><b>${esc(name)}</b><small>Not scheduled this week</small></div></div>`;
+  return `<div class="payroll-item" style="--t:var(--line)"><span class="dot"></span><b>${esc(name)}</b><small>Not scheduled this week</small></div>`;
 }
 /* A church-wide calendar event — just a title and date, no role/status, and nothing to link into.
    "No Service" entries (added via the red-X toggle) get the stop color and a ban icon instead of the usual gold bar. */
@@ -1316,8 +1324,10 @@ function viewHome(){
   }
   if (isAnyAdmin()){
     /* Payroll: specific named people, admin-only, covering the current Monday–Sunday serving week (turns
-       over to the next week once Monday arrives), grouped by service — one date/category header per
-       service, same layout as Next 7 Days' day groups, listing who's confirmed to serve that day.
+       over to the next week once Monday arrives), grouped by service — one collapsible date/category
+       header per service, listing who's confirmed to serve that day as a plain name list (no per-person
+       container). A person confirmed in more than one position the same day only gets listed once
+       (payrollRow applies the PAYROLL_ROLE override for the people who always carry one fixed title).
        The always-include group that has nothing confirmed anywhere this week gets a flat row instead.
        Filterable by team, same pill row as Announcements/Next 7 Days. */
     const { start, end } = weekRange();
@@ -1329,17 +1339,21 @@ function viewHome(){
       if (i.kind === "assign" && i.confirmed && i.date >= start && i.date <= end && NAMES.includes(lc(i.fullName))) hits.push({ ...i, team: t.key });
     });
     const payrollChips = TEAMS.filter(t => hits.some(h => h.team === t.key));
-    const shown = hits.filter(h => !S.payrollOff.has(h.team));
+    const seen = new Set();
+    const shown = hits.filter(h => !S.payrollOff.has(h.team))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName))
+      .filter(h => { const k = h.date + "|" + lc(h.fullName); if (seen.has(k)) return false; seen.add(k); return true; });
     const byService = {};
     shown.forEach(h => { const k = h.date + "|" + (h.category || ""); (byService[k] = byService[k] || []).push(h); });
     const grouped = Object.keys(byService).sort().map(k => {
-      const list = byService[k].sort((a, b) => a.fullName.localeCompare(b.fullName));
-      return `<div class="day-sep">${esc(fmtDay(list[0].date))}${list[0].category ? " · " + esc(list[0].category) : ""}</div><div class="panel">${list.map(payrollRow).join("")}</div>`;
+      const list = byService[k], closed = S.payrollDayOff.has(k), label = `${fmtDay(list[0].date)}${list[0].category ? " · " + list[0].category : ""}`;
+      return `<button class="day-sep-toggle" data-act="payroll-day-toggle" data-k="${esc(k)}" aria-expanded="${!closed}" aria-controls="payroll-day-${esc(k)}"><span class="day-sep">${esc(label)}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button>
+        ${closed ? "" : `<div class="panel payroll-list" id="payroll-day-${esc(k)}">${list.map(payrollRow).join("")}</div>`}`;
     }).join("");
     const unscheduled = ALWAYS.filter(name => !hits.some(h => lc(h.fullName) === lc(name)));
     out += `<section class="sec"><h2>Payroll</h2>
       ${payrollChips.length > 1 ? `<div class="chips" role="group" aria-label="Show payroll">${payrollChips.map(t => `<button class="chip team team-pill${S.payrollOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="payroll-filter" data-k="${t.key}" aria-pressed="${!S.payrollOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
-      ${shown.length || unscheduled.length ? `<div class="list">${grouped}${unscheduled.length ? `<div class="panel">${unscheduled.map(payrollUnscheduledRow).join("")}</div>` : ""}</div>` : `<div class="empty">No one scheduled yet.</div>`}</section>`;
+      ${shown.length || unscheduled.length ? `<div class="list">${grouped}${unscheduled.length ? `<div class="panel payroll-list">${unscheduled.map(payrollUnscheduledRow).join("")}</div>` : ""}</div>` : `<div class="empty">No one scheduled yet.</div>`}</section>`;
   }
   const errs = TEAMS.filter(t => S.teams[t.key]?.error && member(t));
   if (errs.length) out += `<p class="hint">Couldn't refresh ${esc(errs.map(t => t.name).join(", "))} just now. ${S.teams[errs[0].key].items ? "Showing what was saved last time." : ""} <button class="btn" data-act="refresh" style="min-height:30px">Try again</button></p>`;
@@ -1613,6 +1627,7 @@ document.addEventListener("click", async e => {
   else if (act === "ann-filter"){ const k = b.dataset.k; S.annOff.has(k) ? S.annOff.delete(k) : S.annOff.add(k); saveFilter("ann", S.annOff); render(); }
   else if (act === "week-filter"){ const k = b.dataset.k; S.weekOff.has(k) ? S.weekOff.delete(k) : S.weekOff.add(k); saveFilter("week", S.weekOff); render(); }
   else if (act === "payroll-filter"){ const k = b.dataset.k; S.payrollOff.has(k) ? S.payrollOff.delete(k) : S.payrollOff.add(k); saveFilter("payroll", S.payrollOff); render(); }
+  else if (act === "payroll-day-toggle"){ const k = b.dataset.k; S.payrollDayOff.has(k) ? S.payrollDayOff.delete(k) : S.payrollDayOff.add(k); saveFilter("payroll-day", S.payrollDayOff); render(); }
   else if (act === "flyer-open"){ if (b.dataset.url) openLightbox(b.dataset.url, b.querySelector("img")?.alt); }
   else if (act === "church-add"){ S.cal.form = { mode: "add", rowId: null, title: "", date: S.cal.sel || todayKey(), targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
   else if (act === "church-edit"){
