@@ -303,7 +303,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "80";   // bump together with CACHE in sw.js
+const APP_VERSION = "81";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -344,8 +344,9 @@ const fromKey = k => { const [y,m,d] = k.split("-").map(Number); return new Date
 const spDate = v => v ? keyOf(new Date(v)) : "";
 const todayKey = () => keyOf(new Date());
 const addDays = (k, n) => { const d = fromKey(k); d.setDate(d.getDate()+n); return keyOf(d); };
-/* The coming Sunday's date key — today itself if today is a Sunday. */
-const nextSunday = () => { const t = todayKey(); return addDays(t, (7 - fromKey(t).getDay()) % 7); };
+/* The current serving week: Monday through Sunday, turning over to the next week once Monday arrives. */
+const weekStart = () => { const t = todayKey(); return addDays(t, -((fromKey(t).getDay() + 6) % 7)); };
+const weekRange = () => { const start = weekStart(); return { start, end: addDays(start, 6) }; };
 const fmtShort = k => fromKey(k).toLocaleDateString(undefined, {weekday:"short", month:"short", day:"numeric"});
 const fmtDay = k => fromKey(k).toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"});
 const lc = s => String(s || "").toLowerCase().trim();
@@ -896,7 +897,7 @@ function saveFilter(key, set){
 }
 const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams: {}, church: { items: [], anns: [], error: "" }, loading: false, loadedAt: 0,
             busy: new Set(), cal: { month: null, sel: null, off: loadFilter("cal"), form: null, busy: false }, hideInstall: false,
-            annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"),
+            annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"), payrollOff: loadFilter("payroll"),
             notesPage: null, notesBack: "home" };
 /* Teams this signed-in person can "Send to": only the ones they actually admin. */
 const sendableTeams = () => TEAMS.filter(isEditorOf);
@@ -1196,14 +1197,14 @@ function weekCue(i){
     <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
     <div class="row-right">${statusPill(i, today)}${teamActs(t)}</div></div>`;
 }
-/* Payroll row — one named person, admin-only. Shows their confirmed serving position for the coming
-   Sunday when they have one, or a flat "not scheduled" row (always-include people with nothing confirmed). */
+/* Payroll row — one named person's confirmed serving position for one day in the current Mon–Sun week.
+   A person with no confirmed position anywhere this week (always-include people only) gets a flat row instead. */
 function payrollRow(name, item){
   if (!item) return `<div class="row team" style="--tl:var(--line);--td:var(--line)"><span class="bar"></span>
-    <div class="info"><b>${esc(name)}</b><small>Not scheduled this Sunday</small></div></div>`;
+    <div class="info"><b>${esc(name)}</b><small>Not scheduled this week</small></div></div>`;
   const t = teamOf(item.team);
   return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
-    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(name)}</b><small>${esc(item.role || "Position")}</small></div></div>`;
+    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(name)}</b><small>${esc(fmtShort(item.date))}${item.category ? " · " + esc(item.category) : ""} · ${esc(item.role || "Position")}</small></div></div>`;
 }
 /* A church-wide calendar event — just a title and date, no role/status, and nothing to link into.
    "No Service" entries (added via the red-X toggle) get the stop color and a ban icon instead of the usual gold bar. */
@@ -1311,23 +1312,30 @@ function viewHome(){
       ${week.length ? `<div class="list">${grouped}</div>` : `<div class="empty">${reqs.length ? "Nothing confirmed this week yet." : "Nothing on your schedule this week."}</div>`}</section>`;
   }
   if (isAnyAdmin()){
-    /* Payroll: specific named people, admin-only. The always-include group shows regardless of
-       whether they're scheduled; the rest only show up once they have a confirmed Sunday position. */
-    const sunday = nextSunday();
-    const confirmedFor = name => {
-      for (const t of TEAMS){
-        const hit = (S.teams[t.key]?.items || []).find(i => i.kind === "assign" && i.confirmed && i.date === sunday && lc(i.fullName) === lc(name));
-        if (hit) return hit;
-      }
-      return null;
+    /* Payroll: specific named people, admin-only, covering the current Monday–Sunday serving week (turns
+       over to the next week once Monday arrives). The always-include group shows every day they're confirmed
+       on, or a flat row if they have nothing confirmed all week; the rest only show up once they have at
+       least one confirmed position that week. Filterable by team, same pill row as Announcements/Next 7 Days. */
+    const { start, end } = weekRange();
+    const confirmedThisWeek = name => {
+      const hits = [];
+      for (const t of TEAMS) (S.teams[t.key]?.items || []).forEach(i => {
+        if (i.kind === "assign" && i.confirmed && i.date >= start && i.date <= end && lc(i.fullName) === lc(name)) hits.push({ ...i, team: t.key });
+      });
+      return hits.sort((a, b) => a.date.localeCompare(b.date));
     };
     const ALWAYS = ["Ashley St. Macary", "Morgan Mosby", "Shaquille Ward"];
     const CONDITIONAL = ["Patrick Shorts", "Brad Cox", "Otario Wells", "Ronald Richardson", "Korey Mickie"];
-    const rows = [
-      ...ALWAYS.map(name => ({ name, item: confirmedFor(name) })),
-      ...CONDITIONAL.map(name => ({ name, item: confirmedFor(name) })).filter(r => r.item)
+    const people = [
+      ...ALWAYS.map(name => ({ name, hits: confirmedThisWeek(name) })),
+      ...CONDITIONAL.map(name => ({ name, hits: confirmedThisWeek(name) })).filter(p => p.hits.length)
     ];
+    const payrollChips = TEAMS.filter(t => people.some(p => p.hits.some(h => h.team === t.key)));
+    const rows = people.flatMap(p => p.hits.length
+      ? p.hits.filter(h => !S.payrollOff.has(h.team)).map(h => ({ name: p.name, item: h }))
+      : [{ name: p.name, item: null }]);
     out += `<section class="sec"><h2>Payroll</h2>
+      ${payrollChips.length > 1 ? `<div class="chips" role="group" aria-label="Show payroll">${payrollChips.map(t => `<button class="chip team team-pill${S.payrollOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="payroll-filter" data-k="${t.key}" aria-pressed="${!S.payrollOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
       ${rows.length ? `<div class="list">${rows.map(r => payrollRow(r.name, r.item)).join("")}</div>` : `<div class="empty">No one scheduled yet.</div>`}</section>`;
   }
   const errs = TEAMS.filter(t => S.teams[t.key]?.error && member(t));
@@ -1601,6 +1609,7 @@ document.addEventListener("click", async e => {
   else if (act === "filter"){ const k = b.dataset.k; S.cal.off.has(k) ? S.cal.off.delete(k) : S.cal.off.add(k); saveFilter("cal", S.cal.off); render(); }
   else if (act === "ann-filter"){ const k = b.dataset.k; S.annOff.has(k) ? S.annOff.delete(k) : S.annOff.add(k); saveFilter("ann", S.annOff); render(); }
   else if (act === "week-filter"){ const k = b.dataset.k; S.weekOff.has(k) ? S.weekOff.delete(k) : S.weekOff.add(k); saveFilter("week", S.weekOff); render(); }
+  else if (act === "payroll-filter"){ const k = b.dataset.k; S.payrollOff.has(k) ? S.payrollOff.delete(k) : S.payrollOff.add(k); saveFilter("payroll", S.payrollOff); render(); }
   else if (act === "flyer-open"){ if (b.dataset.url) openLightbox(b.dataset.url, b.querySelector("img")?.alt); }
   else if (act === "church-add"){ S.cal.form = { mode: "add", rowId: null, title: "", date: S.cal.sel || todayKey(), targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
   else if (act === "church-edit"){
