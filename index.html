@@ -312,7 +312,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "85";   // bump together with CACHE in sw.js
+const APP_VERSION = "86";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1325,16 +1325,19 @@ function viewHome(){
   }
   if (isAnyAdmin()){
     /* Payroll: specific named people, admin-only, covering the current Monday–Sunday serving week (turns
-       over to the next week once Monday arrives), grouped by service — one collapsible date/category
-       header per service, listing who's confirmed to serve that day as a plain name list (no per-person
-       container). A person confirmed in more than one position the same day only gets listed once
-       (payrollRow applies the PAYROLL_ROLE override for the people who always carry one fixed title).
-       The always-include group that has nothing confirmed anywhere this week gets a flat row instead.
-       Filterable by team, same pill row as Announcements/Next 7 Days. */
+       over to the next week once Monday arrives), grouped by date only — one collapsible header per day
+       (no service-category split, so every service that day shares one container), listing who's
+       confirmed to serve that day as a plain name list, team by team (Productions together, then
+       Worship & Arts, in TEAMS order) rather than alphabetically. A person confirmed in more than one
+       position/service the same day only gets listed once (payrollRow applies the PAYROLL_ROLE override
+       for the people who always carry one fixed title). The always-include group that has nothing
+       confirmed anywhere this week gets a flat row instead. Filterable by team, same pill row as
+       Announcements/Next 7 Days. */
     const { start, end } = weekRange();
     const ALWAYS = ["Ashley St. Macary", "Morgan Mosby", "Shaquille Ward"];
     const CONDITIONAL = ["Patrick Shorts", "Brad Cox", "Otario Wells", "Ronald Richardson", "Korey Mickie"];
     const NAMES = [...ALWAYS, ...CONDITIONAL].map(lc);
+    const teamOrder = t => TEAMS.findIndex(x => x.key === t);
     const hits = [];
     for (const t of TEAMS) (S.teams[t.key]?.items || []).forEach(i => {
       if (i.kind === "assign" && i.confirmed && i.date >= start && i.date <= end && NAMES.includes(lc(i.fullName))) hits.push({ ...i, team: t.key });
@@ -1342,14 +1345,14 @@ function viewHome(){
     const payrollChips = TEAMS.filter(t => hits.some(h => h.team === t.key));
     const seen = new Set();
     const shown = hits.filter(h => !S.payrollOff.has(h.team))
-      .sort((a, b) => a.fullName.localeCompare(b.fullName))
+      .sort((a, b) => teamOrder(a.team) - teamOrder(b.team) || a.fullName.localeCompare(b.fullName))
       .filter(h => { const k = h.date + "|" + lc(h.fullName); if (seen.has(k)) return false; seen.add(k); return true; });
-    const byService = {};
-    shown.forEach(h => { const k = h.date + "|" + (h.category || ""); (byService[k] = byService[k] || []).push(h); });
-    const grouped = Object.keys(byService).sort().map(k => {
-      const list = byService[k], closed = S.payrollDayOff.has(k), label = `${fmtDay(list[0].date)}${list[0].category ? " · " + list[0].category : ""}`;
-      return `<button class="day-sep-toggle" data-act="payroll-day-toggle" data-k="${esc(k)}" aria-expanded="${!closed}" aria-controls="payroll-day-${esc(k)}"><span class="day-sep">${esc(label)}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button>
-        ${closed ? "" : `<div class="panel payroll-list" id="payroll-day-${esc(k)}">${list.map(payrollRow).join("")}</div>`}`;
+    const byDate = {};
+    shown.forEach(h => (byDate[h.date] = byDate[h.date] || []).push(h));
+    const grouped = Object.keys(byDate).sort().map(d => {
+      const list = byDate[d], closed = S.payrollDayOff.has(d), label = fmtDay(d);
+      return `<button class="day-sep-toggle" data-act="payroll-day-toggle" data-k="${esc(d)}" aria-expanded="${!closed}" aria-controls="payroll-day-${esc(d)}"><span class="day-sep">${esc(label)}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button>
+        ${closed ? "" : `<div class="panel payroll-list" id="payroll-day-${esc(d)}">${list.map(payrollRow).join("")}</div>`}`;
     }).join("");
     const unscheduled = ALWAYS.filter(name => !hits.some(h => lc(h.fullName) === lc(name)));
     out += `<section class="sec"><h2>Payroll</h2>
