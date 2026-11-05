@@ -159,9 +159,10 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .ann-text{margin:0;white-space:pre-line;color:var(--muted);font-size:12.5px;line-height:1.35;overflow-wrap:anywhere}
 .day-sep{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 2px;padding-left:2px}
 .day-sep:first-child{margin-top:0}
-.day-sep-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;border:0;background:none;padding:0;min-height:32px;color:inherit;font:inherit}
+.day-sep-toggle{display:flex;align-items:center;justify-content:flex-start;gap:3px;width:100%;border:0;background:none;padding:0;min-height:32px;color:inherit;font:inherit}
 .day-sep-toggle .day-sep{margin:0}
-.day-sep-toggle .roster-chevron{width:26px;height:26px}
+.day-sep-toggle .roster-chevron{width:16px;height:16px}
+.day-sep-toggle .roster-chevron svg{width:14px;height:14px}
 .day-sep-toggle[aria-expanded="true"] .roster-chevron{transform:rotate(180deg)}
 .payroll-list{padding:10px 14px;display:flex;flex-direction:column;gap:9px}
 .payroll-item{display:flex;align-items:baseline;gap:8px;font-size:14px}
@@ -311,7 +312,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "84";   // bump together with CACHE in sw.js
+const APP_VERSION = "85";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
