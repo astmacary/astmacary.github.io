@@ -303,7 +303,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "82";   // bump together with CACHE in sw.js
+const APP_VERSION = "83";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1197,16 +1197,17 @@ function weekCue(i){
     <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
     <div class="row-right">${statusPill(i, today)}${teamActs(t)}</div></div>`;
 }
-/* Payroll row — one named person, with every confirmed position they have this Mon–Sun week stacked
-   under their name (date · category · role per line). A person with nothing confirmed this week
-   (always-include people only) gets a flat "not scheduled" row instead. */
-function payrollRow(name, hits){
-  if (!hits.length) return `<div class="row team" style="--tl:var(--line);--td:var(--line)"><span class="bar"></span>
-    <div class="info"><b>${esc(name)}</b><small>Not scheduled this week</small></div></div>`;
-  const t = teamOf(hits[0].team);
-  const lines = hits.map(h => `${esc(fmtShort(h.date))}${h.category ? " · " + esc(h.category) : ""} · ${esc(h.role || "Position")}`).join("<br>");
+/* Payroll row — one person confirmed on one service this Mon–Sun week, grouped under that
+   service's date/category header (see viewHome). */
+function payrollRow(h){
+  const t = teamOf(h.team);
   return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
-    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(name)}</b><small>${lines}</small></div></div>`;
+    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(h.fullName)}</b><small>${esc(h.role || "Position")}</small></div></div>`;
+}
+/* Flat row for an always-include person with nothing confirmed anywhere this week. */
+function payrollUnscheduledRow(name){
+  return `<div class="row team" style="--tl:var(--line);--td:var(--line)"><span class="bar"></span>
+    <div class="info"><b>${esc(name)}</b><small>Not scheduled this week</small></div></div>`;
 }
 /* A church-wide calendar event — just a title and date, no role/status, and nothing to link into.
    "No Service" entries (added via the red-X toggle) get the stop color and a ban icon instead of the usual gold bar. */
@@ -1315,28 +1316,30 @@ function viewHome(){
   }
   if (isAnyAdmin()){
     /* Payroll: specific named people, admin-only, covering the current Monday–Sunday serving week (turns
-       over to the next week once Monday arrives). The always-include group shows every day they're confirmed
-       on, or a flat row if they have nothing confirmed all week; the rest only show up once they have at
-       least one confirmed position that week. Filterable by team, same pill row as Announcements/Next 7 Days. */
+       over to the next week once Monday arrives), grouped by service — one date/category header per
+       service, same layout as Next 7 Days' day groups, listing who's confirmed to serve that day.
+       The always-include group that has nothing confirmed anywhere this week gets a flat row instead.
+       Filterable by team, same pill row as Announcements/Next 7 Days. */
     const { start, end } = weekRange();
-    const confirmedThisWeek = name => {
-      const hits = [];
-      for (const t of TEAMS) (S.teams[t.key]?.items || []).forEach(i => {
-        if (i.kind === "assign" && i.confirmed && i.date >= start && i.date <= end && lc(i.fullName) === lc(name)) hits.push({ ...i, team: t.key });
-      });
-      return hits.sort((a, b) => a.date.localeCompare(b.date));
-    };
     const ALWAYS = ["Ashley St. Macary", "Morgan Mosby", "Shaquille Ward"];
     const CONDITIONAL = ["Patrick Shorts", "Brad Cox", "Otario Wells", "Ronald Richardson", "Korey Mickie"];
-    const people = [
-      ...ALWAYS.map(name => ({ name, hits: confirmedThisWeek(name) })),
-      ...CONDITIONAL.map(name => ({ name, hits: confirmedThisWeek(name) })).filter(p => p.hits.length)
-    ];
-    const payrollChips = TEAMS.filter(t => people.some(p => p.hits.some(h => h.team === t.key)));
-    const rows = people.filter(p => !p.hits.length || !S.payrollOff.has(p.hits[0].team));
+    const NAMES = [...ALWAYS, ...CONDITIONAL].map(lc);
+    const hits = [];
+    for (const t of TEAMS) (S.teams[t.key]?.items || []).forEach(i => {
+      if (i.kind === "assign" && i.confirmed && i.date >= start && i.date <= end && NAMES.includes(lc(i.fullName))) hits.push({ ...i, team: t.key });
+    });
+    const payrollChips = TEAMS.filter(t => hits.some(h => h.team === t.key));
+    const shown = hits.filter(h => !S.payrollOff.has(h.team));
+    const byService = {};
+    shown.forEach(h => { const k = h.date + "|" + (h.category || ""); (byService[k] = byService[k] || []).push(h); });
+    const grouped = Object.keys(byService).sort().map(k => {
+      const list = byService[k].sort((a, b) => a.fullName.localeCompare(b.fullName));
+      return `<div class="day-sep">${esc(fmtDay(list[0].date))}${list[0].category ? " · " + esc(list[0].category) : ""}</div><div class="panel">${list.map(payrollRow).join("")}</div>`;
+    }).join("");
+    const unscheduled = ALWAYS.filter(name => !hits.some(h => lc(h.fullName) === lc(name)));
     out += `<section class="sec"><h2>Payroll</h2>
       ${payrollChips.length > 1 ? `<div class="chips" role="group" aria-label="Show payroll">${payrollChips.map(t => `<button class="chip team team-pill${S.payrollOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="payroll-filter" data-k="${t.key}" aria-pressed="${!S.payrollOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
-      ${rows.length ? `<div class="panel">${rows.map(r => payrollRow(r.name, r.hits)).join("")}</div>` : `<div class="empty">No one scheduled yet.</div>`}</section>`;
+      ${shown.length || unscheduled.length ? `<div class="list">${grouped}${unscheduled.length ? `<div class="panel">${unscheduled.map(payrollUnscheduledRow).join("")}</div>` : ""}</div>` : `<div class="empty">No one scheduled yet.</div>`}</section>`;
   }
   const errs = TEAMS.filter(t => S.teams[t.key]?.error && member(t));
   if (errs.length) out += `<p class="hint">Couldn't refresh ${esc(errs.map(t => t.name).join(", "))} just now. ${S.teams[errs[0].key].items ? "Showing what was saved last time." : ""} <button class="btn" data-act="refresh" style="min-height:30px">Try again</button></p>`;
