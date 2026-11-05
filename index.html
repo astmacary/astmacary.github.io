@@ -303,7 +303,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "81";   // bump together with CACHE in sw.js
+const APP_VERSION = "82";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1197,14 +1197,16 @@ function weekCue(i){
     <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.role || "Position")}</b><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.call ? " · Call Time " + esc(i.call) : ""}</small></div>
     <div class="row-right">${statusPill(i, today)}${teamActs(t)}</div></div>`;
 }
-/* Payroll row — one named person's confirmed serving position for one day in the current Mon–Sun week.
-   A person with no confirmed position anywhere this week (always-include people only) gets a flat row instead. */
-function payrollRow(name, item){
-  if (!item) return `<div class="row team" style="--tl:var(--line);--td:var(--line)"><span class="bar"></span>
+/* Payroll row — one named person, with every confirmed position they have this Mon–Sun week stacked
+   under their name (date · category · role per line). A person with nothing confirmed this week
+   (always-include people only) gets a flat "not scheduled" row instead. */
+function payrollRow(name, hits){
+  if (!hits.length) return `<div class="row team" style="--tl:var(--line);--td:var(--line)"><span class="bar"></span>
     <div class="info"><b>${esc(name)}</b><small>Not scheduled this week</small></div></div>`;
-  const t = teamOf(item.team);
+  const t = teamOf(hits[0].team);
+  const lines = hits.map(h => `${esc(fmtShort(h.date))}${h.category ? " · " + esc(h.category) : ""} · ${esc(h.role || "Position")}`).join("<br>");
   return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
-    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(name)}</b><small>${esc(fmtShort(item.date))}${item.category ? " · " + esc(item.category) : ""} · ${esc(item.role || "Position")}</small></div></div>`;
+    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(name)}</b><small>${lines}</small></div></div>`;
 }
 /* A church-wide calendar event — just a title and date, no role/status, and nothing to link into.
    "No Service" entries (added via the red-X toggle) get the stop color and a ban icon instead of the usual gold bar. */
@@ -1331,12 +1333,10 @@ function viewHome(){
       ...CONDITIONAL.map(name => ({ name, hits: confirmedThisWeek(name) })).filter(p => p.hits.length)
     ];
     const payrollChips = TEAMS.filter(t => people.some(p => p.hits.some(h => h.team === t.key)));
-    const rows = people.flatMap(p => p.hits.length
-      ? p.hits.filter(h => !S.payrollOff.has(h.team)).map(h => ({ name: p.name, item: h }))
-      : [{ name: p.name, item: null }]);
+    const rows = people.filter(p => !p.hits.length || !S.payrollOff.has(p.hits[0].team));
     out += `<section class="sec"><h2>Payroll</h2>
       ${payrollChips.length > 1 ? `<div class="chips" role="group" aria-label="Show payroll">${payrollChips.map(t => `<button class="chip team team-pill${S.payrollOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="payroll-filter" data-k="${t.key}" aria-pressed="${!S.payrollOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
-      ${rows.length ? `<div class="list">${rows.map(r => payrollRow(r.name, r.item)).join("")}</div>` : `<div class="empty">No one scheduled yet.</div>`}</section>`;
+      ${rows.length ? `<div class="panel">${rows.map(r => payrollRow(r.name, r.hits)).join("")}</div>` : `<div class="empty">No one scheduled yet.</div>`}</section>`;
   }
   const errs = TEAMS.filter(t => S.teams[t.key]?.error && member(t));
   if (errs.length) out += `<p class="hint">Couldn't refresh ${esc(errs.map(t => t.name).join(", "))} just now. ${S.teams[errs[0].key].items ? "Showing what was saved last time." : ""} <button class="btn" data-act="refresh" style="min-height:30px">Try again</button></p>`;
