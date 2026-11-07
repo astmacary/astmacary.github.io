@@ -300,7 +300,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=53"></script>
+<script src="/communications.js?v=88"></script>
 <script src="/rosters.js?v=66"></script>
 <script src="/announcement-sharing.js?v=47"></script>
 <script>
@@ -312,7 +312,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "87";   // bump together with CACHE in sw.js
+const APP_VERSION = "88";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -785,6 +785,23 @@ const API = {
         body: JSON.stringify({ fields: { Title: "Coordinator", ServiceDate: date + "T12:00:00Z", ActiveStatus: "Non Active", Published: "--", Notes: bodyHtml } }) });
     }
   },
+  async boardNotesRows(teamKey){
+    const site = this.sites[teamKey];
+    if (!site) throw new Error("Refresh the app and try again.");
+    const base = `/sites/${site.siteId}/lists/${site.listId}/items`;
+    const columns = teamKey === "productions" ? "Title,ServiceDates,Notes"
+      : "Title,ServiceDate,FullName,LeaderPositions,SingingPositions,MusicianPositions,Notes";
+    const rows = await this.all(base + `?$expand=fields($select=${columns})&$top=200`);
+    return { base, rows };
+  },
+  async saveBoardNotes(base, row, notes){
+    const etag = row.eTag || row["@odata.etag"];
+    if (!etag) throw new Error("Refresh the notes and try again.");
+    await this.g(`${base}/${row.id}/fields`, {
+      method: "PATCH", headers: { "Content-Type": "application/json", "If-Match": etag },
+      body: JSON.stringify({ Notes: notes })
+    });
+  },
   async update(teamKey, rowId, fields){
     const s = this.sites[teamKey];
     await this.g(`/sites/${s.siteId}/lists/${s.listId}/items/${rowId}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) });
@@ -949,7 +966,7 @@ function resetIdentityViews(){
   S.annEdit = false; S.annDraft = null;
   Rosters.reset();
   AnnShare.sourceId = ''; AnnShare.snapshot = null; AnnShare.selected.clear(); AnnShare.sent.clear();
-  Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; Comm.thread = ''; Comm.selected = 'serve';
+  Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.forward = null; Comm.demoNotes = {}; Comm.meId = ''; Comm.identityKey = ''; Comm.thread = ''; Comm.selected = 'serve';
   void Rosters.loadHubAdmins().then(() => {
     render();
     if (S.phase !== "ready") return;
@@ -1618,7 +1635,7 @@ document.addEventListener("click", async e => {
   else if (act === "hub-profile-photo-remove") { if (Rosters.profileDraft){ Rosters.profileDraft.photo = null; render(); } }
   else if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "signin") API.signIn();
-  else if (act === "signout"){ try { sessionStorage.removeItem(IMP_KEY); } catch(_){} if (S.imp){ impStop(); return; } Rosters.reset(); AnnShare.sourceId=''; AnnShare.snapshot=null; AnnShare.selected.clear(); AnnShare.sent.clear(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
+  else if (act === "signout"){ try { sessionStorage.removeItem(IMP_KEY); } catch(_){} if (S.imp){ impStop(); return; } Rosters.reset(); AnnShare.sourceId=''; AnnShare.snapshot=null; AnnShare.selected.clear(); AnnShare.sent.clear(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.forward = null; Comm.demoNotes = {}; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
   else if (act === "retry") location.reload();
   else if (act === "refresh") loadAll();
   else if (act === "accept") accept(b.dataset.id);
@@ -1777,7 +1794,10 @@ document.addEventListener("visibilitychange", async () => {
 
 async function start(){
   try { S.view = sessionStorage.getItem("rci-serve:view") || "home"; S.hideInstall = sessionStorage.getItem("rci-serve:noinstall") === "1"; } catch(_){}
-  if(new URLSearchParams(location.search).has("install")) S.view="install";
+  const params = new URLSearchParams(location.search);
+  if (params.has("install")) S.view = "install";
+  const boardPost = params.get("boardPost");
+  if (/^\d+$/.test(boardPost || "")) { S.view = "messages"; Comm.thread = boardPost; }
   if (OPEN_TEAMS) {
     S.view = 'teams';
     const url = new URL(location.href); url.searchParams.delete('teams');

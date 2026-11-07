@@ -166,11 +166,142 @@ const Comm = {
     events.sort((a,b) => b.at.localeCompare(a.at) || String(b.id).localeCompare(String(a.id),undefined,{numeric:true}));
     return events[0]?.text === 'pin';
   },
-  icon(name) { const paths = {edit:'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',delete:'M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6',pin:'m16 3 5 5-4 1-3 5v3l-3-3-7 7 7-7-4-3h3l5-3Z',hide:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12ZM9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0M3 3l18 18'}; return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]}"/></svg>`; },
+  notesTargets() {
+    if (!Rosters.isLeadershipMember()) return [];
+    return TEAMS.filter(t => ['worship','productions'].includes(t.key) &&
+      (DEMO || S.teams[t.key]?.accessVerified && !S.teams[t.key].error && !S.teams[t.key].noAccess));
+  },
+  canForward(r, kind) {
+    return !S.imp && this.selected === 'serve' && this.mode === 'board' && kind === 'board' &&
+      !r.parent && !r.deleted && !this.hiddenRow(r) && this.notesTargets().length > 0;
+  },
+  forwardForm() {
+    const draft = this.forward;
+    const r = this.data.serve?.board.find(row => row.id === draft?.id);
+    if (!r || !this.canForward(r, 'board')) return '';
+    return `<form class="panel pad comm-forward-form"><h2>Forward to notes</h2><p>${esc(r.title)}</p>
+      <div class="field"><label for="comm-notes-date">Service date</label><input id="comm-notes-date" name="date" type="date" value="${esc(draft.date)}" required></div>
+      <fieldset><legend>Send to</legend>${this.notesTargets().map(t => `<label><input type="checkbox" name="target" value="${t.key}" ${draft.targets.includes(t.key) ? 'checked' : ''}> ${this.notesLabel(t.key)}</label><br>`).join('')}</fieldset>
+      <p class="hint">Forwarding again to the same date updates the existing copy. SharePoint write access is required.</p>
+      <div class="comm-edit-buttons"><button class="btn primary" type="submit" ${this.busy ? 'disabled' : ''}>Forward to notes</button><button class="btn" type="button" data-comm="cancel-forward">Cancel</button></div></form>`;
+  },
+  notesLabel(key) { return key === 'worship' ? 'Worship Notes' : 'Production Notes'; },
+  notesLink(id) { return 'https://astmacary.github.io/?boardPost=' + encodeURIComponent(id); },
+  notesBlock(r) {
+    // Keep the ministry's SET LIST delimiter out of the forwarded text.
+    const title = esc(r.title).replaceAll('SET LIST', 'SET<span> </span>LIST');
+    const body = cleanHtml(r.text || '').replace(/SET LIST(?=[^<>]*(?:<|$))/g, 'SET<span> </span>LIST');
+    return `<blockquote><p><a href="${this.notesLink(r.id)}">${title}</a> · RCI Serve Team Board</p>${body}</blockquote>`;
+  },
+  hasNotesLink(notes, id) {
+    const link = this.notesLink(id);
+    return notes.includes(link + '"') || notes.includes(link + "'");
+  },
+  replaceNotesBlock(notes, r, append = false) {
+    const blocks = [];
+    const opens = [];
+    for (const tag of notes.matchAll(/<\/?blockquote\b[^>]*>/gi)) {
+      if (tag[0][1] !== '/') {
+        const header = notes.slice(tag.index + tag[0].length).match(/^\s*<p\b[^>]*>\s*<a\b[^>]*>/i);
+        opens.push({ start:tag.index, linked:!!header && this.hasNotesLink(header[0], r.id) });
+      } else {
+        const block = opens.pop();
+        if (block?.linked) blocks.push({ start:block.start, end:tag.index + tag[0].length });
+      }
+    }
+    if (!blocks.length) return append ? notes + this.notesBlock(r) : notes;
+    let updated = notes;
+    for (const block of blocks.reverse()) {
+      updated = updated.slice(0, block.start) + this.notesBlock(r) + updated.slice(block.end);
+    }
+    return updated;
+  },
+  async writeNotes(key, r, date = '') {
+    if (DEMO) {
+      this.demoNotes ||= {};
+      if (date) {
+        const slot = key + ':' + date;
+        this.demoNotes[slot] = this.replaceNotesBlock(this.demoNotes[slot] || '', r, true);
+      } else {
+        for (const slot of Object.keys(this.demoNotes).filter(slot => slot.startsWith(key + ':'))) {
+          this.demoNotes[slot] = this.replaceNotesBlock(this.demoNotes[slot], r);
+        }
+      }
+      return;
+    }
+    const { base, rows } = await API.boardNotesRows(key);
+    if (!date) {
+      const linked = rows.filter(row => this.hasNotesLink(row.fields?.Notes || '', r.id));
+      let failed = false;
+      for (const row of linked) {
+        const notes = this.replaceNotesBlock(row.fields.Notes, r);
+        if (notes === row.fields.Notes) continue;
+        try { await API.saveBoardNotes(base, row, notes); } catch (_) { failed = true; }
+      }
+      if (failed) throw new Error('Some dated copies could not be updated.');
+      return;
+    }
+    const production = key === 'productions';
+    const dated = rows.filter(({fields: f}) => spDate(production ? f?.ServiceDates : f?.ServiceDate) === date);
+    const row = dated.find(({fields: f}) => production ? f.Title === 'Production Director'
+      : lc(f.Title) === 'coordinator' && !f.FullName &&
+        ![f.LeaderPositions, f.SingingPositions, f.MusicianPositions].some(value => value?.length));
+    if (row) {
+      const before = row.fields.Notes || '';
+      const notes = this.replaceNotesBlock(before, r, true);
+      if (notes !== before) await API.saveBoardNotes(base, row, notes);
+      return;
+    }
+    if (production) throw new Error('Schedule a Production Director for this date first.');
+    const legacy = dated.find(({fields: f}) => f.Notes && [f.Title, ...[f.LeaderPositions, f.SingingPositions, f.MusicianPositions].flat()].includes('Worship & Arts Director'));
+    const previous = legacy?.fields.Notes || '';
+    const marker = previous.indexOf('SET LIST');
+    const notes = this.replaceNotesBlock(marker < 0 ? previous : previous.slice(marker), r, true);
+    await API.g(base, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { Title: 'Coordinator', ServiceDate: date + 'T12:00:00Z', ActiveStatus: 'Non Active', Published: '--', Notes: notes } }) });
+  },
+  async sendToNotes(form) {
+    const draft = this.forward;
+    const r = this.data.serve?.board.find(row => row.id === draft?.id);
+    if (this.busy || !r || !this.canForward(r, 'board')) return;
+    const data = new FormData(form);
+    draft.date = String(data.get('date') || '');
+    draft.targets = this.notesTargets().map(t => t.key).filter(key => data.getAll('target').includes(key));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date) || !draft.targets.length) {
+      toast('Choose a service date and at least one notes destination.', true);
+      return;
+    }
+    const selectedCount = draft.targets.length;
+    this.busy = true; render();
+    try {
+      const source = DEMO ? r : this.normalize(await API.g(`${this.meta.serve.board}/${encodeURIComponent(r.id)}?$expand=fields($select=Title,Body,ParentId)`));
+      if (!this.canForward(source, 'board')) throw new Error('This post is unavailable.');
+      const failed = [];
+      for (const key of draft.targets) {
+        try { await this.writeNotes(key, source, draft.date); }
+        catch (e) {
+          const reason = e.status === 403 ? 'SharePoint write access is required.'
+            : e.status === 412 ? 'The notes changed while saving. Try again.'
+            : e.status ? 'Could not save. Try again.' : e.message;
+          failed.push({ key, reason });
+        }
+      }
+      if (failed.length) {
+        draft.targets = failed.map(result => result.key);
+        const saved = selectedCount > failed.length ? 'Other selected notes were saved. ' : '';
+        toast(saved + failed.map(({key, reason}) => this.notesLabel(key) + ' — ' + reason).join(' '), true);
+      } else {
+        this.forward = null;
+        toast(DEMO ? 'Forwarded in this demo only.' : 'Post forwarded to notes.');
+      }
+    } catch (_) { toast('Could not read the Team Board post. Refresh and try again.', true); }
+    finally { this.busy = false; render(); }
+  },
+  icon(name) { const paths = {forward:'M3 20V4h12M7 8h5m-5 4h3m4-1 6 4-6 4m-3-4h9',edit:'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',delete:'M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6',pin:'m16 3 5 5-4 1-3 5v3l-3-3-7 7 7-7-4-3h3l5-3Z',hide:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12ZM9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0M3 3l18 18'}; return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]}"/></svg>`; },
   actions(r, kind) {
     if (r.deleted) return '';
     const button = (action,label,pressed) => `<button type="button" class="iconbtn" data-comm="${action}" data-kind="${kind}" data-id="${esc(r.id)}" aria-label="${label}" title="${label}"${pressed == null ? '' : ` aria-pressed="${pressed}"`}${this.busy ? ' disabled' : ''}>${this.icon(action)}</button>`;
-    return `<div class="comm-actions">${this.canChange(r,kind) ? button('edit','Edit message') + button('delete','Delete message') : ''}${kind === 'board' && !r.parent && this.isAdmin() ? button('pin',this.pinned(r.id) ? 'Unpin message' : 'Pin message',this.pinned(r.id)) : ''}${kind === 'board' && this.isAdmin() ? button('hide',this.hidden(r.id) ? 'Show message' : 'Hide message',this.hidden(r.id)) : ''}</div>`;
+    return `<div class="comm-actions">${this.canForward(r,kind) ? button('forward','Forward to notes') : ''}${this.canChange(r,kind) ? button('edit','Edit message') + button('delete','Delete message') : ''}${kind === 'board' && !r.parent && this.isAdmin() ? button('pin',this.pinned(r.id) ? 'Unpin message' : 'Pin message',this.pinned(r.id)) : ''}${kind === 'board' && this.isAdmin() ? button('hide',this.hidden(r.id) ? 'Show message' : 'Hide message',this.hidden(r.id)) : ''}</div>`;
   },
   editForm(r, kind) {
     const edit = this.edit;
@@ -204,7 +335,7 @@ const Comm = {
       return;
     }
     if (!this.canChange(r,kind)) return;
-    if (action === 'edit') { this.edit = {kind,id,title:r.title,text:r.text,etag:r.etag}; render(); return; }
+    if (action === 'edit') { this.edit = {kind,id,title:r.title,text:r.text,etag:r.etag,syncNotes:this.canForward(r, kind)}; render(); return; }
     if (action !== 'delete' || !confirm('Delete this message? Other people’s replies will remain.')) return;
     this.generation++; this.busy = true; render();
     try {
@@ -226,7 +357,16 @@ const Comm = {
     this.generation++; this.busy = true; render();
     try {
       if (!DEMO) { const {base,row} = await this.fresh(edit.kind,edit.id); if (edit.etag && row.etag && edit.etag !== row.etag) throw new Error('Message changed elsewhere.'); await API.g(`${base}/${encodeURIComponent(edit.id)}/fields`,{method:'PATCH',headers:{'Content-Type':'application/json',...(row.etag ? {'If-Match':row.etag} : {})},body:JSON.stringify({Title:r.parent ? r.title : title,Body:text})}); }
-      r.title = r.parent ? r.title : title; r.text = text; this.edit = null; toast('Message updated.');
+      r.title = r.parent ? r.title : title; r.text = text; this.edit = null;
+      const failures = [];
+      if (edit.syncNotes && this.canForward(r,edit.kind)) {
+        for (const target of this.notesTargets()) {
+          try { await this.writeNotes(target.key, r); }
+          catch (_) { failures.push(this.notesLabel(target.key)); }
+        }
+      }
+      if (failures.length) toast(`Message saved. Couldn't sync ${failures.join(' or ')}. Refresh messages, then edit and save again to retry.`, true);
+      else toast('Message updated.');
     } catch (_) { toast('Could not save your changes. Your edit is still here. Please try again.',true); }
     finally { this.busy = false; render(); }
   },
@@ -253,7 +393,7 @@ const Comm = {
         return `<article class="panel pad"><div class="comm-topic-line"><button class="btn comm-topic" data-comm="thread" data-id="${esc(r.id)}">${this.pinned(r.id,d) ? '📌 ' : ''}${esc(r.title)}${fresh ? ' • Unread' : ''}</button>${this.actions(r,'board')}</div>${this.hiddenRow(r,d) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === 'board' ? this.editForm(r,'board') : ''}<p class="hint">${esc(r.name)} · ${plural(replies.length,'reply','replies')}</p><div class="comm-text notes">${cleanHtml(r.text)}</div></article>`;
       }).join('') : '<div class="empty">No conversations yet. Start the first one.</div>');
     }
-    return `<div class="comm"><div class="comm-head"><h1 class="page">Messages</h1><button class="iconbtn" data-comm="refresh" aria-label="Refresh messages" title="Refresh messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-5L23 10M1 14l4.6 6A9 9 0 0 0 20.5 15"/></svg></button></div><div class="chiprow" aria-label="Choose a board">${chips}</div><h2>${esc(t.name)}</h2><div class="chiprow"><button class="chipcheck" data-comm="mode" data-mode="board" aria-pressed="${this.mode === 'board'}">Team board</button><button class="chipcheck" data-comm="mode" data-mode="contact" aria-pressed="${this.mode === 'contact'}">Contact leaders privately</button>${this.mode === 'board' && this.isAdmin() ? `<button class="chipcheck" data-comm="toggle-hidden" aria-pressed="${this.showHidden}">${this.showHidden ? 'Hide hidden messages' : 'Show hidden messages'}</button>` : ''}</div>${content}</div>`;
+    return `<div class="comm"><div class="comm-head"><h1 class="page">Messages</h1><button class="iconbtn" data-comm="refresh" aria-label="Refresh messages" title="Refresh messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-5L23 10M1 14l4.6 6A9 9 0 0 0 20.5 15"/></svg></button></div><div class="chiprow" aria-label="Choose a board">${chips}</div><h2>${esc(t.name)}</h2><div class="chiprow"><button class="chipcheck" data-comm="mode" data-mode="board" aria-pressed="${this.mode === 'board'}">Team board</button><button class="chipcheck" data-comm="mode" data-mode="contact" aria-pressed="${this.mode === 'contact'}">Contact leaders privately</button>${this.mode === 'board' && this.isAdmin() ? `<button class="chipcheck" data-comm="toggle-hidden" aria-pressed="${this.showHidden}">${this.showHidden ? 'Hide hidden messages' : 'Show hidden messages'}</button>` : ''}</div>${this.forwardForm()}${content}</div>`;
   },
   async send(form) {
     if (this.busy) return;
@@ -285,12 +425,12 @@ const Comm = {
   }
 };
 document.addEventListener('input', e => {
-  if (e.target.closest('.comm-edit-form') && Comm.edit) { const form = e.target.closest('.comm-edit-form'), title = form.querySelector('#comm-edit-title'), ed = form.querySelector('#comm-edit-body'); Comm.edit.title = String(title ? title.value : ''); Comm.edit.text = ed ? ed.innerHTML : ''; return; }
+  if (e.target.closest('.comm-edit-form') && Comm.edit) { const form = e.target.closest('.comm-edit-form'), title = form.querySelector('#comm-edit-title'), ed = form.querySelector('#comm-edit-body'); Comm.edit.title = String(title ? title.value : ''); Comm.edit.text = ed ? ed.innerHTML : ''; Comm.edit.syncNotes = !!form.elements['sync-notes']?.checked; return; }
   const form = e.target.closest('.comm-form'); if (!form) return;
   const title = form.querySelector('#comm-title'), ed = form.querySelector('#comm-body');
   Comm.drafts[Comm.draftKey(form.dataset.kind,form.dataset.parent)] = { title: String(title ? title.value : ''), body: ed ? ed.innerHTML : '' };
 });
-document.addEventListener('submit', e => { if (e.target.matches('.comm-edit-form')) { e.preventDefault(); Comm.saveEdit(); return; } if (!e.target.matches('.comm-form')) return; e.preventDefault(); Comm.send(e.target); });
+document.addEventListener('submit', e => { if (e.target.matches('.comm-forward-form')) { e.preventDefault(); Comm.sendToNotes(e.target); return; } if (e.target.matches('.comm-edit-form')) { e.preventDefault(); Comm.saveEdit(); return; } if (!e.target.matches('.comm-form')) return; e.preventDefault(); Comm.send(e.target); });
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-comm]'); if (!b) return;
   const action = b.dataset.comm;
@@ -305,6 +445,16 @@ document.addEventListener('click', async e => {
   }
   if (Comm.busy) return;
   if (['edit','delete','pin','hide'].includes(action)) { await Comm.act(action,b.dataset.kind,b.dataset.id); return; }
+  if (action === 'forward') {
+    const r = Comm.data.serve?.board.find(row => row.id === b.dataset.id);
+    if (!r || !Comm.canForward(r, b.dataset.kind)) return;
+    Comm.edit = null;
+    Comm.forward = { id: r.id, date: todayKey(), targets: [] };
+    render();
+    document.getElementById('comm-notes-date')?.focus();
+    return;
+  }
+  if (['cancel-forward','space','mode','back','thread','refresh','toggle-hidden'].includes(action)) Comm.forward = null;
   if (action === 'toggle-hidden' && Comm.isAdmin()) { Comm.showHidden = !Comm.showHidden; Comm.thread = ''; Comm.edit = null; }
   if (action === 'cancel-edit') Comm.edit = null;
   if (action === 'space') { if (!Comm.space(b.dataset.key)) return; Comm.selected = b.dataset.key; Comm.thread = ''; Comm.edit = null; Comm.showHidden = false; Comm.composeOpen = false; }
@@ -319,12 +469,12 @@ document.addEventListener('click', async e => {
 // Keep badges current while the app is open; do not interrupt an active composer.
 let communicationRefreshBusy = false;
 async function refreshCommunications(){
-  if (DEMO || S.phase !== 'ready' || S.loading || Comm.busy || communicationRefreshBusy || document.hidden || document.activeElement?.closest('.comm-form,.comm-edit-form')) return;
+  if (DEMO || S.phase !== 'ready' || S.loading || Comm.busy || Comm.forward || communicationRefreshBusy || document.hidden || document.activeElement?.closest('.comm-form,.comm-edit-form')) return;
   communicationRefreshBusy = true;
   try {
     await Comm.load();
     if (S.view === 'messages' && Comm.mode === 'board' && Comm.thread) Comm.markThread();
-    if (S.phase === 'ready' && !Comm.busy && !document.activeElement?.closest('.comm-form,.comm-edit-form')) render();
+    if (S.phase === 'ready' && !Comm.busy && !Comm.forward && !document.activeElement?.closest('.comm-form,.comm-edit-form')) render();
   } catch (_) { /* Retry on the next interval; list-specific failures are shown in Messages. */ }
   finally { communicationRefreshBusy = false; }
 }
