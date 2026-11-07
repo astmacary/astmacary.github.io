@@ -182,7 +182,7 @@ const Comm = {
     return `<form class="panel pad comm-forward-form"><h2>Forward to notes</h2><p>${esc(r.title)}</p>
       <div class="field"><label for="comm-notes-date">Service date</label><input id="comm-notes-date" name="date" type="date" value="${esc(draft.date)}" required></div>
       <fieldset><legend>Send to</legend>${this.notesTargets().map(t => `<label><input type="checkbox" name="target" value="${t.key}" ${draft.targets.includes(t.key) ? 'checked' : ''}> ${this.notesLabel(t.key)}</label><br>`).join('')}</fieldset>
-      <p class="hint">Forwarding again to the same date updates the existing copy. SharePoint write access is required.</p>
+      <p class="hint">Forwarding again to the same date updates the existing copy.</p>
       <div class="comm-edit-buttons"><button class="btn primary" type="submit" ${this.busy ? 'disabled' : ''}>Forward to notes</button><button class="btn" type="button" data-comm="cancel-forward">Cancel</button></div></form>`;
   },
   notesLabel(key) { return key === 'worship' ? 'Worship Notes' : 'Production Notes'; },
