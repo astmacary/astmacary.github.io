@@ -188,10 +188,11 @@ const Comm = {
   notesLabel(key) { return key === 'worship' ? 'Worship Notes' : 'Production Notes'; },
   notesLink(id) { return 'https://astmacary.github.io/?boardPost=' + encodeURIComponent(id); },
   notesBlock(r) {
-    // Keep the ministry's SET LIST delimiter out of the forwarded text.
-    const title = esc(r.title).replaceAll('SET LIST', 'SET<span> </span>LIST');
+    // Keep the ministry's SET LIST delimiter out of the forwarded text. The link is kept but hidden —
+    // it's only there so a re-forward or a later edit can find and update this same block in place;
+    // the note itself shows just the message's own text, with no title and no "RCI Serve Team Board" label.
     const body = cleanHtml(r.text || '').replace(/SET LIST(?=[^<>]*(?:<|$))/g, 'SET<span> </span>LIST');
-    return `<blockquote><p><a href="${this.notesLink(r.id)}">${title}</a> · RCI Serve Team Board</p>${body}</blockquote>`;
+    return `<blockquote><p style="display:none"><a href="${this.notesLink(r.id)}"></a></p>${body}</blockquote>`;
   },
   hasNotesLink(notes, id) {
     const link = this.notesLink(id);
