@@ -64,7 +64,20 @@ const Comm = {
     const d = this.data[this.selected]; if (!d || !this.thread) return;
     const seen = this.seen(this.selected);
     d.board.filter(r => r.id === this.thread || r.parent === this.thread).forEach(r => seen.add(r.id));
-    try { localStorage.setItem(this.seenKey(this.selected), JSON.stringify([...seen].slice(-10000))); } catch (_) {}
+    this.saveSeen(this.selected, seen);
+  },
+  saveSeen(key, seen) { try { localStorage.setItem(this.seenKey(key), JSON.stringify([...seen].slice(-10000))); } catch (_) {} },
+  /* Opening the board counts as reading the posts shown on it; no click into the post is needed.
+     Posts first seen on this visit keep a "New" tag until the person leaves the board. Replies stay
+     unread until the conversation is opened, since only the reply count shows on the board. */
+  newOnVisit: new Set(),
+  markShown(key, roots) {
+    const seen = this.seen(key);
+    if (!document.querySelector(`.comm-board[data-space="${CSS.escape(key)}"]`)) this.newOnVisit = new Set();
+    let changed = false;
+    roots.forEach(r => { if (!seen.has(r.id) && !this.own(r)) { seen.add(r.id); this.newOnVisit.add(r.id); changed = true; } });
+    if (changed) this.saveSeen(key, seen);
+    return seen;
   },
   normalize(r) { r = { ...r, fields: r.fields || {} }; return { id: String(r.id), parent: String(r.fields.ParentId || ''), title: r.fields.Title || '', text: r.fields.Body || '', name: r.createdBy?.user?.displayName || 'Team member', email: lc(r.createdBy?.user?.email), at: r.createdDateTime || '', authorId: r.createdBy?.user?.id || '', etag: r['@odata.etag'] || r.eTag || '' }; },
   async list(t, name) {
@@ -376,7 +389,6 @@ const Comm = {
     const spaces = this.spaces(), t = this.space();
     if (!t) return '<h1 class="page">Messages</h1><div class="empty">Your boards will appear after your ministry access is confirmed.</div>';
     const d = this.data[t.key], privateOn = DEMO || this.privateReady[t.key];
-    const chips = spaces.map(s => `<button class="chipcheck team team-pill" style="${typeof tvars === 'function' ? tvars(s) : ''}" data-comm="space" data-key="${s.key}" aria-pressed="${s.key === t.key}"><span class="dot" aria-hidden="true"></span>${esc(s.name)}${this.unread(s.key) ? ` <span aria-label="${this.unread(s.key)} unread messages">(${this.unread(s.key)})</span>` : ''}</button>`).join('');
     let content = '';
     if (!d) content = '<div class="empty">Loading messages…</div>';
     else if (this.mode === 'contact') {
@@ -386,14 +398,15 @@ const Comm = {
       const root = this.roots(d).find(r => r.id === this.thread);
       content = root ? `<button class="btn" data-comm="back">Back to conversations</button><article class="panel pad"><h2>${this.pinned(root.id,d) ? '📌 ' : ''}${esc(root.title)}</h2>${this.record(root)}${this.visibleBoard(d).filter(r => r.parent === root.id).sort((a,b) => a.at.localeCompare(b.at)).map(r => this.record(r)).join('')}</article>${this.form('reply',root.id)}` : '<div class="empty">This conversation is no longer available.</div>';
     } else {
-      const seen = this.seen(t.key), roots = this.roots(d);
+      const roots = this.roots(d), seen = this.markShown(t.key, roots);
       const activity = r => this.board(d).filter(x => x.id === r.id || x.parent === r.id).reduce((at,x) => x.at > at ? x.at : at,r.at);
       const composer = `<button type="button" class="btn comm-compose-toggle" data-comm="toggle-compose" aria-expanded="${this.composeOpen}">${this.composeOpen ? '− Hide' : '+ Make a post'}</button>` + (this.composeOpen ? this.form('post') : '');
-      content = composer + (roots.length ? roots.sort((a,b) => Number(this.pinned(b.id,d)) - Number(this.pinned(a.id,d)) || activity(b).localeCompare(activity(a))).map(r => {
-        const replies = this.visibleBoard(d).filter(x => x.parent === r.id), fresh = [r,...replies].some(x => !seen.has(x.id) && !this.own(x));
-        return `<article class="panel pad"><div class="comm-topic-line"><button class="btn comm-topic" data-comm="thread" data-id="${esc(r.id)}">${this.pinned(r.id,d) ? '📌 ' : ''}${esc(r.title)}${fresh ? ' • Unread' : ''}</button>${this.actions(r,'board')}</div>${this.hiddenRow(r,d) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === 'board' ? this.editForm(r,'board') : ''}<p class="hint">${esc(r.name)} · ${plural(replies.length,'reply','replies')}</p><div class="comm-text notes">${cleanHtml(r.text)}</div></article>`;
+      content = `<div class="comm-board" data-space="${esc(t.key)}" hidden></div>` + composer + (roots.length ? roots.sort((a,b) => Number(this.pinned(b.id,d)) - Number(this.pinned(a.id,d)) || activity(b).localeCompare(activity(a))).map(r => {
+        const replies = this.visibleBoard(d).filter(x => x.parent === r.id), fresh = [r,...replies].some(x => (!seen.has(x.id) || this.newOnVisit.has(x.id)) && !this.own(x));
+        return `<article class="panel pad"><div class="comm-topic-line"><button class="btn comm-topic" data-comm="thread" data-id="${esc(r.id)}">${this.pinned(r.id,d) ? '📌 ' : ''}${esc(r.title)}${fresh ? ' • New' : ''}</button>${this.actions(r,'board')}</div>${this.hiddenRow(r,d) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === 'board' ? this.editForm(r,'board') : ''}<p class="hint">${esc(r.name)} · ${plural(replies.length,'reply','replies')}</p><div class="comm-text notes">${cleanHtml(r.text)}</div></article>`;
       }).join('') : '<div class="empty">No conversations yet. Start the first one.</div>');
     }
+    const chips = spaces.map(s => `<button class="chipcheck team team-pill" style="${typeof tvars === 'function' ? tvars(s) : ''}" data-comm="space" data-key="${s.key}" aria-pressed="${s.key === t.key}"><span class="dot" aria-hidden="true"></span>${esc(s.name)}${this.unread(s.key) ? ` <span aria-label="${this.unread(s.key)} unread messages">(${this.unread(s.key)})</span>` : ''}</button>`).join('');
     return `<div class="comm"><div class="comm-head"><h1 class="page">Messages</h1><button class="iconbtn" data-comm="refresh" aria-label="Refresh messages" title="Refresh messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-5L23 10M1 14l4.6 6A9 9 0 0 0 20.5 15"/></svg></button></div><div class="chiprow" aria-label="Choose a board">${chips}</div><h2>${esc(t.name)}</h2><div class="chiprow"><button class="chipcheck" data-comm="mode" data-mode="board" aria-pressed="${this.mode === 'board'}">Team board</button><button class="chipcheck" data-comm="mode" data-mode="contact" aria-pressed="${this.mode === 'contact'}">Contact leaders privately</button>${this.mode === 'board' && this.isAdmin() ? `<button class="chipcheck" data-comm="toggle-hidden" aria-pressed="${this.showHidden}">${this.showHidden ? 'Hide hidden messages' : 'Show hidden messages'}</button>` : ''}</div>${this.forwardForm()}${content}</div>`;
   },
   async send(form) {
