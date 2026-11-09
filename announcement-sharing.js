@@ -38,7 +38,8 @@ const AnnShare = {
       if(this.signature(source)!==this.signature(this.snapshot))throw new Error('This announcement changed. Close this window and share the updated version.');
       let flyerBlob=null;
       if(source.flyer && !DEMO){
-        const url=await API.flyer(CHURCH_CAL,source);
+        let url=await API.flyer(CHURCH_CAL,source);
+        if(!url)url=await API.flyer(CHURCH_CAL,source,{fresh:true});   // one fresh retry before giving up
         if(!url || !url.startsWith('blob:'))throw new Error('The flyer could not be loaded. Nothing has been shared yet.');
         const r=await fetch(url);if(!r.ok)throw new Error('The flyer could not be loaded. Nothing has been shared yet.');
         const blob=await r.blob();flyerBlob=await resizeImage(new File([blob],'church-announcement.jpg',{type:blob.type}),1600);

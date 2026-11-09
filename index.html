@@ -312,7 +312,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "90";   // bump together with CACHE in sw.js
+const APP_VERSION = "91";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -819,17 +819,24 @@ const API = {
     if (!res.ok) throw new Error(res.status);
     return URL.createObjectURL(await res.blob());
   },
-  flyer(t, a){
+  /* Only successful loads are cached. A failed load (network blip, token not ready yet, file just uploaded) is
+     forgotten so the next Home render or Share tries again, instead of failing for the rest of the session. */
+  flyer(t, a, { fresh = false } = {}){
     const k = t.key + "|" + a.id + "|" + a.flyer;
-    if (!this.flyerCache.has(k)) this.flyerCache.set(k, (async () => {
-      const annListId = this.sites[t.key]?.annListId; if (!annListId) return null;
-      try {
-        const f = JSON.parse(a.flyer), q = v => encodeURIComponent(String(v).replace(/'/g, "''"));
-        if (f.serverRelativeUrl) return await this.spBlob(t, `GetFileByServerRelativeUrl('${q(f.serverRelativeUrl)}')/$value`);
-        if (f.fileName) return await this.spBlob(t, `lists(guid'${annListId}')/items(${a.id})/AttachmentFiles('${q(f.fileName)}')/$value`);
-      } catch(e){}
-      return null;
-    })());
+    if (fresh) this.flyerCache.delete(k);
+    if (!this.flyerCache.has(k)){
+      const p = (async () => {
+        const annListId = this.sites[t.key]?.annListId; if (!annListId) return null;
+        try {
+          const f = JSON.parse(a.flyer), q = v => encodeURIComponent(String(v).replace(/'/g, "''"));
+          if (f.serverRelativeUrl) return await this.spBlob(t, `GetFileByServerRelativeUrl('${q(f.serverRelativeUrl)}')/$value`);
+          if (f.fileName) return await this.spBlob(t, `lists(guid'${annListId}')/items(${a.id})/AttachmentFiles('${q(f.fileName)}')/$value`);
+        } catch(e){ console.warn("Flyer didn't load; will retry next time.", e); }
+        return null;
+      })();
+      this.flyerCache.set(k, p);
+      p.then(url => { if (!url && this.flyerCache.get(k) === p) this.flyerCache.delete(k); });
+    }
     return this.flyerCache.get(k);
   }
 };
