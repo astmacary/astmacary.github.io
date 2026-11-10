@@ -42,6 +42,60 @@ function commPreview(html){
   return (d.textContent || "").replace(/\s+/g, " ").trim();
 }
 
+/* ---------- Pictures in board posts and replies ----------
+   Pictures are resized (longest side 1600 px) and saved in the board site's Site Assets library under
+   Messages/<board list id>/. The message body keeps a plain "📷 Picture" link to each one, so no new
+   SharePoint column is needed; the app turns those links into pictures (tap to open full screen).
+   Private messages don't take pictures, because Site Assets is readable by everyone on the site. */
+const COMM_PIC_MAX = 4;
+const COMM_PIC_RE = /\/SiteAssets\/Messages\//i;
+const commPicCache = new Map();
+function commPicUrl(href){
+  if (commPicCache.has(href)) return commPicCache.get(href);
+  const p = (async () => {
+    const share = 'u!' + btoa(unescape(encodeURIComponent(href))).replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-');
+    const item = await API.g(`/shares/${share}/driveItem`);
+    const dl = item && item['@microsoft.graph.downloadUrl']; if (!dl) throw new Error('No download link');
+    const res = await fetch(dl); if (!res.ok) throw new Error(String(res.status));
+    return URL.createObjectURL(await res.blob());
+  })();
+  commPicCache.set(href, p); p.catch(() => commPicCache.delete(href));   // only successful loads are kept
+  return p;
+}
+function commHydratePics(){
+  document.querySelectorAll('.comm-text a[href]:not([data-pic])').forEach(a => {
+    const href = a.getAttribute('href') || ''; if (!COMM_PIC_RE.test(href)) return;
+    a.dataset.pic = '1'; a.classList.add('comm-pic'); a.setAttribute('aria-label', 'Picture, tap to open');
+    if (DEMO) return;
+    commPicUrl(href).then(url => { if (!a.isConnected) return; a.dataset.url = url; a.innerHTML = `<img alt="Picture" src="${url}">`; })
+      .catch(() => { if (a.isConnected) a.textContent = '📷 Picture (tap to open)'; });
+  });
+}
+let commPicQueued = false;
+new MutationObserver(() => { if (commPicQueued) return; commPicQueued = true; requestAnimationFrame(() => { commPicQueued = false; commHydratePics(); }); })
+  .observe(document.documentElement, { childList: true, subtree: true });
+document.addEventListener('click', e => {
+  const a = e.target.closest('a.comm-pic'); if (!a || !a.dataset.url) return;
+  e.preventDefault(); if (typeof openLightbox === 'function') openLightbox(a.dataset.url, 'Picture'); else window.open(a.dataset.url, '_blank');
+});
+document.addEventListener('change', async e => {
+  const input = e.target.closest('input[data-comm-pics]'); if (!input) return;
+  const key = input.dataset.key, list = (Comm.pics[key] ||= []), files = [...input.files]; input.value = '';
+  for (const f of files) {
+    if (list.length >= COMM_PIC_MAX) { toast(`Up to ${COMM_PIC_MAX} pictures per message.`, true); break; }
+    try { const blob = await resizeImage(f, 1600); if (!blob) throw new Error('unreadable'); list.push({ blob, url: URL.createObjectURL(blob) }); }
+    catch (_) { toast('That picture could not be read. Try a JPEG or PNG.', true); }
+  }
+  render();
+});
+(() => { const st = document.createElement('style'); st.textContent = `
+  .comm-text a.comm-pic{display:block;margin:8px 0;max-width:100%;text-decoration:none}
+  .comm-text a.comm-pic img{display:block;max-width:100%;max-height:340px;border-radius:10px;object-fit:contain}
+  .comm-pic-previews{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px}
+  .comm-pic-preview{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+  .comm-pic-preview img{width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line,#ccc)}
+  .comm-pic-add{cursor:pointer;display:inline-flex;align-items:center}`; document.head.appendChild(st); })();
+
 const Comm = {
   selected: 'serve', thread: '', mode: 'board', data: {}, meta: {}, drafts: {}, busy: false, edit: null, meId: '', identityKey: '', extraAdmins: {}, showHidden: false, composeOpen: false, generation: 0, moderationReady: true,
   // Verified in SharePoint: author-only reads, member Contribute, designated leader Design.
@@ -125,6 +179,29 @@ const Comm = {
     }));
     if (!this.space()) { this.selected = this.spaces()[0]?.key || ''; this.thread = ''; }
   },
+  pics: {},
+  picField(kind, parent) {
+    const key = this.draftKey(kind, parent), list = this.pics[key] || [];
+    return `<div class="field"><div class="comm-pic-previews">${list.map((p,i) => `<div class="comm-pic-preview"><img alt="Picture ${i+1}" src="${p.url}"><button type="button" class="btn" data-comm="pic-remove" data-key="${esc(key)}" data-i="${i}" aria-label="Remove picture ${i+1}">Remove</button></div>`).join('')}</div>${list.length < COMM_PIC_MAX ? `<label class="btn comm-pic-add">📷 ${list.length ? 'Add Another Picture' : 'Add a Picture'}<input type="file" accept="image/*" multiple hidden data-comm-pics data-key="${esc(key)}"></label>` : `<p class="hint">${COMM_PIC_MAX} pictures is the most per message.</p>`}</div>`;
+  },
+  async uploadPics(base, pics) {
+    const [, , siteId, , listId] = base.split('/');
+    this.assetDrives ||= {};
+    this.assetDrives[siteId] ||= (async () => {
+      const drives = (await API.g(`/sites/${siteId}/drives?$select=id,name,webUrl`)).value || [];
+      const d = drives.find(x => /\/SiteAssets$/i.test(x.webUrl || '')) || drives.find(x => /site assets/i.test(x.name || ''))
+        || await API.g(`/sites/${siteId}/lists/${encodeURIComponent('Site Assets')}/drive?$select=id`);
+      if (!d?.id) throw new Error("Couldn't find the site's Site Assets library.");
+      return d.id;
+    })().catch(e => { delete this.assetDrives[siteId]; throw e; });
+    const driveId = await this.assetDrives[siteId], out = [];
+    for (const p of pics) {
+      const name = `pic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const up = await API.g(`/drives/${driveId}/root:/Messages/${listId}/${name}:/content`, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: p.blob });
+      out.push(up.webUrl);
+    }
+    return out;
+  },
   draftKey(kind, parent = '') { return `${this.selected}:${kind}:${parent}`; },
   form(kind, parent = '') {
     const draft = this.drafts[this.draftKey(kind, parent)] || {};
@@ -133,6 +210,7 @@ const Comm = {
       <h2>${contact ? 'Contact your leaders privately' : parent ? 'Write a reply' : 'Make a post'}</h2>
       ${!parent ? `<div class="field"><label for="comm-title">${contact ? 'Subject' : 'Title'}</label><input id="comm-title" name="title" maxlength="120" value="${esc(draft.title || '')}" required></div>` : ''}
       <div class="field"><label for="comm-body">${parent ? 'Reply' : 'Message'}</label>${commToolbar('comm-body')}<div class="panel notes notes-editor" id="comm-body" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${parent ? 'Reply' : 'Message'}">${cleanHtml(draft.body || '')}</div></div>
+      ${contact ? '' : this.picField(kind, parent)}
       ${contact ? '<p class="hint">Your message is private to you and this space’s leaders. Authorized site administrators retain access.</p>' : '<p class="hint">Visible to members of this board.</p>'}
       <button class="btn primary" type="submit" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Sending…' : contact ? 'Send private message' : parent ? 'Post reply' : 'Post message'}</button>
     </form>`;
@@ -416,25 +494,32 @@ const Comm = {
     const data = new FormData(form), title = String(data.get('title') || '').trim();
     const edInput = form.querySelector('#comm-body'), body = cleanHtml(edInput ? edInput.innerHTML : '').trim(), plain = commPreview(body);
     if (!parent && (!title || title.length > 120)) { toast(!title ? 'Enter a title.' : 'Title is too long.', true); return; }
-    if (!plain || plain.length > 4000 || body.length > 20000) { toast(!plain ? 'Write a message first.' : 'Message is too long.', true); return; }
+    const picKey = this.draftKey(kind,parent), pics = kind === 'contact' ? [] : (this.pics[picKey] || []);
+    if ((!plain && !pics.length) || plain.length > 4000 || body.length > 20000) { toast(!plain && !pics.length ? 'Write a message or add a picture first.' : 'Message is too long.', true); return; }
     const d = this.data[t.key], contact = kind === 'contact';
     if (!d || (contact ? !(DEMO || this.privateReady[t.key]) || d.contactError : d.error)) return;
     if (kind === 'reply' && !this.roots(d).some(r => r.id === parent)) return;
     this.generation++; this.busy = true; const key = this.draftKey(kind,parent); render();
     try {
-      const fields = { Title: title || 'Reply', Body: body, ParentId: parent };
+      let fullBody = body;
+      if (pics.length && !DEMO) {
+        const picBase = this.meta[t.key]?.board; if (!picBase) throw new Error('This space is not ready. Refresh and try again.');
+        let links; try { links = await this.uploadPics(picBase, pics); } catch (e) { e.picFail = true; throw e; }
+        fullBody = body + links.map(u => `<p><a href="${esc(u)}">📷 Picture</a></p>`).join('');
+      }
+      const fields = { Title: title || 'Reply', Body: fullBody, ParentId: parent };
       let r;
-      if (DEMO) r = { id: 'demo-' + crypto.randomUUID(), parent, title: fields.Title, text: body, name: S.me.name, email: S.me.emails[0], authorId: this.meId, at: new Date().toISOString() };
+      if (DEMO) r = { id: 'demo-' + crypto.randomUUID(), parent, title: fields.Title, text: fullBody, name: S.me.name, email: S.me.emails[0], authorId: this.meId, at: new Date().toISOString() };
       else {
         const base = this.meta[t.key]?.[contact ? 'contacts' : 'board']; if (!base) throw new Error('This space is not ready. Refresh and try again.');
         r = this.normalize(await API.g(base, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) }));
         // Some Graph responses omit expanded fields; use the submitted plain text.
-        Object.assign(r, { parent, title: fields.Title, text: body, name: S.me.name, email: S.me.emails[0], authorId: this.meId });
+        Object.assign(r, { parent, title: fields.Title, text: fullBody, name: S.me.name, email: S.me.emails[0], authorId: this.meId });
       }
-      d[contact ? 'contacts' : 'board'].push(r); delete this.drafts[key];
+      d[contact ? 'contacts' : 'board'].push(r); delete this.drafts[key]; (this.pics[picKey] || []).forEach(p => URL.revokeObjectURL(p.url)); delete this.pics[picKey];
       if (!contact) { this.thread = parent || r.id; this.markThread(); }
       toast(DEMO ? 'Saved in this demo only.' : contact ? 'Private message sent to your leaders.' : 'Message posted.');
-    } catch (_) { toast('Your message could not be sent. Your draft is still here; please try again.',true); }
+    } catch (e) { toast(e?.picFail ? 'Your picture could not be uploaded, so nothing was posted. Your draft is still here; please try again.' : 'Your message could not be sent. Your draft is still here; please try again.',true); }
     finally { this.busy = false; render(); }
   }
 };
@@ -458,6 +543,7 @@ document.addEventListener('click', async e => {
     return;
   }
   if (Comm.busy) return;
+  if (action === 'pic-remove') { const l = Comm.pics[b.dataset.key]; const [p] = l ? l.splice(Number(b.dataset.i), 1) : []; if (p) URL.revokeObjectURL(p.url); render(); return; }
   if (['edit','delete','pin','hide'].includes(action)) { await Comm.act(action,b.dataset.kind,b.dataset.id); return; }
   if (action === 'forward') {
     const r = Comm.data.serve?.board.find(row => row.id === b.dataset.id);
