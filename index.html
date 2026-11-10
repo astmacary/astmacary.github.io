@@ -302,6 +302,8 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
 <script src="/communications.js?v=94"></script>
+<script src="/push-config.js?v=95"></script>
+<script src="/push-client.js?v=95"></script>
 <script src="/rosters.js?v=66"></script>
 <script src="/announcement-sharing.js?v=47"></script>
 <script>
@@ -313,7 +315,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "94";   // bump together with CACHE in sw.js
+const APP_VERSION = "95";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1083,7 +1085,7 @@ async function loadAll(){
   S.loading = false; S.loadedAt = Date.now(); S.phase = "ready";
   if (!S.cal.sel){ const first = upcoming()[0]; S.cal.sel = first && first.date <= addDays(todayKey(), 31) ? first.date : todayKey(); }
   updateBadge(); render();
-  void Rosters.load('leadership');
+  void Rosters.load('leadership').then(() => Push.init());
   void Comm.load().then(() => { if (S.phase === 'ready' && !Comm.busy && !document.activeElement?.closest('input,textarea,select,[contenteditable="true"]')) render(); });
 }
 
@@ -1174,6 +1176,14 @@ function installGuide(force=false){
     <p class="hint" style="color:var(--fg)">One icon for every team you serve on. You sign in once, and you can switch between your teams without leaving the app.</p>
     ${steps}<div class="acts2">${deferredInstall ? `<button class="btn primary big" data-act="install">Install App</button>` : ""}<button class="btn" data-act="hide-install">Not now</button></div></section>`;
 }
+const Push = createPushClient({
+  ...RCI_PUSH_CONFIG,
+  getToken: async () => (await API.msal.acquireTokenSilent({ scopes: SCOPES, account: API.account })).accessToken,
+  onChange: () => { if (S.view === "profile" && !Rosters.editingProfile) render(); },
+  isDemo: () => DEMO || S.imp || !Rosters.isLeadershipMember(),
+  standalone: isStandalone,
+  ios: isIOS
+});
 function badgeAsk(){
   if (DEMO || !isStandalone() || !("Notification" in window) || !("setAppBadge" in navigator)) return "";
   if (Notification.permission === "granted") return "";
@@ -1532,6 +1542,7 @@ function viewProfile(){
       ${canEdit ? `<div class="profile-hero-actions"><button class="btn" data-act="hub-profile-change-photo">Change Photo</button>${!Rosters.editingProfile ? '<button class="btn" data-act="hub-profile-edit">Edit profile</button>' : ''}</div><input id="hub-profile-photo" type="file" accept="image/*" aria-label="Profile photo" hidden><p class="hint">Your teammates see this on the Leadership roster.</p>` : ''}</section>
     ${S.imp ? impBanner() + impCard() : canImpersonate() ? impCard() : ""}
     ${Rosters.profileEditor()}
+    ${Push.panel()}
     ${badgeAsk()}
     ${Rosters.canManage() ? `<section class="panel"><button class="setrow" data-act="tab" data-view="access-log"><span>RCI Serve Access Check</span></button></section>` : ""}
     <section class="panel">
@@ -1643,7 +1654,9 @@ document.addEventListener("click", async e => {
   else if (act === "hub-profile-photo-remove") { if (Rosters.profileDraft){ Rosters.profileDraft.photo = null; render(); } }
   else if (act === "tab"){ S.view = b.dataset.view; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "signin") API.signIn();
-  else if (act === "signout"){ try { sessionStorage.removeItem(IMP_KEY); } catch(_){} if (S.imp){ impStop(); return; } Rosters.reset(); AnnShare.sourceId=''; AnnShare.snapshot=null; AnnShare.selected.clear(); AnnShare.sent.clear(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.forward = null; Comm.demoNotes = {}; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
+  else if (act === "push-on") await Push.enable();
+  else if (act === "push-off" && !S.imp) { try { await Push.disable(); } catch (e) { toast(e.message, true); } }
+  else if (act === "signout"){ if (!S.imp) { try { await Push.disable(); } catch (e) { toast(e.message, true); return; } } try { sessionStorage.removeItem(IMP_KEY); } catch(_){} if (S.imp){ impStop(); return; } Rosters.reset(); AnnShare.sourceId=''; AnnShare.snapshot=null; AnnShare.selected.clear(); AnnShare.sent.clear(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.forward = null; Comm.demoNotes = {}; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
   else if (act === "retry") location.reload();
   else if (act === "refresh") loadAll();
   else if (act === "accept") accept(b.dataset.id);
