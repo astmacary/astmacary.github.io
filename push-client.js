@@ -49,6 +49,12 @@ function createPushClient({ appId, apiBaseUrl, getToken, onChange, isDemo, stand
           sub = null;
         }
       }
+      // Notifications may already be granted from elsewhere in the app (the App Badge prompt grants
+      // the same browser permission). When so, subscribe quietly here instead of asking again —
+      // granting permission a second time isn't needed, so there's nothing to show the person first.
+      if (!sub && Notification.permission === "granted") {
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey(key) });
+      }
       if (sub && Notification.permission === "granted") {
         await request("/push/subscriptions", { action: "upsert", subscription: sub.toJSON() });
         enabled = true;
