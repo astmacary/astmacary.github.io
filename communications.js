@@ -96,6 +96,9 @@ document.addEventListener('change', async e => {
   .comm-pic-preview img{width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line,#ccc)}
   .comm-pic-add{cursor:pointer;display:inline-flex;align-items:center}`; document.head.appendChild(st); })();
 
+// Older app versions already hide pin metadata, so they also hide reactions.
+const REACTION_PARENT = 'pin:reaction:';
+const BOARD_REACTIONS = {up:['👍','Thumbs up'], down:['👎','Thumbs down'], heart:['❤️','Heart']};
 const Comm = {
   selected: 'serve', thread: '', mode: 'board', data: {}, meta: {}, drafts: {}, busy: false, edit: null, meId: '', identityKey: '', extraAdmins: {}, showHidden: false, composeOpen: false, generation: 0, moderationReady: true,
   // Verified in SharePoint: author-only reads, member Contribute, designated leader Design.
@@ -390,6 +393,56 @@ const Comm = {
     finally { this.busy = false; render(); }
   },
   icon(name) { const paths = {forward:'M3 20V4h12M7 8h5m-5 4h3m4-1 6 4-6 4m-3-4h9',edit:'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',delete:'M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6',pin:'m16 3 5 5-4 1-3 5v3l-3-3-7 7 7-7-4-3h3l5-3Z',hide:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12ZM9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0M3 3l18 18'}; return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]}"/></svg>`; },
+  reactionRows(id) {
+    const latest = new Map();
+    for (const event of this.data[this.selected]?.board || []) {
+      const author = event.authorId || event.email;
+      if (event.parent !== REACTION_PARENT + id || !author ||
+          (event.text !== 'clear' && !Object.hasOwn(BOARD_REACTIONS, event.text))) continue;
+      const previous = latest.get(author);
+      if (!previous || event.at > previous.at ||
+          (event.at === previous.at && event.id.localeCompare(previous.id, undefined, {numeric:true}) > 0)) {
+        latest.set(author, event);
+      }
+    }
+    return [...latest.values()].filter(event => event.text !== 'clear');
+  },
+  reactions(r, kind = 'board') {
+    if (kind !== 'board' || r.deleted || this.hiddenRow(r)) return '';
+    const rows = this.reactionRows(r.id);
+    const mine = rows.find(event => this.own(event))?.text;
+    const disabled = this.busy || S.imp ? ' disabled' : '';
+    return `<div class="comm-reactions" role="group" aria-label="Message reactions">${Object.entries(BOARD_REACTIONS).map(([key, [emoji, label]]) => {
+      const count = rows.filter(event => event.text === key).length;
+      return `<button type="button" class="btn" data-comm="react" data-id="${esc(r.id)}" data-reaction="${key}" aria-label="${label}, ${count} ${count === 1 ? 'reaction' : 'reactions'}" aria-pressed="${mine === key}"${disabled}><span aria-hidden="true">${emoji}${count ? ' ' + count : ''}</span></button>`;
+    }).join('')}</div>`;
+  },
+  async react(id, reaction) {
+    if (this.busy || S.imp || this.mode !== 'board' || !S.me || !this.space() ||
+        !Object.hasOwn(BOARD_REACTIONS, reaction)) return;
+    const d = this.data[this.selected];
+    const r = this.board(d).find(post => post.id === id);
+    if (!r || this.hiddenRow(r, d)) return;
+    const base = this.meta[this.selected]?.board;
+    if (!DEMO && !base) return;
+    const current = this.reactionRows(id).find(event => this.own(event))?.text;
+    const fields = {Title:'Board reaction', Body:current === reaction ? 'clear' : reaction, ParentId:REACTION_PARENT + id};
+    this.generation++;
+    this.busy = true;
+    render();
+    try {
+      const event = DEMO
+        ? {id:'demo-reaction-' + (this.reactionSerial = (this.reactionSerial || 0) + 1), at:new Date().toISOString()}
+        : this.normalize(await API.g(base, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({fields})}));
+      d.board.push({...event, parent:fields.ParentId, text:fields.Body,
+        authorId:event.authorId || this.meId, email:event.email || S.me.emails[0]});
+    } catch (_) {
+      toast('Could not save your reaction. Try again.', true);
+    } finally {
+      this.busy = false;
+      render();
+    }
+  },
   actions(r, kind) {
     if (r.deleted) return '';
     const button = (action,label,pressed) => `<button type="button" class="iconbtn" data-comm="${action}" data-kind="${kind}" data-id="${esc(r.id)}" aria-label="${label}" title="${label}"${pressed == null ? '' : ` aria-pressed="${pressed}"`}${this.busy ? ' disabled' : ''}>${this.icon(action)}</button>`;
@@ -462,7 +515,7 @@ const Comm = {
     } catch (_) { toast('Could not save your changes. Your edit is still here. Please try again.',true); }
     finally { this.busy = false; render(); }
   },
-  record(r, kind = 'board') { return `<div class="comm-record"><div class="comm-record-head"><div><b>${esc(r.name)}</b><time class="hint">${esc(r.at ? new Date(r.at).toLocaleString() : '')}</time></div>${this.actions(r,kind)}</div>${kind === 'board' && this.hiddenRow(r) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === kind ? this.editForm(r,kind) : `<div class="comm-text notes">${cleanHtml(r.text)}</div>`}</div>`; },
+  record(r, kind = 'board') { return `<div class="comm-record"><div class="comm-record-head"><div><b>${esc(r.name)}</b><time class="hint">${esc(r.at ? new Date(r.at).toLocaleString() : '')}</time></div>${this.actions(r,kind)}</div>${kind === 'board' && this.hiddenRow(r) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === kind ? this.editForm(r,kind) : `<div class="comm-text notes">${cleanHtml(r.text)}</div>`}${this.reactions(r,kind)}</div>`; },
   view() {
     const spaces = this.spaces(), t = this.space();
     if (!t) return '<h1 class="page">Messages</h1><div class="empty">Your boards will appear after your ministry access is confirmed.</div>';
@@ -481,7 +534,7 @@ const Comm = {
       const composer = `<button type="button" class="btn comm-compose-toggle" data-comm="toggle-compose" aria-expanded="${this.composeOpen}">${this.composeOpen ? '− Hide' : '+ Make a post'}</button>` + (this.composeOpen ? this.form('post') : '');
       content = `<div class="comm-board" data-space="${esc(t.key)}" hidden></div>` + composer + (roots.length ? roots.sort((a,b) => Number(this.pinned(b.id,d)) - Number(this.pinned(a.id,d)) || activity(b).localeCompare(activity(a))).map(r => {
         const replies = this.visibleBoard(d).filter(x => x.parent === r.id), fresh = [r,...replies].some(x => (!seen.has(x.id) || this.newOnVisit.has(x.id)) && !this.own(x));
-        return `<article class="panel pad"><div class="comm-topic-line"><button class="btn comm-topic" data-comm="thread" data-id="${esc(r.id)}">${this.pinned(r.id,d) ? '📌 ' : ''}${esc(r.title)}${fresh ? ' • New' : ''}</button>${this.actions(r,'board')}</div>${this.hiddenRow(r,d) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === 'board' ? this.editForm(r,'board') : ''}<p class="hint">${esc(r.name)} · ${plural(replies.length,'reply','replies')}</p><div class="comm-text notes">${cleanHtml(r.text)}</div></article>`;
+        return `<article class="panel pad"><div class="comm-topic-line"><button class="btn comm-topic" data-comm="thread" data-id="${esc(r.id)}">${this.pinned(r.id,d) ? '📌 ' : ''}${esc(r.title)}${fresh ? ' • New' : ''}</button>${this.actions(r,'board')}</div>${this.hiddenRow(r,d) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === 'board' ? this.editForm(r,'board') : ''}<p class="hint">${esc(r.name)} · ${plural(replies.length,'reply','replies')}</p><div class="comm-text notes">${cleanHtml(r.text)}</div>${this.reactions(r)}</article>`;
       }).join('') : '<div class="empty">No conversations yet. Start the first one.</div>');
     }
     const chips = spaces.map(s => `<button class="chipcheck team team-pill" style="${typeof tvars === 'function' ? tvars(s) : ''}" data-comm="space" data-key="${s.key}" aria-pressed="${s.key === t.key}"><span class="dot" aria-hidden="true"></span>${esc(s.name)}${this.unread(s.key) ? ` <span aria-label="${this.unread(s.key)} unread messages">(${this.unread(s.key)})</span>` : ''}</button>`).join('');
@@ -544,6 +597,7 @@ document.addEventListener('click', async e => {
   }
   if (Comm.busy) return;
   if (action === 'pic-remove') { const l = Comm.pics[b.dataset.key]; const [p] = l ? l.splice(Number(b.dataset.i), 1) : []; if (p) URL.revokeObjectURL(p.url); render(); return; }
+  if (action === 'react') { await Comm.react(b.dataset.id, b.dataset.reaction); return; }
   if (['edit','delete','pin','hide'].includes(action)) { await Comm.act(action,b.dataset.kind,b.dataset.id); return; }
   if (action === 'forward') {
     const r = Comm.data.serve?.board.find(row => row.id === b.dataset.id);
