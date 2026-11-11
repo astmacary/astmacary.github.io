@@ -235,7 +235,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .chip.off .dot{background:transparent;border:1.5px solid var(--t)}
 .calendar-wrap{gap:10px!important}
 .cal{padding:0}
-.cal-head{padding:4px 0}
+.cal-head{padding:4px 10px 0}
 .cal-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
 .cal-head b{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
 .cal-head .iconbtn{border:0;background:var(--surface-2);color:var(--fg)}
@@ -348,7 +348,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "123";   // bump together with CACHE in sw.js
+const APP_VERSION = "124";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -362,7 +362,7 @@ const TEAMS = [
     editors: ["ashley.stmacary@therampchurch.com", "ward.shaquille93@gmail.com", "morgandmosby@gmail.com"] },
   { key: "security", name: "Security", full: "RCI Security", path: "/rci-security/", tl: "#7A1F1F", td: "#EB9393", icon: "shield",
     sitePath: "/sites/RCISecurity", listName: "Security Schedule", announcementsListName: "Announcements",
-    editors: ["delisa.rogers@therampchurch.com", "hal.hanson@therampchurch.com", "halrhansonjr@gmail.com", "lee.gilbert@therampchurch.com", "gilbertwilfred7@gmail.com", "ashley.stmacary@therampchurch.com"] },
+    editors: ["delisa.rogers@therampchurch.com", "hal.hanson@therampchurch.com", "halrhansonjr@gmail.com", "gilbertwilfred7@gmail.com", "ashley.stmacary@therampchurch.com"] },
   { key: "ushers", name: "Ushers & Altar Workers", full: "RCI Ushers & Altar Workers", path: "/rci-ushers/", tl: "#1E5E43", td: "#6CC69C", icon: "door",
     sitePath: "/sites/RCIUsherDept.-UsherSchedule", listName: "Usher Schedule", announcementsListName: "Announcements",
     editors: ["delisa.rogers@therampchurch.com", "ashley.stmacary@therampchurch.com", "tammyrambler@gmail.com"] },
