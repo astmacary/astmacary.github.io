@@ -336,7 +336,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "113";   // bump together with CACHE in sw.js
+const APP_VERSION = "114";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -706,20 +706,25 @@ const API = {
   /* A separate Church Calendar row (distinct from the announcement row itself) for when an announcement
      is posted with an Event Date — so it shows up on the Calendar too, with the flyer and announcement
      text carried over as that event's notes. */
-  async churchAddCalendarEntry({ title, date, notesText, flyerBlob, flyerName }){
+  async churchAddCalendarEntry({ title, date, notesText, flyerBlob, flyerName, flyerValue }){
     const { base, listId, dateCol, hasNotes, hasFlyer } = await this.churchMeta();
     const fields = { Title: (title || "Announcement").slice(0, 120), [dateCol]: date + "T00:00:00" };
     if (hasNotes && notesText) fields.Notes = `<p>${esc(notesText).split("\n").join("<br>")}</p>`;
     const r = await this.g(`${base}/${listId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
     let flyerOk = true;
-    if (flyerBlob && hasFlyer){
+    // flyerValue carries over an already-uploaded flyer (e.g. from editing an existing announcement
+    // that already has one) without re-uploading it; flyerBlob is used for a freshly picked file.
+    if (hasFlyer && (flyerBlob || flyerValue)){
       try {
-        const site = await this.g(`/sites/${CONFIG.siteHost}:${CHURCH_CAL.sitePath}?$select=id`);
-        const flyer = await this.assetImage(site.id, listId, `flyer-${r.id}-${flyerName || "flyer.jpg"}`, flyerBlob);
+        let flyer = flyerValue;
+        if (!flyer && flyerBlob){
+          const site = await this.g(`/sites/${CONFIG.siteHost}:${CHURCH_CAL.sitePath}?$select=id`);
+          flyer = await this.assetImage(site.id, listId, `flyer-${r.id}-${flyerName || "flyer.jpg"}`, flyerBlob);
+        }
         await this.g(`${base}/${listId}/items/${r.id}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ Flyer: flyer }) });
       } catch(e){ flyerOk = false; }
     }
-    return { id: "church-" + r.id, rowId: r.id, date, title: fields.Title, notes: fields.Notes || "", flyerError: !!(flyerBlob && !flyerOk) };
+    return { id: "church-" + r.id, rowId: r.id, date, title: fields.Title, notes: fields.Notes || "", flyerError: !!((flyerBlob || flyerValue) && !flyerOk) };
   },
   async churchAnnouncementPush({ text, until, flyerBlob, flyerName }){
     const { base, listId, dateCol, hasAnn } = await this.churchMeta();
@@ -1457,6 +1462,13 @@ function overlaps(){
 }
 
 /* "You're Serving Today" card — same look as the team apps' Home card, for every team you serve on today. */
+/* Mirrors the row each team app's own Notes page looks up for a date, so the hub's "See Today's Notes"
+   button only appears once there's actually something there to see. */
+function teamNotesRowFor(key, date){
+  if (key === "productions") return (S.teams.productions?.items || []).find(i => i.kind === "assign" && i.role === "Production Director" && i.date === date);
+  if (key === "worship") return (S.teams.worship?.items || []).find(i => i.kind === "other" && i.role === "Coordinator" && i.date === date);
+  return null;
+}
 function todayHero(){
   const t = todayKey();
   const list = myItems().filter(i => i.date === t && (i.confirmed || i.pending)).sort((a, b) => a.team.localeCompare(b.team));
@@ -1470,7 +1482,8 @@ function todayHero(){
       <div class="today-meta">${esc(i.category || "")}${i.call ? ` · Call Time <b>${esc(i.call)}</b>` : ""}</div>
       ${i.pending ? `<div class="today-act"><span class="pill warn">Needs your reply</span><button class="btn accept" data-act="accept" data-id="${esc(i.id)}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Saving…" : "Accept"}</button></div>` : ""}
     </div>`; }).join("")}
-    <div class="today-btns">${teamsToday.map(tm => `<a class="btn today-team" href="${tm.path}?home${DEMO ? "&amp;demo" : ""}">See Today's ${teamsToday.length > 1 ? esc(tm.name) + " " : ""}Team</a>`).join("")}</div></section>`;
+    <div class="today-btns">${teamsToday.map(tm => { const multi = teamsToday.length > 1 ? esc(tm.name) + " " : "";
+      return `<a class="btn today-team" href="${tm.path}?home${DEMO ? "&amp;demo" : ""}">See Today's ${multi}Team</a>${teamNotesRowFor(tm.key, t)?.notes ? `<a class="btn today-team" href="${tm.path}?notes=today${DEMO ? "&amp;demo" : ""}">See Today's ${multi}Notes</a>` : ""}`; }).join("")}</div></section>`;
 }
 function viewHome(){
   const h = new Date().getHours(), part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
@@ -1622,9 +1635,9 @@ function annForm(){
   return `<form class="stack ann-form" id="annForm">
     ${!editing ? `<div class="field ann-destinations"><span class="label">Send to</span><div class="chiprow">${annSendTargets().map(t=>annDestinationPill(t,(d.targets || []).includes(t.key),'ann-target')).join('')}</div></div>` : ''}
     <h3 class="ann-form-h" style="margin-top:0">${editing ? "Edit Announcement" : "New Announcement"}</h3>
+    <div class="field"><label for="ann-date">Event Date <span class="hint">(also adds it to the Church Calendar, with this flyer and text as the notes)</span></label><input id="ann-date" type="date" value="${esc(d.eventDate || "")}"></div>
     <div class="field"><label for="ann-text">Announcement</label><textarea id="ann-text" maxlength="2000" required placeholder="First line is the headline">${esc(d.text || "")}</textarea></div>
     <div class="field"><label for="ann-until">Show Until <span class="hint">(optional)</span></label><input id="ann-until" type="date" min="${todayKey()}" value="${esc(d.until || "")}"></div>
-    ${!editing ? `<div class="field"><label for="ann-date">Event Date <span class="hint">(optional — also adds it to the Church Calendar, with this flyer and text as the notes)</span></label><input id="ann-date" type="date" value="${esc(d.eventDate || "")}"></div>` : ""}
     <div class="field"><span class="label">Flyer <span class="hint">(optional)</span></span>
       ${cur && cur.flyer && !d.file ? (d.removeFlyer
         ? `<span class="flyer-picked"><span>The current flyer will be removed.</span><button type="button" class="linkbtn" data-act="ann-flyer-keep">Keep It</button></span>`
@@ -1949,14 +1962,28 @@ document.addEventListener("submit", async e => {
   if (d.editId != null){
     const [teamKey, id] = d.editId.split(":"), isChurch = teamKey === "church", t = isChurch ? CHURCH_CAL : TEAMS.find(x => x.key === teamKey);
     if (!t || !isEditorOf(t)){ toast("You can't edit that announcement.", true); return; }
+    const cur = myAdminAnnouncements().find(a => team_id(a) === d.editId);
     try {
       const flyer = d.file ? await resizeImage(d.file, 1600) : null;
       const opts = { text: d.text, until: d.until, flyerBlob: flyer, flyerName: d.file?.name, removeFlyer: !!d.removeFlyer };
       const a = DEMO ? { text: d.text, until: d.until } : isChurch ? await API.churchAnnouncementUpdate(id, opts) : await API.updateAnnouncement(t, id, opts);
       if (isChurch) S.church.anns = (S.church.anns || []).map(x => String(x.id) === id ? { ...x, ...a } : x);
       else if (S.teams[t.key]) S.teams[t.key].announcements = (S.teams[t.key].announcements || []).map(x => String(x.id) === id ? { ...x, ...a } : x);
+      let calendarAdded = false;
+      // Lets an announcement that already exists (and may already have a flyer) be retroactively
+      // placed on the Church Calendar by adding an Event Date to it during Edit.
+      if (isChurch && d.eventDate){
+        try {
+          const headline = (d.text.split("\n")[0] || "Announcement").trim();
+          const flyerValue = !flyer && !d.removeFlyer ? (cur && cur.flyer) || "" : "";
+          const entry = DEMO ? { id: "church-" + Date.now(), rowId: "demo-" + Date.now(), date: d.eventDate, title: headline, notes: d.text }
+            : await API.churchAddCalendarEntry({ title: headline, date: d.eventDate, notesText: d.text, flyerBlob: flyer, flyerName: d.file?.name, flyerValue });
+          S.church.items = [...(S.church.items || []), entry];
+          calendarAdded = true;
+        } catch(e){ /* the announcement edit itself still saved fine — the Calendar entry is a bonus */ }
+      }
       S.annEdit = false; S.annDraft = null; S.annConfirm = null; render();
-      toast(a.flyerError ? "Announcement saved, but the flyer couldn't be attached." : "Announcement updated", !!a.flyerError);
+      toast(a.flyerError ? "Announcement saved, but the flyer couldn't be attached." : (calendarAdded ? "Announcement updated and placed on the Church Calendar" : "Announcement updated"), !!a.flyerError);
     } catch(err){ toast("Couldn't save the announcement. " + err.message, true); btn.disabled = false; btn.textContent = "Save Changes"; }
     return;
   }
