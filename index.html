@@ -62,6 +62,7 @@ header.top .wrap{display:flex;align-items:center;gap:12px;padding-top:16px;paddi
 .iconbtn svg{width:18px;height:18px}
 .iconbtn.spin svg{animation:spin 1s linear infinite}
 .me-btn{border:2px solid var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:14px;overflow:visible;width:50px;height:50px}
+.me-col{display:flex;flex-direction:column;align-items:center;gap:4px}
 .me-btn img{width:100%;height:100%;border-radius:50%;object-fit:cover}
 .red-dot{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:var(--stop);border:2px solid var(--surface)}
 
@@ -315,7 +316,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "105";   // bump together with CACHE in sw.js
+const APP_VERSION = "106";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1118,6 +1119,7 @@ async function loadAll(){
   updateBadge(); render();
   void Rosters.load('leadership').then(() => Push.init());
   void Comm.load().then(() => { if (S.phase === 'ready' && !Comm.busy && !document.activeElement?.closest('input,textarea,select,[contenteditable="true"]')) render(); });
+  void ensureRecurringServices();
 }
 
 async function accept(id){
@@ -1132,6 +1134,35 @@ async function accept(id){
   S.busy.delete(id); updateBadge(); render();
 }
 
+/* Keeps the next 8 weeks of recurring services on the Church Calendar: a "Sunday Morning Worship
+   Service" every Sunday, and a "Wednesday Night Bible Study" every Wednesday unless that Wednesday
+   already has a "No Service" entry. Runs quietly after the calendar loads, only for someone who can
+   edit the Church Calendar (it writes new rows), and only adds what's missing for a date/title pair
+   that isn't already there — it never touches or removes anything already set up for that date. */
+const RECURRING_SERVICES = [
+  { day: 0, title: "Sunday Morning Worship Service", skipIfNoService: false },
+  { day: 3, title: "Wednesday Night Bible Study", skipIfNoService: true }
+];
+async function ensureRecurringServices(){
+  if (DEMO || !isEditorOf(CHURCH_CAL)) return;
+  const have = new Set((S.church.items || []).map(i => i.date + "|" + lc(i.title)));
+  const noService = new Set((S.church.items || []).filter(i => lc(i.title) === "no service").map(i => i.date));
+  const today = todayKey();
+  let added = false;
+  for (let n = 0; n <= 56; n++){
+    const d = addDays(today, n), dow = fromKey(d).getDay();
+    const r = RECURRING_SERVICES.find(x => x.day === dow); if (!r) continue;
+    if (r.skipIfNoService && noService.has(d)) continue;
+    if (have.has(d + "|" + lc(r.title))) continue;
+    try {
+      const e = await API.churchCreate(r.title, d);
+      S.church.items = [...S.church.items, e];
+      have.add(d + "|" + lc(r.title));
+      added = true;
+    } catch(e){ console.warn("Couldn't add recurring service", r.title, d, e); }
+  }
+  if (added) render();
+}
 /* ---------- Church calendar: add / edit / delete / no-service (editors only) ---------- */
 async function churchSave(){
   const f = S.cal.form; if (!f || S.cal.busy) return;
@@ -1617,8 +1648,9 @@ function render(){
   const header = `<header class="top"><div class="wrap"><button class="brand" data-act="tab" data-view="home" aria-label="RCI Serve, go to Home"><img class="wm wm-light" src="/icons/wordmark.png?v=${APP_VERSION}" alt=""><img class="wm wm-dark" src="/icons/wordmark-dark.png?v=${APP_VERSION}" alt=""></button>
     ${S.phase === "ready" ? `<button class="iconbtn${S.loading ? " spin" : ""}" data-act="refresh" aria-label="Refresh">${ICON.refresh}</button>` : ""}
     ${themeBtn}
-    ${S.phase === "ready" ? `
-    <button class="iconbtn me-btn" data-act="tab" data-view="profile" aria-label="Profile${n ? `, ${n} pending request${n > 1 ? "s" : ""}` : ""}">${Rosters.ownProfile().photo ? `<img src="${Rosters.ownProfile().photo}" alt="">` : esc(initials(Rosters.ownProfile().name))}${n ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div></header>`;
+    ${S.phase === "ready" ? `<div class="me-col">
+    <button class="iconbtn me-btn" data-act="tab" data-view="profile" aria-label="Profile${n ? `, ${n} pending request${n > 1 ? "s" : ""}` : ""}">${Rosters.ownProfile().photo ? `<img src="${Rosters.ownProfile().photo}" alt="">` : esc(initials(Rosters.ownProfile().name))}${n ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>
+    ${S.view === "home" && isAnyAdmin() ? `<button class="iconbtn sm" data-act="today-notes" aria-label="Today's Service Notes" title="Today's Service Notes">${ICON.notes}</button>` : ""}</div>` : ""}</div></header>`;
   if (S.phase !== "ready"){
     let body = "";
     if (S.phase === "boot") body = `<div class="center"><p role="status">Opening RCI Serve…</p></div>`;
@@ -1765,6 +1797,16 @@ document.addEventListener("click", async e => {
     S.annConfirm = null; render();
   }
   else if (act === "ann-target"){ const k = b.dataset.k; annDraftSave(); const f = S.annDraft; f.targets = f.targets || []; const i = f.targets.indexOf(k); i >= 0 ? f.targets.splice(i, 1) : f.targets.push(k); render(); }
+  else if (act === "today-notes"){
+    // The Home-page shortcut: opens today's Service Notes directly, same page as the Calendar's own
+    // notes icon, skipping a "No Service" day since there's nothing to take notes on.
+    const row = (S.church.items || []).find(i => i.date === todayKey() && lc(i.title) !== "no service");
+    if (!row){ toast("No Church Calendar event today, so there's no Service Notes yet."); return; }
+    S.notesBack = S.view === "notes" ? S.notesBack : S.view;
+    S.notesPage = { rowId: row.rowId, date: row.date, editing: false, body: null, targets: [], busy: false };
+    S.view = "notes"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){}
+    render(); window.scrollTo(0, 0);
+  }
   else if (act === "notes" || act === "notes-new"){
     // Opens the dedicated Service Notes page (same role as each team app's own Notes page) —
     // reached from Next 7 Days or from the Calendar day panel's notes icon.
