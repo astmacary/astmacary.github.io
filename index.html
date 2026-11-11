@@ -80,9 +80,13 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .sec h2{margin:0;font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
 .sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .svc-notes-h{font-size:24px}
-.event-info-row{display:flex;gap:14px;align-items:flex-start}
+.event-info-row{display:flex;gap:14px;align-items:stretch}
 .event-info-row .panel.notes{flex:1;min-width:0;margin:0}
-.event-info-row .flyer-col{flex:none}
+.event-info-row .flyer-col{flex:none;display:flex}
+.event-info-row .flyer-col .flyer{width:auto;max-width:140px;height:100%}
+.event-info-row .flyer-col .flyer img{width:100%;height:100%;object-fit:cover;max-height:none}
+.notes-date-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.notes-date-row .notes-date{margin:0}
 .sec-head .acts{display:flex;flex-direction:row;gap:8px;flex:none}
 .iconbtn.sm{width:32px;height:32px}
 .iconbtn.sm svg{width:16px;height:16px}
@@ -234,6 +238,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .cal-head b{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase}
 .cal-head .iconbtn{border:0;background:var(--surface-2);color:var(--fg)}
+.cal-today-row{display:flex;justify-content:center;margin-bottom:8px}
 .dow,.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
 .dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;padding-bottom:4px}
 .day{height:46px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:10px;border:0;background:transparent;font-size:14px;font-weight:500;padding:0}
@@ -342,7 +347,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "119";   // bump together with CACHE in sw.js
+const APP_VERSION = "120";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -442,7 +447,9 @@ const ICON = {
   image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
-  team: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.3 3.1-6 7-6s7 2.7 7 6"/><circle cx="17" cy="8" r="2.5"/><path d="M16.5 14.2c2.6.5 4.5 2.6 4.5 5.1"/></svg>'
+  team: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3.3 3.1-6 7-6s7 2.7 7 6"/><circle cx="17" cy="8" r="2.5"/><path d="M16.5 14.2c2.6.5 4.5 2.6 4.5 5.1"/></svg>',
+  chevronUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>',
+  chevronDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>'
 };
 /* Shrinks an image client-side before upload (same as the team apps' own flyer picker). */
 async function resizeImage(file, maxSide){
@@ -1035,6 +1042,16 @@ function toggleFlyerCollapsed(id){
   const k = String(id); list.has(k) ? list.delete(k) : list.add(k);
   try { localStorage.setItem("rci-serve:flyer-collapsed", JSON.stringify([...list])); } catch(e){}
 }
+/* Same idea, but for an RCI Leader hiding the announcement info (flyer + public text) on a Church Calendar
+   event's own page, so they can jump straight to Service Notes without scrolling past it each time. */
+function annInfoCollapsed(id){
+  try { return JSON.parse(localStorage.getItem("rci-serve:ann-info-collapsed") || "[]").includes(String(id)); } catch(e){ return false; }
+}
+function toggleAnnInfoCollapsed(id){
+  let list; try { list = new Set(JSON.parse(localStorage.getItem("rci-serve:ann-info-collapsed") || "[]")); } catch(e){ list = new Set(); }
+  const k = String(id); list.has(k) ? list.delete(k) : list.add(k);
+  try { localStorage.setItem("rci-serve:ann-info-collapsed", JSON.stringify([...list])); } catch(e){}
+}
 function markNotesSeen(rowId, notes){
   if (!rowId) return;
   S.notesSeen[rowId] = notes || "";
@@ -1438,13 +1455,18 @@ function churchRow(i, editable){
 function viewChurchEventInfo(){
   const p = S.churchEventPage; if (!p) return `<div class="empty">No event selected.</div>`;
   const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId));
+  const isLeader = Rosters.isLeadershipMember();
+  const collapsed = isLeader && annInfoCollapsed(p.rowId);
+  // Only an RCI Leader can collapse the announcement info — it's their shortcut past it to Service Notes, not a
+  // way for anyone else to hide the public details.
+  const collapseBtn = isLeader ? `<button class="iconbtn sm" data-act="ann-info-collapse" data-id="${esc(p.rowId)}" aria-label="${collapsed ? "Show" : "Hide"} announcement info" aria-pressed="${collapsed}" title="${collapsed ? "Show" : "Hide"} announcement info">${collapsed ? ICON.chevronDown : ICON.chevronUp}</button>` : "";
   const head = `<div class="page-h"><button class="back" data-act="church-event-back">${ICON.prev}Back</button></div>
     <div class="page-h"><h1>${esc(row?.title || "Event")}</h1></div>
-    <p class="sub notes-date">${esc(fmtDay(p.date))}</p>`;
+    <div class="notes-date-row"><p class="sub notes-date">${esc(fmtDay(p.date))}</p>${collapseBtn}</div>`;
   const flyerHtml = row?.flyer ? `<div class="flyer-col"><button class="flyer" data-act="flyer-open" data-flyer="church-event:${esc(row.rowId)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button></div>` : "";
   const body = row?.notes ? `<div class="panel notes">${cleanHtml(row.notes)}</div>` : "";
-  const infoRow = (body || flyerHtml) ? `<div class="event-info-row">${body}${flyerHtml}</div>` : "";
-  const svc = Rosters.isLeadershipMember() ? svcNotesBlock(row, p) : "";
+  const infoRow = (body || flyerHtml) && !collapsed ? `<div class="event-info-row">${body}${flyerHtml}</div>` : "";
+  const svc = isLeader ? svcNotesBlock(row, p) : "";
   return `${head}${infoRow}${svc}`;
 }
 /* The RCI-Leaders-only Service Notes container embedded on the announcement info page above — same role
@@ -1643,6 +1665,7 @@ function viewCalendar(){
   return `<h1 class="page">My Calendar</h1>
     ${chips.length > 1 ? `<div class="chips" role="group" aria-label="Show calendars">${chips.map(t => `<button class="chip team team-pill${off.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="filter" data-k="${t.key}" aria-pressed="${!off.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
     <section class="panel cal"><div class="cal-head"><button class="iconbtn" data-act="month" data-d="-1" aria-label="Previous month">${ICON.prev}</button><b>${esc(label)}</b><button class="iconbtn" data-act="month" data-d="1" aria-label="Next month">${ICON.next}</button></div>
+      <div class="cal-today-row"><button class="btn sm" data-act="cal-today">Today</button></div>
       <div class="dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
       <div class="days">${cells}</div></section>
     <section class="sec"><div class="sec-head"><h2>${esc(fmtDay(sel))}</h2>${canEditChurch ? `<div class="acts">
@@ -1903,6 +1926,8 @@ document.addEventListener("click", async e => {
   else if (act === "install" && deferredInstall){ deferredInstall.prompt(); deferredInstall = null; render(); }
   else if (act === "allow-badge"){ try { await Notification.requestPermission(); } catch(_){} updateBadge(); render(); }
   else if (act === "day"){ S.cal.sel = b.dataset.k; render(); }
+  else if (act === "cal-today"){ S.cal.sel = todayKey(); S.cal.month = todayKey().slice(0, 7); render(); }
+  else if (act === "ann-info-collapse"){ toggleAnnInfoCollapsed(b.dataset.id); render(); }
   else if (act === "month"){ const [y, m] = S.cal.month.split("-").map(Number), d = new Date(y, m - 1 + Number(b.dataset.d), 1); S.cal.month = keyOf(d).slice(0, 7); render(); }
   else if (act === "filter"){ const k = b.dataset.k; S.cal.off.has(k) ? S.cal.off.delete(k) : S.cal.off.add(k); saveFilter("cal", S.cal.off); render(); }
   else if (act === "ann-filter"){ const k = b.dataset.k; S.annOff.has(k) ? S.annOff.delete(k) : S.annOff.add(k); saveFilter("ann", S.annOff); render(); }
