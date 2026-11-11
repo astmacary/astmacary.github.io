@@ -73,6 +73,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .page-h{display:flex;align-items:center;gap:10px}
 .page-h h1{font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:.02em;margin:0;text-wrap:balance}
 .back{background:none;border:none;color:var(--muted);display:flex;align-items:center;gap:4px;padding:6px 8px 6px 0;font-weight:600;font-size:15px}
+.back svg{width:18px;height:18px;flex:none}
 .sub{color:var(--muted);margin:4px 0 0}
 .notes-date{margin-top:-12px;font-size:19px;font-weight:600;color:var(--fg)}
 .sec{display:flex;flex-direction:column;gap:6px}
@@ -337,7 +338,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "117";   // bump together with CACHE in sw.js
+const APP_VERSION = "118";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
