@@ -306,7 +306,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <script src="/communications.js?v=105"></script>
 <script src="/push-config.js?v=95"></script>
 <script src="/push-client.js?v=96"></script>
-<script src="/rosters.js?v=67"></script>
+<script src="/rosters.js?v=68"></script>
 <script src="/announcement-sharing.js?v=47"></script>
 <script>
 /* ============================================================
@@ -317,7 +317,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "108";   // bump together with CACHE in sw.js
+const APP_VERSION = "109";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1392,7 +1392,7 @@ function viewHome(){
   let out = `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div class="kicker">${esc(new Date().toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"}))}</div>
     <h1 class="greet">Good ${part}, ${esc(firstOf(S.me.name) || "friend")}</h1>
     ${S.loading ? `<div class="updating" style="margin-top:6px"><span class="spinner"></span>Checking your teams…</div>` : ""}</div>
-    ${Rosters.isLeadershipMember() ? `<button class="iconbtn lg" data-act="today-notes" aria-label="Today's Service Notes" title="Today's Service Notes">${ICON.notes}</button>` : ""}</div>`;
+    ${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes" title="Today's Service Notes">${ICON.notes}</button>` : ""}</div>`;
   out += badgeAsk();
   if (!teams.length && !isEditorOf(CHURCH_CAL) && !S.loading && !MINISTRIES.some(m => S.ministries?.[m.key]?.member)){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
