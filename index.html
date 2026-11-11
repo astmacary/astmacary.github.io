@@ -127,6 +127,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 
 /* rows */
 .row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--surface-2);text-decoration:none;color:var(--fg)}
+.row-clickable{cursor:pointer}
 .row:last-child{border-bottom:0}
 .bar{width:4px;align-self:stretch;border-radius:2px;background:var(--t);flex:none}
 .row .info{flex:1;min-width:0}
@@ -336,7 +337,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "114";   // bump together with CACHE in sw.js
+const APP_VERSION = "115";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -699,7 +700,7 @@ const API = {
       const annText = (r.fields.Announcements || "").trim();
       if (annText){ anns.push({ id: Number(r.id), team: "church", created: r.createdDateTime || "", text: annText, until: spDate(r.fields.ShowUntil), flyer: r.fields.Flyer || "" }); continue; }
       const date = spDate(r.fields[dateCol]); if (!date) continue;
-      events.push({ id: "church-" + r.id, rowId: r.id, date, title: r.fields.Title || "", notes: r.fields.Notes || "" });
+      events.push({ id: "church-" + r.id, rowId: r.id, date, title: r.fields.Title || "", notes: r.fields.Notes || "", flyer: r.fields.Flyer || "" });
     }
     return { events, anns };
   },
@@ -1386,17 +1387,18 @@ function payrollUnscheduledRow(name){
 }
 /* A church-wide calendar event — just a title and date, no role/status, and nothing to link into.
    "No Service" entries (added via the red-X toggle) get the stop color and a ban icon instead of the usual gold bar. */
-function churchRow(i, editable, canViewNotes = editable){
+function churchRow(i, editable){
   const noService = lc(i.title) === "no service";
   const style = noService ? `--tl:var(--stop);--td:var(--stop)` : tvars(CHURCH_CAL);
-  const canNotes = canViewNotes && !noService;
-  return `<div class="row team" style="${style}"><span class="bar"></span>
+  // Anyone can open the details (notes/flyer) behind this event; an editor can also open it to add
+  // notes to a currently-empty event, so an editor's row stays clickable even with nothing to show yet.
+  const clickable = !noService && (editable || i.notes || i.flyer);
+  return `<div class="row team${clickable ? " row-clickable" : ""}" style="${style}"${clickable ? ` data-act="notes" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" role="button" tabindex="0" aria-label="View details for ${esc(i.title || "Event")}"` : ""}><span class="bar"></span>
     ${noService ? `<span style="display:grid;place-items:center;width:28px;height:28px;color:var(--stop);flex:none">${ICON.ban}</span>` : ""}
     <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small></div>
-    ${editable || canNotes ? `<div class="row-acts">
-      ${canNotes ? `<button class="iconbtn sm${i.notes ? " edit-on" : ""}" data-act="notes" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" aria-label="Service Notes">${ICON.notes}</button>` : ""}
-      ${editable ? `<button class="iconbtn sm" data-act="church-edit" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" data-title="${esc(i.title)}" aria-label="Edit">${ICON.edit}</button>
-      <button class="iconbtn sm" data-act="church-delete" data-id="${esc(i.rowId)}" aria-label="Delete">${ICON.trash}</button>` : ""}</div>` : ""}</div>`;
+    ${editable ? `<div class="row-acts">
+      <button class="iconbtn sm" data-act="church-edit" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" data-title="${esc(i.title)}" aria-label="Edit">${ICON.edit}</button>
+      <button class="iconbtn sm" data-act="church-delete" data-id="${esc(i.rowId)}" aria-label="Delete">${ICON.trash}</button></div>` : ""}</div>`;
 }
 /* A dedicated Service Notes page — same role as Production's own Notes page: anyone can view it (if they can
    see the church event at all), only a Church Calendar editor can edit/save it. Reached via S.view === "notes". */
@@ -1419,8 +1421,9 @@ function viewServiceNotes(){
       <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Service Notes">${body || ""}</div>
       <div class="cform-acts"><button class="btn primary" data-act="notes-save" id="notes-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save Notes"}</button><button class="btn" data-act="notes-cancel-edit" ${busy ? "disabled" : ""}>Cancel</button></div>`;
   }
+  const flyerHtml = row?.flyer ? `<div class="ann-fly"><button class="flyer" data-act="flyer-open" data-flyer="church-event:${esc(row.rowId)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button></div>` : "";
   const empty = canEdit ? "No Service Notes for this date yet. Tap the pencil to add them." : "No Service Notes for this date yet.";
-  return `${head}${body ? `<div class="panel notes">${cleanHtml(body)}</div>` : `<div class="empty">${esc(empty)}</div>`}`;
+  return `${head}${flyerHtml}${body ? `<div class="panel notes">${cleanHtml(body)}</div>` : (row?.flyer ? "" : `<div class="empty">${esc(empty)}</div>`)}`;
 }
 async function notesSave(){
   const p = S.notesPage; if (!p || p.busy) return;
@@ -1524,7 +1527,7 @@ function viewHome(){
     const church = admin ? (S.church.items || []).filter(e => e.date >= todayKey() && e.date <= wk).map(e => ({ ...e, team: "church", kind: "church" })) : [];
     const week = [...mine, ...church].filter(i => !S.weekOff.has(i.team)).sort((a, b) => a.date.localeCompare(b.date) || a.team.localeCompare(b.team));
     const byDate = {}; week.forEach(i => { (byDate[i.date] = byDate[i.date] || []).push(i); });
-    const grouped = Object.keys(byDate).sort().map(d => `<div class="day-sep">${esc(fmtDay(d))}</div><div class="panel">${byDate[d].map(i => i.kind === "church" ? churchRow(i, isEditorOf(CHURCH_CAL), isAnyAdmin()) : weekCue(i)).join("")}</div>`).join("");
+    const grouped = Object.keys(byDate).sort().map(d => `<div class="day-sep">${esc(fmtDay(d))}</div><div class="panel">${byDate[d].map(i => i.kind === "church" ? churchRow(i, isEditorOf(CHURCH_CAL)) : weekCue(i)).join("")}</div>`).join("");
     out += `<section class="sec"><h2>Next 7 Days</h2>
       ${weekChips.length > 1 ? `<div class="chips" role="group" aria-label="Show next 7 days">${weekChips.map(t => `<button class="chip team team-pill${S.weekOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="week-filter" data-k="${t.key}" aria-pressed="${!S.weekOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
       ${week.length ? `<div class="list">${grouped}</div>` : `<div class="empty">${reqs.length ? "Nothing confirmed this week yet." : "Nothing on your schedule this week."}</div>`}</section>`;
@@ -1604,7 +1607,7 @@ function viewCalendar(){
         <button class="iconbtn sm" data-act="church-add" aria-label="Add a church event">${ICON.plus}</button>
         <button class="iconbtn sm danger" data-act="church-noservice" aria-label="Mark no service this day">${ICON.ban}</button></div>` : ""}</div>
       ${f ? churchForm(f) : ""}
-      <div class="panel">${dayList.length ? dayList.map(i => i.team === "church" ? churchRow(i, canEditChurch, isAnyAdmin()) : MINISTRIES.some(x => x.key === i.team) ? ministryRow(i) : itemRow(i, false)).join("") : `<div class="empty">No events scheduled.</div>`}</div>
+      <div class="panel">${dayList.length ? dayList.map(i => i.team === "church" ? churchRow(i, canEditChurch) : MINISTRIES.some(x => x.key === i.team) ? ministryRow(i) : itemRow(i, false)).join("") : `<div class="empty">No events scheduled.</div>`}</div>
       <p class="hint">${canEditChurch ? "Shows your own assignments on every team, plus the Church calendar." : "Shows your own assignments on every team."} Each team's Calendar shows the whole team.</p></section>`;
 }
 /* Everyone sees announcements from the teams they're ON, plus Church (it's for everyone). Only admins can edit, and
@@ -1780,7 +1783,17 @@ function render(){
 function hydrateFlyers(){
   document.querySelectorAll("[data-flyer]").forEach(async el => {
     const [teamKey, id] = el.dataset.flyer.split(":");
-    const t = teamOf(teamKey), a = teamKey === "church" ? (S.church.anns || []).find(x => String(x.id) === id) : (S.teams[teamKey]?.announcements || []).find(x => String(x.id) === id);
+    // "church-event" is a standalone Church Calendar entry (from churchAddCalendarEntry), not an
+    // announcement row — it lives in the same list, so the same API.flyer() cache/lookup applies,
+    // just keyed off the Calendar item's rowId instead of an announcement's id.
+    let t, a;
+    if (teamKey === "church-event"){
+      const row = (S.church.items || []).find(x => String(x.rowId) === id);
+      t = CHURCH_CAL; a = row ? { id: row.rowId, flyer: row.flyer, text: row.title } : null;
+    } else {
+      t = teamOf(teamKey);
+      a = teamKey === "church" ? (S.church.anns || []).find(x => String(x.id) === id) : (S.teams[teamKey]?.announcements || []).find(x => String(x.id) === id);
+    }
     const url = !a ? null : DEMO ? null : await API.flyer(t, a);
     if (!el.isConnected) return;
     if (!url){ el.remove(); return; }
