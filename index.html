@@ -315,7 +315,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "97";   // bump together with CACHE in sw.js
+const APP_VERSION = "98";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -339,7 +339,7 @@ const TEAMS = [
 ];
 /* Ministry apps (not serving teams: no schedule or requests). Shown to people on that ministry's roster. */
 const MINISTRIES = [
-  { key: "marriage", name: "Marriage", full: "RCI Marriage", path: "/rci-marriage/", tl: "#0A2440", td: "#D4A66E", icon: "rings",
+  { key: "marriage", name: "Marriage", full: "RCI Marriage", path: "/rci-marriage/", tl: "#9C3D5A", td: "#E59AB3", icon: "rings",
     sitePath: "/sites/RCIMarriage", listName: "Couples" }
 ];
 /* The church-wide calendar (not a team — no membership, no requests). Listed first in the calendar's chip row. */
@@ -370,7 +370,7 @@ const lc = s => String(s || "").toLowerCase().trim();
 const filled = v => !!v && String(v).trim() !== "" && String(v).trim() !== "--";
 const initials = n => (n||"?").split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join("");
 const firstOf = n => (n||"").trim().split(/\s+/)[0] || "";
-const teamOf = k => k === "church" ? CHURCH_CAL : TEAMS.find(t => t.key === k);
+const teamOf = k => k === "church" ? CHURCH_CAL : TEAMS.find(t => t.key === k) || MINISTRIES.find(m => m.key === k);
 const tvars = t => `--tl:${t.tl};--td:${t.td}`;
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 /* The Announcements column can hold several lines; SharePoint may return it as plain text or simple HTML. Same as each team app. */
@@ -585,7 +585,20 @@ const API = {
       const site = await this.g(`/sites/${CONFIG.siteHost}:${m.sitePath}?$select=id`);
       const rows = await this.all(`/sites/${site.id}/lists/${encodeURIComponent(m.listName)}/items?$expand=fields($select=Spouse1Email,Spouse2Email)&$top=500`);
       const mine = new Set(S.me?.emails || []);
-      return { member: rows.some(r => [r.fields?.Spouse1Email, r.fields?.Spouse2Email].some(e => e && mine.has(lc(e)))), count: rows.length };
+      const member = rows.some(r => [r.fields?.Spouse1Email, r.fields?.Spouse2Email].some(e => e && mine.has(lc(e))));
+      let events = [];
+      if (member || Rosters.isHubAdmin(S.me || {})) try {
+        // Marriage gatherings: Monthly Content rows with Kind = Gathering (end date, if any, in AppData).
+        const content = await this.all(`/sites/${site.id}/lists/${encodeURIComponent("Monthly Content")}/items?$expand=fields($select=Title,Kind,PromptDate,AppData)&$top=500`);
+        const ymd = /^\d{4}-\d{2}-\d{2}$/;
+        content.forEach(r => {
+          const f = r.fields || {}; if (lc(f.Kind || "") !== "gathering" || !f.PromptDate) return;
+          let extra = {}; try { extra = JSON.parse(f.AppData || "{}") || {}; } catch(_){}
+          const start = String(f.PromptDate).slice(0, 10), end = ymd.test(String(extra.end || "")) && extra.end > start ? extra.end : start;
+          for (let d = start; d <= end; d = addDays(d, 1)) events.push({ team: m.key, date: d, title: String(f.Title || "Marriage gathering"), when: extra.when || "" });
+        });
+      } catch(e){ console.warn("Marriage gatherings", e); }
+      return { member, count: rows.length, events };
     } catch(e){ return { member: false, noAccess: true }; }
   },
   async team(t){
@@ -1244,6 +1257,11 @@ function teamActs(t){
 }
 /* Calendar day panel row — bar + info, with the status pill sitting above the Notes/Team/Decline icon
    buttons on the right (small enough that it doesn't grow the row), linking out to that team's own app. */
+function ministryRow(i){
+  const t = teamOf(i.team);
+  return `<a class="row team" style="${tvars(t)};text-decoration:none;color:inherit" href="${t.path}"><span class="bar"></span>
+    <div class="info"><span class="tlabel">${esc(t.name)}</span><b>${esc(i.title)}</b>${i.when ? `<small>${esc(i.when)}</small>` : ""}</div></a>`;
+}
 function itemRow(i, showDate=true){
   const t = teamOf(i.team), today = i.date === todayKey();
   return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
@@ -1422,12 +1440,14 @@ function viewHome(){
 function viewCalendar(){
   if (!S.cal.sel){ const first = upcoming()[0]; S.cal.sel = first && first.date <= addDays(todayKey(), 31) ? first.date : todayKey(); }
   const teams = myTeams(), off = S.cal.off;
-  const chips = [CHURCH_CAL, ...teams];
+  const mins = MINISTRIES.filter(x => (S.ministries?.[x.key]?.events || []).length);
+  const chips = [CHURCH_CAL, ...teams, ...mins];
   const m = S.cal.month || (S.cal.sel || todayKey()).slice(0, 7);
   S.cal.month = m;
   const [y, mo] = m.split("-").map(Number), first = new Date(y, mo-1, 1), daysIn = new Date(y, mo, 0).getDate();
   const churchItems = off.has("church") ? [] : (S.church.items || []).map(e => ({ team: "church", date: e.date, title: e.title, id: e.id, rowId: e.rowId, notes: e.notes }));
-  const items = myItems().filter(i => !off.has(i.team)).concat(churchItems);
+  const minItems = mins.filter(x => !off.has(x.key)).flatMap(x => S.ministries[x.key].events);
+  const items = myItems().filter(i => !off.has(i.team)).concat(churchItems, minItems);
   const by = {}; items.forEach(i => { (by[i.date] = by[i.date] || []).push(i); });
   let cells = "";
   for (let n = 0; n < first.getDay(); n++) cells += `<span class="day blank"></span>`;
@@ -1450,7 +1470,7 @@ function viewCalendar(){
         <button class="iconbtn sm" data-act="church-add" aria-label="Add a church event">${ICON.plus}</button>
         <button class="iconbtn sm danger" data-act="church-noservice" aria-label="Mark no service this day">${ICON.ban}</button></div>` : ""}</div>
       ${f ? churchForm(f) : ""}
-      <div class="panel">${dayList.length ? dayList.map(i => i.team === "church" ? churchRow(i, canEditChurch, isAnyAdmin()) : itemRow(i, false)).join("") : `<div class="empty">No events scheduled.</div>`}</div>
+      <div class="panel">${dayList.length ? dayList.map(i => i.team === "church" ? churchRow(i, canEditChurch, isAnyAdmin()) : MINISTRIES.some(x => x.key === i.team) ? ministryRow(i) : itemRow(i, false)).join("") : `<div class="empty">No events scheduled.</div>`}</div>
       <p class="hint">${canEditChurch ? "Shows your own assignments on every team, plus the Church calendar." : "Shows your own assignments on every team."} Each team's Calendar shows the whole team.</p></section>`;
 }
 /* Everyone sees announcements from the teams they're ON, plus Church (it's for everyone). Only admins can edit, and
