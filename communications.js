@@ -30,7 +30,7 @@ function commToolbar(target){
 const commRanges = {};
 document.addEventListener("selectionchange", () => {
   const sel = getSelection(); if (!sel.rangeCount) return;
-  ["comm-body","comm-edit-body"].forEach(id => { const ed = document.getElementById(id); if (ed && ed.contains(sel.anchorNode)) commRanges[id] = sel.getRangeAt(0).cloneRange(); });
+  ["comm-body","comm-edit-body","comm-blast-body"].forEach(id => { const ed = document.getElementById(id); if (ed && ed.contains(sel.anchorNode)) commRanges[id] = sel.getRangeAt(0).cloneRange(); });
 });
 document.addEventListener("mousedown", e => { if (e.target.closest(".tool")) e.preventDefault(); });
 /* Plain-text rendering of a sanitized message body, for length checks and the truncated board-preview snippet. */
@@ -531,7 +531,7 @@ const Comm = {
     } else {
       const roots = this.roots(d), seen = this.markShown(t.key, roots);
       const activity = r => this.board(d).filter(x => x.id === r.id || x.parent === r.id).reduce((at,x) => x.at > at ? x.at : at,r.at);
-      const composer = `<button type="button" class="btn comm-compose-toggle" data-comm="toggle-compose" aria-expanded="${this.composeOpen}">${this.composeOpen ? '− Hide' : '+ Make a post'}</button>` + (this.composeOpen ? this.form('post') : '');
+      const composer = CommBlast.view() + `<button type="button" class="btn comm-compose-toggle" data-comm="toggle-compose" aria-expanded="${this.composeOpen}">${this.composeOpen ? '− Hide' : '+ Make a post'}</button>` + (this.composeOpen ? this.form('post') : '');
       content = `<div class="comm-board" data-space="${esc(t.key)}" hidden></div>` + composer + (roots.length ? roots.sort((a,b) => Number(this.pinned(b.id,d)) - Number(this.pinned(a.id,d)) || activity(b).localeCompare(activity(a))).map(r => {
         const replies = this.visibleBoard(d).filter(x => x.parent === r.id), fresh = [r,...replies].some(x => (!seen.has(x.id) || this.newOnVisit.has(x.id)) && !this.own(x));
         return `<article class="panel pad"><div class="comm-topic-line"><button class="btn comm-topic" data-comm="thread" data-id="${esc(r.id)}">${this.pinned(r.id,d) ? '📌 ' : ''}${esc(r.title)}${fresh ? ' • New' : ''}</button>${this.actions(r,'board')}</div>${this.hiddenRow(r,d) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === 'board' ? this.editForm(r,'board') : ''}<p class="hint">${esc(r.name)} · ${plural(replies.length,'reply','replies')}</p><div class="comm-text notes">${cleanHtml(r.text)}</div>${this.reactions(r)}</article>`;
@@ -614,7 +614,7 @@ document.addEventListener('click', async e => {
   if (action === 'space') { if (!Comm.space(b.dataset.key)) return; Comm.selected = b.dataset.key; Comm.thread = ''; Comm.edit = null; Comm.showHidden = false; Comm.composeOpen = false; }
   if (action === 'mode') { Comm.mode = b.dataset.mode; Comm.thread = ''; Comm.edit = null; Comm.showHidden = false; Comm.composeOpen = false; }
   if (action === 'back') { Comm.thread = ''; Comm.composeOpen = false; }
-  if (action === 'toggle-compose') Comm.composeOpen = !Comm.composeOpen;
+  if (action === 'toggle-compose') { Comm.composeOpen = !Comm.composeOpen; if (Comm.composeOpen) CommBlast.open = false; }
   if (action === 'thread') { Comm.thread = b.dataset.id; Comm.markThread(); }
   if (action === 'refresh') { Comm.edit = null; b.disabled = true; await Comm.load(); }
   render();
@@ -623,14 +623,154 @@ document.addEventListener('click', async e => {
 // Keep badges current while the app is open; do not interrupt an active composer.
 let communicationRefreshBusy = false;
 async function refreshCommunications(){
-  if (DEMO || S.phase !== 'ready' || S.loading || Comm.busy || Comm.forward || communicationRefreshBusy || document.hidden || document.activeElement?.closest('.comm-form,.comm-edit-form')) return;
+  if (DEMO || S.phase !== 'ready' || S.loading || Comm.busy || Comm.forward || communicationRefreshBusy || document.hidden || document.activeElement?.closest('.comm-form,.comm-edit-form,.comm-blast-form')) return;
   communicationRefreshBusy = true;
   try {
     await Comm.load();
     if (S.view === 'messages' && Comm.mode === 'board' && Comm.thread) Comm.markThread();
-    if (S.phase === 'ready' && !Comm.busy && !Comm.forward && !document.activeElement?.closest('.comm-form,.comm-edit-form')) render();
+    if (S.phase === 'ready' && !Comm.busy && !Comm.forward && !document.activeElement?.closest('.comm-form,.comm-edit-form,.comm-blast-form')) render();
   } catch (_) { /* Retry on the next interval; list-specific failures are shown in Messages. */ }
   finally { communicationRefreshBusy = false; }
 }
 setInterval(refreshCommunications, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshCommunications(); });
+
+/* ---------- Email All Team Members (admins, Messages page) ----------
+   Admins of the selected space can send one email to everyone on that team. Everyone goes in BCC,
+   so people don't see each other's addresses; the admin is the To address and gets a copy.
+   Recipients: team apps use teamEmailPeople() from index.html (the same people as the Team Directory);
+   the RCI Serve hub uses its rosters (RCI Serve board = Leadership roster).
+   Sending: Microsoft Graph /me/sendMail from the admin's own mailbox (asks once for Mail.Send consent).
+   If that isn't possible (for example a Gmail guest account with no church mailbox), "Open in My Email App"
+   opens the phone's mail app with everyone in BCC, and "Copy Addresses" copies the list. */
+const commBlastN = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const CommBlast = {
+  open: false, subject: '', body: '', busy: false, showList: false, space: '',
+  people(key = Comm.selected) {
+    let raw = null;
+    if (typeof Rosters !== 'undefined' && Rosters?.data) {
+      const rk = key === 'serve' ? 'leadership' : key;
+      if (!Rosters.data[rk]) {
+        if (!Rosters.errors?.[rk] && !Rosters.tasks?.[rk]) Promise.resolve(Rosters.load(rk)).then(() => { if (S.view === 'messages') render(); });
+        return Rosters.errors?.[rk] ? { error: Rosters.errors[rk] } : null;
+      }
+      raw = Rosters.data[rk].map(p => ({ name: p.name || '', email: p.email || (p.emails || [])[0] || '' }));
+    } else if (typeof teamEmailPeople === 'function') raw = teamEmailPeople();
+    else return { error: 'The team list is not available in this app.' };
+    const seen = new Set(), list = [], missing = [];
+    for (const p of raw) {
+      const em = lc(String(p.email || '').trim());
+      if (!/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(em)) { if (p.name) missing.push(p.name); continue; }
+      if (seen.has(em)) continue;
+      seen.add(em); list.push({ name: p.name || em, email: em });
+    }
+    list.sort((a,b) => a.name.localeCompare(b.name));
+    return { list, missing };
+  },
+  allowed() { return !S.imp && Comm.mode === 'board' && !Comm.thread && Comm.isAdmin() && !!Comm.space(); },
+  view() {
+    if (!this.allowed()) return '';
+    if (this.space !== Comm.selected) { this.space = Comm.selected; this.open = false; this.showList = false; }
+    const btn = `<button type="button" class="btn comm-blast-toggle" data-comm="blast-toggle" aria-expanded="${this.open}">${this.open ? '− Hide Email' : '✉️ Email All Team Members'}</button>`;
+    if (!this.open) return btn;
+    const t = Comm.space(), r = this.people();
+    let who;
+    if (!r) who = '<p class="hint">Loading the team list…</p>';
+    else if (r.error) who = `<div class="err">${esc(r.error)}</div>`;
+    else who = `<p class="comm-blast-count"><b>To:</b> all ${commBlastN(r.list.length, 'team member', 'team members')} on ${esc(t.full || t.name)}
+        <button type="button" class="linkbtn" data-comm="blast-list" aria-expanded="${this.showList}">${this.showList ? 'Hide names' : 'See names'}</button></p>
+      ${this.showList ? `<div class="comm-blast-names">${r.list.map(p => `<span class="chip">${esc(p.name)}</span>`).join('')}</div>` : ''}
+      ${r.missing.length ? `<p class="hint">Not included (no email address on file): ${esc(r.missing.join(', '))}.</p>` : ''}
+      <p class="hint">Everyone is added as BCC, so they won't see each other's addresses. You'll get a copy too.</p>`;
+    const ready = r && !r.error && r.list.length, dis = this.busy || !ready ? 'disabled' : '';
+    return btn + `<form class="panel pad comm-blast-form">
+      <h2>Email All Team Members</h2>${who}
+      <div class="field"><label for="comm-blast-subject">Subject</label><input id="comm-blast-subject" name="subject" maxlength="200" value="${esc(this.subject)}" required></div>
+      <div class="field"><label for="comm-blast-body">Message</label>${commToolbar('comm-blast-body')}<div class="panel notes notes-editor" id="comm-blast-body" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Email message">${cleanHtml(this.body || '')}</div></div>
+      <div class="comm-edit-buttons">
+        <button class="btn primary" type="submit" ${dis}>${this.busy ? 'Sending…' : 'Send Email to All'}</button>
+        <button class="btn" type="button" data-comm="blast-mailto" ${dis}>Open in My Email App</button>
+        <button class="btn" type="button" data-comm="blast-copy" ${dis}>Copy Addresses</button>
+        <button class="btn" type="button" data-comm="blast-toggle">Cancel</button>
+      </div>
+      <p class="hint">Send Email to All sends from your church Microsoft email. The first time, Microsoft may ask you to allow the app to send email for you.</p>
+    </form>`;
+  },
+  read() {
+    const s = document.getElementById('comm-blast-subject'), b = document.getElementById('comm-blast-body');
+    if (s) this.subject = s.value; if (b) this.body = b.innerHTML;
+  },
+  appName() { return typeof APP_NAME !== 'undefined' ? APP_NAME : 'RCI Serve'; },
+  check() {
+    this.read();
+    const r = this.people(), subject = this.subject.trim(), body = cleanHtml(this.body || '').trim();
+    if (!r || r.error || !r.list.length) { toast('The team list is not ready yet. Refresh and try again.', true); return null; }
+    if (!subject) { toast('Enter a subject.', true); return null; }
+    if (!commPreview(body)) { toast('Write a message first.', true); return null; }
+    return { list: r.list, subject, body };
+  },
+  async token() {
+    const request = { scopes: ['Mail.Send'], account: API.account };
+    try { return (await API.msal.acquireTokenSilent(request)).accessToken; }
+    catch (_) { return (await API.msal.acquireTokenPopup(request)).accessToken; }
+  },
+  async send() {
+    if (this.busy || !this.allowed()) return;
+    const m = this.check(); if (!m) return;
+    if (!confirm(`Send "${m.subject}" to ${commBlastN(m.list.length, 'team member', 'team members')}?`)) return;
+    this.busy = true; render();
+    try {
+      if (DEMO) { toast(`Demo only: this would email ${commBlastN(m.list.length, 'person', 'people')}.`); }
+      else {
+        const me = S.me.emails[0], t = Comm.space();
+        const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5">${m.body}</div><p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#777;margin-top:24px">Sent to the ${esc(t.full || t.name)} team from the ${esc(this.appName())} app.</p>`;
+        const message = { subject: m.subject, body: { contentType: 'HTML', content: html },
+          toRecipients: [{ emailAddress: { address: me, name: S.me.name || '' } }],
+          bccRecipients: m.list.filter(p => !S.me.emails.map(lc).includes(p.email)).map(p => ({ emailAddress: { address: p.email, name: p.name } })) };
+        const token = await this.token();
+        const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ message, saveToSentItems: true }) });
+        if (!res.ok) { const e = new Error(String(res.status)); try { e.code = (await res.json())?.error?.code || ''; } catch (_) {} throw e; }
+        toast(`Email sent to ${commBlastN(m.list.length, 'team member', 'team members')}.`);
+      }
+      this.subject = ''; this.body = ''; this.open = false; this.showList = false;
+    } catch (e) {
+      const noBox = /MailboxNotEnabled|MailboxNotHostedInExchange|ResourceNotFound/i.test(e?.code || '');
+      toast(noBox ? "Your account doesn't have a church email to send from. Use Open in My Email App instead." : 'The email could not be sent. Your message is still here. Try again, or use Open in My Email App.', true);
+    } finally { this.busy = false; render(); }
+  },
+  mailto() {
+    const m = this.check(); if (!m) return;
+    const plain = commPreview(m.body), me = S.me?.emails?.[0] || '';
+    const bcc = m.list.map(p => p.email).filter(e => e !== lc(me)).join(',');
+    let url = `mailto:${encodeURIComponent(me)}?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(m.subject)}`;
+    const withBody = url + `&body=${encodeURIComponent(plain)}`;
+    // Some mail apps cut off very long links; leave the message out if it would make the link too long.
+    url = withBody.length <= 8000 ? withBody : url;
+    if (url !== withBody) toast('Your message was too long to pass along; paste it into the email.', true);
+    location.href = url;
+  },
+  async copy() {
+    const r = this.people(); if (!r || r.error || !r.list.length) return;
+    const text = r.list.map(p => p.email).join(', ');
+    try { await navigator.clipboard.writeText(text); toast(`Copied ${commBlastN(r.list.length, 'address', 'addresses')}. Paste them into the BCC line.`); }
+    catch (_) { prompt('Copy these addresses into the BCC line:', text); }
+  }
+};
+(() => { const st = document.createElement('style'); st.textContent = `
+  .comm-blast-toggle{margin:0 8px 10px 0}
+  .comm-blast-form{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+  .comm-blast-count{margin:0}
+  .comm-blast-names{display:flex;flex-wrap:wrap;gap:6px}
+  .comm-blast-form .linkbtn{background:none;border:0;padding:0 4px;color:var(--accent,#b8860b);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline}`; document.head.appendChild(st); })();
+document.addEventListener('input', e => { if (e.target.closest('.comm-blast-form')) CommBlast.read(); });
+document.addEventListener('submit', e => { if (!e.target.matches('.comm-blast-form')) return; e.preventDefault(); CommBlast.send(); });
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-comm^="blast-"]'); if (!b || CommBlast.busy) return;
+  const a = b.dataset.comm;
+  if (a === 'blast-mailto') { CommBlast.mailto(); return; }
+  if (a === 'blast-copy') { CommBlast.copy(); return; }
+  CommBlast.read();
+  if (a === 'blast-toggle') { CommBlast.open = !CommBlast.open; if (CommBlast.open) Comm.composeOpen = false; }
+  if (a === 'blast-list') CommBlast.showList = !CommBlast.showList;
+  render();
+});
