@@ -350,7 +350,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "131";   // bump together with CACHE in sw.js
+const APP_VERSION = "132";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -377,6 +377,16 @@ const MINISTRIES = [
   { key: "marriage", name: "Marriage", full: "RCI Marriage", path: "/rci-marriage/", tl: "#0F6B73", td: "#5CC6CC", icon: "rings",
     sitePath: "/sites/RCIMarriage", listName: "Couples" }
 ];
+/* Some ministries are restricted to a fixed, hand-picked list of people regardless of SharePoint
+   membership or hub-admin status — e.g. Marriage should only ever be visible to Ashley and Marvin,
+   including while previewing as a team member (S.me is swapped to the preview identity then, so this
+   naturally hides it there too). Anything not listed here falls back to the normal member/admin check. */
+const MINISTRY_ALLOWLIST = { marriage: ["ashley.stmacary@therampchurch.com", "pastormarvin@therampchurch.com"] };
+function canViewMinistry(m){
+  const allow = MINISTRY_ALLOWLIST[m.key];
+  if (allow) return !!S.me?.emails?.some(e => allow.includes(lc(e)));
+  return !!(S.ministries?.[m.key]?.member || (Rosters.isHubAdmin(S.me || {}) && S.ministries?.[m.key] && !S.ministries[m.key].noAccess));
+}
 /* The church-wide calendar (not a team — no membership, no requests). Listed first in the calendar's chip row. */
 const CHURCH_CAL = { key: "church", name: "Church", full: "Church Calendar", tl: "#8A6631", td: "#D2B07C",
   sitePath: "/sites/RCIServe", listName: "Church Calendar", editors: ["ashley.stmacary@therampchurch.com", "pastormarvin@therampchurch.com"] };
@@ -1168,7 +1178,7 @@ function saveShared(){
   if (!S.me || S.imp) return;
   try {
     const teams = myTeams().map(t => ({ key: t.key, count: S.teams[t.key]?.items ? pendingOf(t.key).length : 0, admin: isEditorOf(t) }));
-    const ministries = MINISTRIES.filter(m => S.ministries?.[m.key]?.member || (Rosters.isHubAdmin(S.me || {}) && S.ministries?.[m.key] && !S.ministries[m.key].noAccess)).map(m => ({ key: m.key }));
+    const ministries = MINISTRIES.filter(m => canViewMinistry(m)).map(m => ({ key: m.key }));
     localStorage.setItem("rci-serve:state", JSON.stringify({ emails: S.me.emails, name: S.me.name, at: Date.now(), teams, ministries }));
   } catch(e){}
 }
@@ -1564,13 +1574,13 @@ function viewHome(){
     ${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes${todayNotesUnseen() ? ", unread edit" : ""}" title="Today's Service Notes">${ICON.notes}${todayNotesUnseen() ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div>`;
   out += badgeAsk();
   out += todayHero();
-  if (!teams.length && !isEditorOf(CHURCH_CAL) && !S.loading && !MINISTRIES.some(m => S.ministries?.[m.key]?.member)){
+  if (!teams.length && !isEditorOf(CHURCH_CAL) && !S.loading && !MINISTRIES.some(m => canViewMinistry(m))){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
       <p class="hint">RCI Serve shows the teams where your email (${esc(S.me.emails[0] || "")}) is on the roster or schedule. If you serve on a team, ask that team's leader to add this email address, then pull this page back up.</p>
       <button class="btn" style="align-self:flex-start" data-act="refresh">Check again</button></section>`;
   }
   if (teams.length) out += `<section class="sec"><h2>Your Teams</h2><div class="tiles">${teams.map(teamTile).join("")}</div></section>`;
-  const mins = MINISTRIES.filter(m => S.ministries?.[m.key]?.member || (Rosters.isHubAdmin(S.me || {}) && !S.ministries?.[m.key]?.noAccess));
+  const mins = MINISTRIES.filter(m => canViewMinistry(m));
   if (mins.length) out += `<section class="sec"><h2>Your Ministries</h2><div class="tiles">${mins.map(m => `<a class="tile team" style="${tvars(m)}" href="${m.path}"><span class="t-ic">${ICON[m.icon]}</span><b>${esc(m.name)}</b><small>Fruit of Our Union</small></a>`).join("")}</div></section>`;
   {
     const annFilterChips = [...(isAnyAdmin() ? [CHURCH_CAL] : []), ...myTeams()];   // Church is admin-only, not for everyone
@@ -1644,7 +1654,7 @@ function viewHome(){
 function viewCalendar(){
   if (!S.cal.sel){ const first = upcoming()[0]; S.cal.sel = first && first.date <= addDays(todayKey(), 31) ? first.date : todayKey(); }
   const teams = myTeams(), off = S.cal.off;
-  const mins = MINISTRIES.filter(x => S.ministries?.[x.key]?.member || (Rosters.isHubAdmin(S.me || {}) && S.ministries?.[x.key] && !S.ministries[x.key].noAccess));
+  const mins = MINISTRIES.filter(x => canViewMinistry(x));
   const chips = [CHURCH_CAL, ...teams, ...mins];
   const m = S.cal.month || (S.cal.sel || todayKey()).slice(0, 7);
   S.cal.month = m;

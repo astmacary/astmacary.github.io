@@ -240,7 +240,7 @@ const Rosters = {
   },
   marriagePanel() {
     const m = (typeof MINISTRIES !== 'undefined' ? MINISTRIES : []).find(x => x.key === 'marriage');
-    if (!m || !(S.ministries?.marriage?.member || (this.isHubAdmin(S.me || {}) && !S.ministries?.marriage?.noAccess))) return '';
+    if (!m || !canViewMinistry(m)) return '';
     return `<h2 class="section-label" style="margin:18px 0 4px">Your Ministries</h2><section class="panel"><div class="team-heading team" style="${tvars(m)}"><div class="team-title"><a class="team-name" href="${m.path}"><span class="t-ic">${ICON[m.icon]}</span><b>${esc(m.full)}</b></a>${this.rosterToggle('marriage', m.full)}</div></div>${this.section('marriage')}</section>`;
   },
   // Auxiliary Leaders: the Leadership-roster members who carry a team-leader tag (Production Director,
