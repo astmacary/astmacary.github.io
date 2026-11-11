@@ -644,8 +644,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
    If that isn't possible (for example a Gmail guest account with no church mailbox), "Open in My Email App"
    opens the phone's mail app with everyone in BCC, and "Copy Addresses" copies the list. */
 const commBlastN = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+// Graph's sendMail request is limited to 4 MB; base64 adds a third, so files total up to 3 MB.
+const COMM_BLAST_MAX = 3 * 1024 * 1024;
 const CommBlast = {
-  open: false, subject: '', body: '', busy: false, showList: false, space: '',
+  open: false, subject: '', body: '', files: [], busy: false, showList: false, space: '',
   people(key = Comm.selected) {
     let raw = null;
     if (typeof Rosters !== 'undefined' && Rosters?.data) {
@@ -668,6 +670,18 @@ const CommBlast = {
     return { list, missing };
   },
   chip() { return this.allowed() ? `<button class="chipcheck" data-comm="blast-toggle" aria-pressed="${this.open}">Email the Team</button>` : ''; },
+  size(n) { return n >= 1048576 ? (n/1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n/1024)) + ' KB'; },
+  async addFiles(files) {
+    for (const f of files) {
+      const total = this.files.reduce((n,x) => n + x.size, 0);
+      if (total + f.size > COMM_BLAST_MAX) { toast(`${f.name} is too big. Attachments can be up to ${this.size(COMM_BLAST_MAX)} in total.`, true); continue; }
+      try {
+        const b64 = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = no; fr.readAsDataURL(f); });
+        this.files.push({ name: f.name, type: f.type, size: f.size, b64 });
+      } catch (_) { toast(`${f.name} could not be read.`, true); }
+    }
+    render();
+  },
   allowed() { return !S.imp && Comm.mode === 'board' && !Comm.thread && Comm.isAdmin() && !!Comm.space(); },
   view() {
     if (!this.allowed()) return '';
@@ -688,6 +702,10 @@ const CommBlast = {
       <h2>Email the Team</h2>${who}
       <div class="field"><label for="comm-blast-subject">Subject</label><input id="comm-blast-subject" name="subject" maxlength="200" value="${esc(this.subject)}" required></div>
       <div class="field"><label for="comm-blast-body">Message</label>${commToolbar('comm-blast-body')}<div class="panel notes notes-editor" id="comm-blast-body" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Email message">${cleanHtml(this.body || '')}</div></div>
+      <div class="field"><span class="label">Attachments</span>
+        ${this.files.length ? `<div class="comm-blast-files">${this.files.map((f,i) => `<span class="chip">📎 ${esc(f.name)} <small>(${this.size(f.size)})</small> <button type="button" class="linkbtn" data-comm="blast-file-remove" data-i="${i}" aria-label="Remove ${esc(f.name)}">×</button></span>`).join('')}</div>` : ''}
+        <label class="btn comm-pic-add">📎 ${this.files.length ? 'Attach Another File' : 'Attach a Picture or Document'}<input type="file" multiple hidden data-blast-files></label>
+        <p class="hint">Up to ${this.size(COMM_BLAST_MAX)} in total. Attachments go with Send Email to All; with Open in My Email App you'll need to attach them there yourself.</p></div>
       <div class="comm-edit-buttons">
         <button class="btn primary" type="submit" ${dis}>${this.busy ? 'Sending…' : 'Send Email to All'}</button>
         <button class="btn" type="button" data-comm="blast-mailto" ${dis}>Open in My Email App</button>
@@ -727,13 +745,14 @@ const CommBlast = {
         const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5">${m.body}</div><p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#777;margin-top:24px">Sent to the ${esc(t.full || t.name)} team from the ${esc(this.appName())} app.</p>`;
         const message = { subject: m.subject, body: { contentType: 'HTML', content: html },
           toRecipients: [{ emailAddress: { address: me, name: S.me.name || '' } }],
-          bccRecipients: m.list.filter(p => !S.me.emails.map(lc).includes(p.email)).map(p => ({ emailAddress: { address: p.email, name: p.name } })) };
+          bccRecipients: m.list.filter(p => !S.me.emails.map(lc).includes(p.email)).map(p => ({ emailAddress: { address: p.email, name: p.name } })),
+          attachments: this.files.map(f => ({ '@odata.type': '#microsoft.graph.fileAttachment', name: f.name, contentType: f.type || 'application/octet-stream', contentBytes: f.b64 })) };
         const token = await this.token();
         const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ message, saveToSentItems: true }) });
         if (!res.ok) { const e = new Error(String(res.status)); try { e.code = (await res.json())?.error?.code || ''; } catch (_) {} throw e; }
         toast(`Email sent to ${commBlastN(m.list.length, 'team member', 'team members')}.`);
       }
-      this.subject = ''; this.body = ''; this.open = false; this.showList = false;
+      this.subject = ''; this.body = ''; this.files = []; this.open = false; this.showList = false;
     } catch (e) {
       const noBox = /MailboxNotEnabled|MailboxNotHostedInExchange|ResourceNotFound/i.test(e?.code || '');
       toast(noBox ? "Your account doesn't have a church email to send from. Use Open in My Email App instead." : 'The email could not be sent. Your message is still here. Try again, or use Open in My Email App.', true);
@@ -741,6 +760,7 @@ const CommBlast = {
   },
   mailto() {
     const m = this.check(); if (!m) return;
+    if (this.files.length) toast('Remember to attach your files in your email app.');
     const plain = commPreview(m.body), me = S.me?.emails?.[0] || '';
     const bcc = m.list.map(p => p.email).filter(e => e !== lc(me)).join(',');
     let url = `mailto:${encodeURIComponent(me)}?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(m.subject)}`;
@@ -761,6 +781,7 @@ const CommBlast = {
   .comm-blast-toggle{margin:0 8px 10px 0}
   .comm-blast-form{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
   .comm-blast-count{margin:0}
+  .comm-blast-files{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.comm-blast-files .linkbtn{padding:0 2px;margin:0}
   .comm-blast-names{display:flex;flex-wrap:wrap;gap:6px}
   .comm-blast-form .linkbtn{background:none;border:0;padding:0 4px;color:var(--accent,#b8860b);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline}`; document.head.appendChild(st); })();
 document.addEventListener('input', e => { if (e.target.closest('.comm-blast-form')) CommBlast.read(); });
@@ -770,8 +791,10 @@ document.addEventListener('click', e => {
   const a = b.dataset.comm;
   if (a === 'blast-mailto') { CommBlast.mailto(); return; }
   if (a === 'blast-copy') { CommBlast.copy(); return; }
+  if (a === 'blast-file-remove') { CommBlast.read(); CommBlast.files.splice(Number(b.dataset.i), 1); render(); return; }
   CommBlast.read();
   if (a === 'blast-toggle') { CommBlast.open = !CommBlast.open; if (CommBlast.open) Comm.composeOpen = false; }
   if (a === 'blast-list') CommBlast.showList = !CommBlast.showList;
   render();
 });
+document.addEventListener('change', e => { const i = e.target.closest('input[data-blast-files]'); if (!i) return; const f = [...i.files]; i.value = ''; CommBlast.read(); CommBlast.addFiles(f); });
