@@ -243,6 +243,26 @@ const Rosters = {
     if (!m || !(S.ministries?.marriage?.member || (this.isHubAdmin(S.me || {}) && !S.ministries?.marriage?.noAccess))) return '';
     return `<h2 class="section-label" style="margin:18px 0 4px">Your Ministries</h2><section class="panel"><div class="team-heading team" style="${tvars(m)}"><div class="team-title"><a class="team-name" href="${m.path}"><span class="t-ic">${ICON[m.icon]}</span><b>${esc(m.full)}</b></a>${this.rosterToggle('marriage', m.full)}</div></div>${this.section('marriage')}</section>`;
   },
+  // Auxiliary Leaders: the Leadership-roster members who carry a team-leader tag (Production Director,
+  // Worship & Arts Director, etc. — see leadershipTags/tagFor), shown under their real title instead of
+  // the generic "Ministry Leader" badge. Visible to every Serve user, right under RCI Leadership.
+  auxPersonRow({ p, i }) {
+    const title = this.tagFor(p);
+    const inside = `<span class="roster-avatar" data-roster-photo="leadership:${i}">${esc(initials(p.name))}</span><span class="rr-info"><span class="rr-name"><b>${esc(p.name)}</b></span><span class="ministry-leader-tag">${esc(title)}</span></span>`;
+    return `<li class="roster-row-item"><button type="button" class="roster-row" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button></li>`;
+  },
+  auxPerson({ p, i }) {
+    const title = this.tagFor(p);
+    const inside = `<span class="roster-avatar" data-roster-photo="leadership:${i}">${esc(initials(p.name))}</span><b>${esc(p.name)}</b><span class="ministry-leader-tag">${esc(title)}</span>`;
+    return `<li class="roster-person"><button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button></li>`;
+  },
+  auxiliaryPanel() {
+    if (!this.data.leadership) return '';
+    const list = this.auxiliaryLeaders(), opened = this.open.has('auxiliary');
+    const toggle = `<button class="roster-heading-toggle" data-act="aux-toggle" aria-label="Auxiliary Leaders team roster" aria-expanded="${opened}" aria-controls="roster-auxiliary"><span class="roster-count" aria-label="${list.length} members">${list.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button>`;
+    const body = !opened ? '' : `<div class="roster-content">${list.length ? (this.getLayout() === 'list' ? `<ul class="roster-rows">${list.map(x => this.auxPersonRow(x)).join('')}</ul>` : `<ul class="team-roster">${list.map(x => this.auxPerson(x)).join('')}</ul>`) : '<p class="hint">No auxiliary leaders yet.</p>'}</div>`;
+    return `<section class="panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.auxiliary}</span><b>Auxiliary Leaders</b>${toggle}</div></div><div id="roster-auxiliary" class="roster-section" ${opened ? '' : 'hidden'}>${body}</div></section>`;
+  },
   person(p, index, key) {
     const leader = p.ministryLeader === true;
     const leadershipTitles = {'bishop s.y. younger':'Senior Pastor','bishop younger':'Senior Pastor','pastor marvin st. macary':'Executive Pastor','pastor william westgate':'Associate Pastor','pastor claude gardner':'Associate Pastor'};
@@ -251,8 +271,18 @@ const Rosters = {
     const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${['productions','leadership','marriage'].includes(key) ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}${roleTag && roleTag !== leaderTitle ? `<span class="ministry-leader-tag">${esc(roleTag)}</span>` : ''}`;
     return `<li class="roster-person${leader ? ' roster-ministry-leader' : ''}">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : this.ministryHref(key,p) ? `<a class="roster-profile-link" data-ministry-profile href="${esc(this.ministryHref(key,p))}" aria-label="About ${esc(p.name)}">${inside}</a>` : inside}</li>`;
   },
+  // Pastors (no team-leader tag) are visible to everyone; the tagged ministry/auxiliary leaders only
+  // show here to Leadership members themselves — everyone else sees them instead under Auxiliary Leaders.
+  visibleLeadership() {
+    const people = this.data.leadership || [];
+    return this.isLeadershipMember() ? people : people.filter(p => !this.tagFor(p));
+  },
+  auxiliaryLeaders() {
+    return (this.data.leadership || []).map((p, i) => ({ p, i })).filter(({ p }) => !!this.tagFor(p));
+  },
   count(key) {
-    if (key === 'leadership') return this.data.leadership?.length;
+    if (key === 'leadership') return this.data.leadership && this.visibleLeadership().length;
+    if (key === 'auxiliary') return this.data.leadership && this.auxiliaryLeaders().length;
     if (key === 'marriage') return this.marriageLeaders().length;
     if (DEMO) return this.data[key]?.length ?? 2;
     return this.unique((S.teams[key]?.items || []).filter(p => p.kind === 'profile' && !p.gone && p.fullName && (key !== 'worship' || lc(p.active) !== 'non active')).map(p => ({name:p.fullName,email:p.email}))).length;
@@ -260,6 +290,7 @@ const Rosters = {
   icons: {
     leadership: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m3 6 4 4 5-6 5 6 4-4-2 14H5L3 6Z"/><path d="M6 16h12"/></svg>',
     access: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="14.5" r="4.5"/><path d="M11 11.5 20 2.5"/><path d="M15.5 7 18 9.5"/><path d="M18.5 3.5 21 6"/></svg>',
+    auxiliary: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="m8 14-2 7 6-3 6 3-2-7"/></svg>',
 
     add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
     remove: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>'
@@ -275,15 +306,18 @@ const Rosters = {
       : `<a class="iconbtn sm" href="${t.path}?roster=add${DEMO ? '&amp;demo' : ''}" aria-label="Add ${esc(label)} member" title="Add member">${this.icons.add}</a>`) + `<button class="iconbtn sm danger" data-act="roster-delete" data-k="${key}" aria-label="Delete ${esc(label)} member" title="Delete member">${this.icons.remove}</button>` : ''}</div>`;
   },
   section(key) {
-    const opened = this.open.has(key), people = this.data[key];
+    const opened = this.open.has(key), people = key === 'leadership' ? this.data.leadership && this.visibleLeadership() : this.data[key];
     if (key === 'marriage') this.marriageLeaders();
     const verified = key === 'leadership' || key === 'marriage' || DEMO || S.teams[key]?.accessVerified;
     const loaded = verified && Array.isArray(people);
     const loading = !!this.tasks[key] || (!loaded && !this.errors[key] && (verified || S.loading));
+    // When leadership is filtered down to pastors only, photos are keyed by position in the
+    // *full* this.data.leadership array, so look each visible person's real index back up.
+    const photoIndex = key === 'leadership' && loaded ? p => this.data.leadership.indexOf(p) : (p, i) => i;
     return `<div id="roster-${key}" class="roster-section" ${opened ? '' : 'hidden'}>${opened ? `<div class="roster-content">
       ${loading ? '<p class="hint" role="status">Loading roster…</p>' : ''}
       ${this.errors[key] ? `<p class="hint" role="alert">${esc(this.errors[key])} Use the refresh icon at the top of the app to try again.</p>` : ''}
-      ${loaded && people.length ? (this.getLayout() === 'list' ? `<ul class="roster-rows">${people.map((p,i) => this.personRow(p,i,key)).join('')}</ul>` : `<ul class="team-roster">${people.map((p,i) => this.person(p,i,key)).join('')}</ul>`) : loaded && !loading && !this.errors[key] ? '<p class="hint">No team members yet.</p>' : !loading && !this.errors[key] ? '<p class="hint" role="status">Waiting for roster access to be verified…</p>' : ''}
+      ${loaded && people.length ? (this.getLayout() === 'list' ? `<ul class="roster-rows">${people.map((p,i) => this.personRow(p,photoIndex(p,i),key)).join('')}</ul>` : `<ul class="team-roster">${people.map((p,i) => this.person(p,photoIndex(p,i),key)).join('')}</ul>`) : loaded && !loading && !this.errors[key] ? '<p class="hint">No team members yet.</p>' : !loading && !this.errors[key] ? '<p class="hint" role="status">Waiting for roster access to be verified…</p>' : ''}
     </div>` : ''}</div>`;
   },
 
@@ -318,7 +352,7 @@ const Rosters = {
       return '<h1 class="page">Teams</h1><p class="hint" role="status">Loading teams and roster counts…</p>';
     }
     for (const t of teams) if ((DEMO || S.teams[t.key]?.accessVerified) && !this.data[t.key] && !this.errors[t.key]) void this.load(t.key);
-    return `<div class="teams-page-heading"><h1 class="page">Teams</h1><div class="teams-page-heading-r">${this.layoutToggle()}<input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div></div>${this.search.trim() ? this.searchView() : ''}<h2 class="section-label" style="margin:0 0 4px">Your Teams</h2><div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.rosterToggle('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
+    return `<div class="teams-page-heading"><h1 class="page">Teams</h1><div class="teams-page-heading-r">${this.layoutToggle()}<input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div></div>${this.search.trim() ? this.searchView() : ''}<h2 class="section-label" style="margin:0 0 4px">Your Teams</h2><div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.rosterToggle('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>${this.auxiliaryPanel()}
       ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.rosterToggle(t.key,t.full)}</div>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}${this.marriagePanel()}</div>${AccessLog.teamsSection()}${this.modal()}`;
   },
   async deleteMember(key, person) {

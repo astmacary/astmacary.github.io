@@ -350,7 +350,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "130";   // bump together with CACHE in sw.js
+const APP_VERSION = "131";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1900,6 +1900,7 @@ document.addEventListener("click", async e => {
   else if (act === "leader-info-edit") { const p = Rosters.aboutPerson(); if (p && Rosters.canEditAbout(p)){ Rosters.aboutDraft = Rosters.detailsFor(p); Rosters.aboutEditing = true; render(); } }
   else if (act === "leader-info-cancel") { Rosters.aboutEditing = false; render(); }
   else if (act === "roster-toggle") Rosters.toggle(b.dataset.k);
+  else if (act === "aux-toggle") { Rosters.open.has("auxiliary") ? Rosters.open.delete("auxiliary") : Rosters.open.add("auxiliary"); render(); }
   else if (act === "roster-refresh") { void Rosters.load(b.dataset.k, true); render(); }
   else if (act === "leadership-add") { if (Rosters.canManage()){ Rosters.adding = true; render(); } }
   else if (act === "leadership-cancel") { Rosters.adding = false; Rosters.draft = ''; Rosters.draftName = ''; render(); }
