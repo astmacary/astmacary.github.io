@@ -79,6 +79,10 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .sec{display:flex;flex-direction:column;gap:6px}
 .sec h2{margin:0;font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
 .sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.svc-notes-h{font-size:24px}
+.event-info-row{display:flex;gap:14px;align-items:flex-start}
+.event-info-row .panel.notes{flex:1;min-width:0;margin:0}
+.event-info-row .flyer-col{flex:none}
 .sec-head .acts{display:flex;flex-direction:row;gap:8px;flex:none}
 .iconbtn.sm{width:32px;height:32px}
 .iconbtn.sm svg{width:16px;height:16px}
@@ -338,7 +342,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "118";   // bump together with CACHE in sw.js
+const APP_VERSION = "119";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1437,10 +1441,11 @@ function viewChurchEventInfo(){
   const head = `<div class="page-h"><button class="back" data-act="church-event-back">${ICON.prev}Back</button></div>
     <div class="page-h"><h1>${esc(row?.title || "Event")}</h1></div>
     <p class="sub notes-date">${esc(fmtDay(p.date))}</p>`;
-  const flyerHtml = row?.flyer ? `<div class="ann-fly"><button class="flyer" data-act="flyer-open" data-flyer="church-event:${esc(row.rowId)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button></div>` : "";
+  const flyerHtml = row?.flyer ? `<div class="flyer-col"><button class="flyer" data-act="flyer-open" data-flyer="church-event:${esc(row.rowId)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button></div>` : "";
   const body = row?.notes ? `<div class="panel notes">${cleanHtml(row.notes)}</div>` : "";
+  const infoRow = (body || flyerHtml) ? `<div class="event-info-row">${body}${flyerHtml}</div>` : "";
   const svc = Rosters.isLeadershipMember() ? svcNotesBlock(row, p) : "";
-  return `${head}${flyerHtml}${body}${svc}`;
+  return `${head}${infoRow}${svc}`;
 }
 /* The RCI-Leaders-only Service Notes container embedded on the announcement info page above — same role
    as Production's own Notes page, just folded into this page instead of a separate icon/page. */
@@ -1452,7 +1457,7 @@ function svcNotesBlock(row, p){
   const pencil = canEdit ? (editing
       ? `<button class="iconbtn edit-on" data-act="svc-cancel-edit" aria-label="Stop editing" title="Stop editing">${ICON.check}</button>`
       : `<button class="iconbtn" data-act="svc-edit" aria-label="Edit Service Notes" title="Edit Service Notes">${ICON.edit}</button>`) : "";
-  const head = `<div class="sec-head"><h2>Service Notes</h2>${pencil}</div>`;
+  const head = `<div class="sec-head"><h2 class="svc-notes-h">Service Notes</h2>${pencil}</div>`;
   if (editing){
     return `<section class="sec">${head}
       ${notesToolbar()}
