@@ -59,7 +59,7 @@ const Rosters = {
     const leadershipTitles = {'bishop s.y. younger':'Senior Pastor','bishop younger':'Senior Pastor','pastor marvin st. macary':'Executive Pastor','pastor william westgate':'Associate Pastor','pastor claude gardner':'Associate Pastor'};
     const leaderTitle = key === 'leadership' ? leadershipTitles[lc(p.name).trim()] || 'Ministry Leader' : 'Ministry Leader';
     const roleTag = key === 'leadership' ? this.tagFor(p) : '';
-    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span><span class="rr-info"><span class="rr-name"><b>${esc(p.name)}</b>${['productions','leadership'].includes(key) ? '' : this.star(p)}</span>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}${roleTag && roleTag !== leaderTitle ? `<span class="ministry-leader-tag">${esc(roleTag)}</span>` : ''}</span>`;
+    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span><span class="rr-info"><span class="rr-name"><b>${esc(p.name)}</b>${['productions','leadership','marriage'].includes(key) ? '' : this.star(p)}</span>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}${roleTag && roleTag !== leaderTitle ? `<span class="ministry-leader-tag">${esc(roleTag)}</span>` : ''}</span>`;
     const href = key !== 'leadership' ? this.ministryHref(key,p) : '';
     return `<li class="roster-row-item${leader ? ' roster-ministry-leader' : ''}">${key === 'leadership' ? `<button type="button" class="roster-row" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : href ? `<a class="roster-row" data-ministry-profile href="${esc(href)}" aria-label="About ${esc(p.name)}">${inside}</a>` : `<span class="roster-row">${inside}</span>`}</li>`;
   },
@@ -228,16 +228,31 @@ const Rosters = {
     const priority = p => key === 'ushers' && lc(p.name).trim() === 'tammy marshall' ? 0 : p.ministryLeader === true ? 1 : 2;
     return [...people].sort((a,b) => priority(a) - priority(b) || a.name.localeCompare(b.name));
   },
+  // Marriage ministry: not a serving team, so its roster is just the ministry leaders (from RCI Leadership when found, for their photos).
+  marriageLeaders() {
+    const lead = this.data.leadership || [];
+    const find = (words, fallback) => { const p = lead.find(x => words.every(w => lc(x.name).includes(w))); return { ...(p || fallback), ministryLeader: true }; };
+    return (this.data.marriage = [
+      find(['marvin'], { name: 'Pastor Marvin St. Macary' }),
+      find(['ashley'], { name: 'Ashley St. Macary', email: 'ashley.stmacary@therampchurch.com' })
+    ]);
+  },
+  marriagePanel() {
+    const m = (typeof MINISTRIES !== 'undefined' ? MINISTRIES : []).find(x => x.key === 'marriage');
+    if (!m || !(S.ministries?.marriage?.member || (this.isHubAdmin(S.me || {}) && !S.ministries?.marriage?.noAccess))) return '';
+    return `<section class="panel"><div class="team-heading team" style="${tvars(m)}"><div class="team-title"><a class="team-name" href="${m.path}"><span class="t-ic">${ICON[m.icon]}</span><b>${esc(m.full)}</b></a>${this.rosterToggle('marriage', m.full)}</div></div>${this.section('marriage')}</section>`;
+  },
   person(p, index, key) {
     const leader = p.ministryLeader === true;
     const leadershipTitles = {'bishop s.y. younger':'Senior Pastor','bishop younger':'Senior Pastor','pastor marvin st. macary':'Executive Pastor','pastor william westgate':'Associate Pastor','pastor claude gardner':'Associate Pastor'};
     const leaderTitle = key === 'leadership' ? leadershipTitles[lc(p.name).trim()] || 'Ministry Leader' : 'Ministry Leader';
     const roleTag = key === 'leadership' ? this.tagFor(p) : '';
-    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${['productions','leadership'].includes(key) ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}${roleTag && roleTag !== leaderTitle ? `<span class="ministry-leader-tag">${esc(roleTag)}</span>` : ''}`;
+    const inside = `<span class="roster-avatar" data-roster-photo="${esc(key + ':' + index)}">${esc(initials(p.name))}</span>${['productions','leadership','marriage'].includes(key) ? '' : this.star(p)}<b>${esc(p.name)}</b>${leader ? `<span class="ministry-leader-tag">${esc(leaderTitle)}</span>` : ''}${roleTag && roleTag !== leaderTitle ? `<span class="ministry-leader-tag">${esc(roleTag)}</span>` : ''}`;
     return `<li class="roster-person${leader ? ' roster-ministry-leader' : ''}">${key === 'leadership' ? `<button class="roster-profile-link" data-act="leader-about" data-id="${esc(p.userId)}" aria-label="About ${esc(p.name)}">${inside}</button>` : this.ministryHref(key,p) ? `<a class="roster-profile-link" data-ministry-profile href="${esc(this.ministryHref(key,p))}" aria-label="About ${esc(p.name)}">${inside}</a>` : inside}</li>`;
   },
   count(key) {
     if (key === 'leadership') return this.data.leadership?.length;
+    if (key === 'marriage') return this.marriageLeaders().length;
     if (DEMO) return this.data[key]?.length ?? 2;
     return this.unique((S.teams[key]?.items || []).filter(p => p.kind === 'profile' && !p.gone && p.fullName && (key !== 'worship' || lc(p.active) !== 'non active')).map(p => ({name:p.fullName,email:p.email}))).length;
   },
@@ -259,7 +274,8 @@ const Rosters = {
   },
   section(key) {
     const opened = this.open.has(key), people = this.data[key];
-    const verified = key === 'leadership' || DEMO || S.teams[key]?.accessVerified;
+    if (key === 'marriage') this.marriageLeaders();
+    const verified = key === 'leadership' || key === 'marriage' || DEMO || S.teams[key]?.accessVerified;
     const loaded = verified && Array.isArray(people);
     const loading = !!this.tasks[key] || (!loaded && !this.errors[key] && (verified || S.loading));
     return `<div id="roster-${key}" class="roster-section" ${opened ? '' : 'hidden'}>${opened ? `<div class="roster-content">
@@ -301,7 +317,7 @@ const Rosters = {
     }
     for (const t of teams) if ((DEMO || S.teams[t.key]?.accessVerified) && !this.data[t.key] && !this.errors[t.key]) void this.load(t.key);
     return `<div class="teams-page-heading"><h1 class="page">Your Teams</h1><div class="teams-page-heading-r">${this.layoutToggle()}<input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div></div>${this.search.trim() ? this.searchView() : ''}<div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.rosterToggle('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
-      ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.rosterToggle(t.key,t.full)}</div>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}</div>${this.modal()}`;
+      ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.rosterToggle(t.key,t.full)}</div>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}${this.marriagePanel()}</div>${this.modal()}`;
   },
   async deleteMember(key, person) {
     if (key === 'leadership') { await this.save(person, 'remove'); return; }
