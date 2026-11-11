@@ -859,23 +859,32 @@ const AccessLog = {
     return `<section class="panel"><div class="team-title" style="padding:12px 14px 0"><h2 class="section-label" style="margin:0">${esc(label)}</h2><button class="roster-heading-toggle" data-act="access-toggle" data-k="${key}" aria-label="${esc(label)} list" aria-expanded="${opened}" aria-controls="access-${key}" style="flex:none"><span class="roster-count">${rows.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button></div><div id="access-${key}" style="padding:0 14px 14px" ${opened ? '' : 'hidden'}>${opened ? this.accessList(rows, key, emptyText) : ''}</div></section>`;
   },
   // A name-only row for the Teams page's "RCI Serve Access" section — no email, unlike accessRow above
-  // (which still backs the unreachable-but-kept AccessLog.view()).
+  // (which still backs the unreachable-but-kept AccessLog.view()). List-view variant.
   teamsAccessRow(r) {
     const fmt = d => d ? new Date(d).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
     return `<li class="roster-row-item"><span class="roster-row"><span class="roster-avatar">${esc(initials(r.name || r.email))}</span><span class="rr-info"><span class="rr-name"><b>${esc(r.name || r.email)}</b></span><small class="muted">Last signed in ${esc(fmt(r.last))}</small></span></span></li>`;
   },
+  // Grid/"circles" variant of the row above, matching Rosters.person() styling.
+  teamsAccessCard(r) {
+    return `<li class="roster-person"><span class="roster-avatar">${esc(initials(r.name || r.email))}</span><b>${esc(r.name || r.email)}</b></li>`;
+  },
   // Only the signed-in RCI Serve administrator (canManage()) sees this — currently just Ashley, since
   // she's the only name in CHURCH_CAL.editors. Shown at the bottom of the Teams page, styled like the
-  // "Your Ministries" heading, with the recheck action as an icon next to the header instead of a button.
+  // "Your Ministries" heading, with the recheck action as an icon next to the header. Collapsible like a
+  // team roster (chevron + count, backed by this.open) and follows the same grid/list view as the rest
+  // of the Teams page (Rosters.getLayout()).
   teamsSection() {
     if (!Rosters.canManage()) return '';
     if (this.rows === null && !this.error) void this.load();
     const rows = this.rows || [];
     const active = rows.filter(r => r.status === 'Successfully logged in').sort((a,b) => a.name.localeCompare(b.name,'en',{sensitivity:'base'}));
+    const key = 'teams', opened = this.open.has(key);
     const recheckBtn = `<button class="iconbtn sm${Rosters.recheckingAccess ? ' spin' : ''}" data-act="leadership-recheck-access" aria-label="Recheck Access" title="Recheck Access" ${Rosters.recheckingAccess ? 'disabled' : ''}>${ICON.refresh}</button>`;
-    const body = this.error ? `<div class="err" style="padding:14px">${esc(this.error)}</div>`
-      : active.length ? `<ul class="roster-rows access-rows">${active.map(r => this.teamsAccessRow(r)).join('')}</ul>` : `<div class="empty" style="padding:14px">No one has signed in yet.</div>`;
-    return `<h2 class="section-label" style="margin:18px 0 4px;display:flex;align-items:center;gap:8px"><span>RCI Serve Access</span>${recheckBtn}</h2><section class="panel">${body}</section>`;
+    const toggleBtn = `<button class="roster-heading-toggle" data-act="access-toggle" data-k="${key}" aria-label="RCI Serve Access list" aria-expanded="${opened}" aria-controls="access-${key}"><span class="roster-count" aria-label="${active.length} people">${active.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button>`;
+    const body = this.error ? `<p class="hint" role="alert">${esc(this.error)}</p>`
+      : !active.length ? '<p class="hint">No one has signed in yet.</p>'
+      : Rosters.getLayout() === 'list' ? `<ul class="roster-rows">${active.map(r => this.teamsAccessRow(r)).join('')}</ul>` : `<ul class="team-roster">${active.map(r => this.teamsAccessCard(r)).join('')}</ul>`;
+    return `<h2 class="section-label" style="margin:18px 0 4px">RCI Serve Access</h2><section class="panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${Rosters.icons.leadership}</span><b>Has Access</b>${toggleBtn}</div><div class="roster-actions">${recheckBtn}</div></div><div id="access-${key}" class="roster-section" ${opened ? '' : 'hidden'}>${opened ? `<div class="roster-content">${body}</div>` : ''}</div></section>`;
   },
   view() {
     if (!Rosters.canManage()) return '<h1 class="page">Access Check</h1><section class="panel pad"><p>Only RCI Serve administrators can view this.</p></section>';
