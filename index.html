@@ -317,7 +317,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "109";   // bump together with CACHE in sw.js
+const APP_VERSION = "110";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1344,6 +1344,7 @@ function viewServiceNotes(){
   const editing = canEdit && p.editing;
   const body = editing ? (p.body ?? (row?.notes || "")) : (row?.notes || "");
   const targets = sendableNotesTargets(), busy = p.busy;
+  const targetNames = targets.map(n => n.label).join(" and ");
   const pencil = canEdit ? (editing
       ? `<button class="iconbtn edit-on" data-act="notes-cancel-edit" aria-label="Stop editing" title="Stop editing">${ICON.check}</button>`
       : `<button class="iconbtn" data-act="notes-edit" aria-label="Edit Service Notes" title="Edit Service Notes">${ICON.edit}</button>`) : "";
@@ -1354,8 +1355,7 @@ function viewServiceNotes(){
     return `${head}
       ${notesToolbar()}
       <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Service Notes">${body || ""}</div>
-      ${targets.length ? `<span class="hint" style="font-weight:600">Also send to <span class="hint" style="font-weight:400">(optional)</span></span>
-      <div class="chiprow">${targets.map(n => `<button type="button" class="chipcheck team team-pill" style="${tvars(n.team())}" data-act="notes-target" data-k="${n.key}" aria-pressed="${(p.targets || []).includes(n.key)}"><span class="dot" aria-hidden="true"></span>${esc(n.label)}</button>`).join("")}</div>` : ""}
+      ${targets.length ? `<p class="hint">Saving also pushes these notes to ${esc(targetNames)} Notes.</p>` : ""}
       <div class="cform-acts"><button class="btn primary" data-act="notes-save" id="notes-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save Notes"}</button><button class="btn" data-act="notes-cancel-edit" ${busy ? "disabled" : ""}>Cancel</button></div>`;
   }
   const empty = canEdit ? "No Service Notes for this date yet. Tap the pencil to add them." : "No Service Notes for this date yet.";
@@ -1369,16 +1369,23 @@ async function notesSave(){
   try {
     if (!DEMO) await API.churchSaveNotes(p.rowId, text);
     const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId)); if (row) row.notes = text;
-    for (const k of (p.targets || [])){
-      const n = NOTES_TARGETS.find(x => x.key === k); if (!n || !isEditorOf(n.team())) continue;
-      if (k === "production-notes") await API.pushProductionNotes(p.date, text);
-      else if (k === "worship-notes") await API.pushWorshipNotes(p.date, text);
+    const sent = [];
+    for (const n of sendableNotesTargets()){
+      try {
+        if (n.key === "production-notes") await API.pushProductionNotes(p.date, text);
+        else if (n.key === "worship-notes") await API.pushWorshipNotes(p.date, text);
+        sent.push(n.label);
+      } catch(e){ /* that team's row may not exist yet (e.g. no Production Director scheduled) — don't block the main save */ }
     }
-    toast((p.targets || []).length ? "Notes saved and sent" : "Notes saved");
+    toast(sent.length ? `Notes saved and sent to ${sent.join(" and ")}` : "Notes saved");
     p.editing = false; p.targets = []; p.body = null;
   } catch(e){ toast("Couldn't save it. " + e.message, true); }
   if (S.notesPage) S.notesPage.busy = false;
   render();
+}
+function todayHasNotes(){
+  const row = (S.church.items || []).find(i => i.date === todayKey() && lc(i.title) !== "no service");
+  return !!(row && row.notes);
 }
 function overlaps(){
   const by = {};
@@ -1392,7 +1399,7 @@ function viewHome(){
   let out = `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div class="kicker">${esc(new Date().toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"}))}</div>
     <h1 class="greet">Good ${part}, ${esc(firstOf(S.me.name) || "friend")}</h1>
     ${S.loading ? `<div class="updating" style="margin-top:6px"><span class="spinner"></span>Checking your teams…</div>` : ""}</div>
-    ${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes" title="Today's Service Notes">${ICON.notes}</button>` : ""}</div>`;
+    ${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes${todayHasNotes() ? ", notes have been added" : ""}" title="Today's Service Notes">${ICON.notes}${todayHasNotes() ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div>`;
   out += badgeAsk();
   if (!teams.length && !isEditorOf(CHURCH_CAL) && !S.loading && !MINISTRIES.some(m => S.ministries?.[m.key]?.member)){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
