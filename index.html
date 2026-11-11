@@ -350,7 +350,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "129";   // bump together with CACHE in sw.js
+const APP_VERSION = "130";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -379,7 +379,7 @@ const MINISTRIES = [
 ];
 /* The church-wide calendar (not a team — no membership, no requests). Listed first in the calendar's chip row. */
 const CHURCH_CAL = { key: "church", name: "Church", full: "Church Calendar", tl: "#8A6631", td: "#D2B07C",
-  sitePath: "/sites/RCIServe", listName: "Church Calendar", editors: ["ashley.stmacary@therampchurch.com"] };
+  sitePath: "/sites/RCIServe", listName: "Church Calendar", editors: ["ashley.stmacary@therampchurch.com", "pastormarvin@therampchurch.com"] };
 // Marks a Church Calendar row as a quiet "don't recreate this" tombstone (see churchEvents / ensureRecurringServices).
 const SKIP_PREFIX = "Skip: ";
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
@@ -1644,7 +1644,7 @@ function viewHome(){
 function viewCalendar(){
   if (!S.cal.sel){ const first = upcoming()[0]; S.cal.sel = first && first.date <= addDays(todayKey(), 31) ? first.date : todayKey(); }
   const teams = myTeams(), off = S.cal.off;
-  const mins = MINISTRIES.filter(x => (S.ministries?.[x.key]?.events || []).length);
+  const mins = MINISTRIES.filter(x => S.ministries?.[x.key]?.member || (Rosters.isHubAdmin(S.me || {}) && S.ministries?.[x.key] && !S.ministries[x.key].noAccess));
   const chips = [CHURCH_CAL, ...teams, ...mins];
   const m = S.cal.month || (S.cal.sel || todayKey()).slice(0, 7);
   S.cal.month = m;

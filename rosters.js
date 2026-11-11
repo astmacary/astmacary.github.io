@@ -259,6 +259,7 @@ const Rosters = {
   },
   icons: {
     leadership: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m3 6 4 4 5-6 5 6 4-4-2 14H5L3 6Z"/><path d="M6 16h12"/></svg>',
+    access: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="14.5" r="4.5"/><path d="M11 11.5 20 2.5"/><path d="M15.5 7 18 9.5"/><path d="M18.5 3.5 21 6"/></svg>',
 
     add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
     remove: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>'
@@ -314,10 +315,10 @@ const Rosters = {
     const teams = myTeams();
     if (!this.data.leadership && !this.errors.leadership){
       void this.load('leadership');
-      return '<h1 class="page">Your Teams</h1><p class="hint" role="status">Loading teams and roster counts…</p>';
+      return '<h1 class="page">Teams</h1><p class="hint" role="status">Loading teams and roster counts…</p>';
     }
     for (const t of teams) if ((DEMO || S.teams[t.key]?.accessVerified) && !this.data[t.key] && !this.errors[t.key]) void this.load(t.key);
-    return `<div class="teams-page-heading"><h1 class="page">Your Teams</h1><div class="teams-page-heading-r">${this.layoutToggle()}<input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div></div>${this.search.trim() ? this.searchView() : ''}<div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.rosterToggle('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
+    return `<div class="teams-page-heading"><h1 class="page">Teams</h1><div class="teams-page-heading-r">${this.layoutToggle()}<input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div></div>${this.search.trim() ? this.searchView() : ''}<h2 class="section-label" style="margin:0 0 4px">Your Teams</h2><div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.rosterToggle('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
       ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.rosterToggle(t.key,t.full)}</div>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}${this.marriagePanel()}</div>${AccessLog.teamsSection()}${this.modal()}`;
   },
   async deleteMember(key, person) {
@@ -906,7 +907,7 @@ const AccessLog = {
     const body = this.error ? `<p class="hint" role="alert">${esc(this.error)}</p>`
       : !active.length ? '<p class="hint">No one has signed in yet.</p>'
       : this.permLegend() + (Rosters.getLayout() === 'list' ? `<ul class="roster-rows">${active.map(r => this.teamsAccessRow(r)).join('')}</ul>` : `<ul class="team-roster">${active.map(r => this.teamsAccessCard(r)).join('')}</ul>`);
-    return `<h2 class="section-label" style="margin:18px 0 4px">RCI Serve Access</h2><section class="panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${Rosters.icons.leadership}</span><b>Has Access</b>${toggleBtn}</div><div class="roster-actions">${recheckBtn}</div></div><div id="access-${key}" class="roster-section" ${opened ? '' : 'hidden'}>${opened ? `<div class="roster-content">${body}</div>` : ''}</div></section>`;
+    return `<h2 class="section-label" style="margin:18px 0 0">RCI Serve Access</h2><section class="panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${Rosters.icons.access}</span><b>Roles &amp; Permissions</b>${toggleBtn}</div><div class="roster-actions">${recheckBtn}</div></div><div id="access-${key}" class="roster-section" ${opened ? '' : 'hidden'}>${opened ? `<div class="roster-content">${body}</div>` : ''}</div></section>`;
   },
   view() {
     if (!Rosters.canManage()) return '<h1 class="page">Access Check</h1><section class="panel pad"><p>Only RCI Serve administrators can view this.</p></section>';
