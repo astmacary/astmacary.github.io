@@ -337,7 +337,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "116";   // bump together with CACHE in sw.js
+const APP_VERSION = "117";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -367,6 +367,8 @@ const MINISTRIES = [
 /* The church-wide calendar (not a team — no membership, no requests). Listed first in the calendar's chip row. */
 const CHURCH_CAL = { key: "church", name: "Church", full: "Church Calendar", tl: "#8A6631", td: "#D2B07C",
   sitePath: "/sites/RCIServe", listName: "Church Calendar", editors: ["ashley.stmacary@therampchurch.com"] };
+// Marks a Church Calendar row as a quiet "don't recreate this" tombstone (see churchEvents / ensureRecurringServices).
+const SKIP_PREFIX = "Skip: ";
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 const onAppHost = CONFIG.appHosts.includes(location.hostname);
 const DEMO = /[?&]demo\b/.test(location.search) || !onAppHost;
@@ -684,25 +686,35 @@ const API = {
     const dateCol = cols.find(c => c.dateTime && !c.hidden && !c.readOnly) || cols.find(c => c.dateTime);
     if (!dateCol) throw new Error("Church Calendar: couldn't find a date column");
     const hasNotes = cols.some(c => c.name === "Notes");
+    // ServiceNotes is RCI Leaders' own pastoral notes for the date — kept separate from "Notes" (the
+    // public announcement text carried over by churchAddCalendarEntry) so saving one never overwrites the other.
+    const hasServiceNotes = cols.some(c => c.name === "ServiceNotes");
     const hasAnn = cols.some(c => c.name === "Announcements"), hasUntil = cols.some(c => c.name === "ShowUntil"), hasFlyer = cols.some(c => c.name === "Flyer");
     this.sites.church = { siteId: site.id, annListId: listId };   // lets API.flyer(CHURCH_CAL, a) resolve Church flyers the same way team flyers do
-    return (this._churchMeta = { base, listId, dateCol: dateCol.name, hasNotes, hasAnn, hasUntil, hasFlyer });
+    return (this._churchMeta = { base, listId, dateCol: dateCol.name, hasNotes, hasServiceNotes, hasAnn, hasUntil, hasFlyer });
   },
-  /* Rows on the Church Calendar list come in two flavors: plain calendar events (just Title + date), and
+  /* Rows on the Church Calendar list come in three flavors: plain calendar events (just Title + date),
      church-wide announcements (same row shape, but with the Announcements column filled in) — these stay
-     inside RCI Serve under the "Church" category instead of being pushed out to a team app. */
+     inside RCI Serve under the "Church" category instead of being pushed out to a team app — and quiet
+     "skip" markers (Title prefixed with SKIP_PREFIX) left behind when someone deletes a recurring service,
+     so ensureRecurringServices() knows not to recreate it. Skip markers are never shown in the app. */
   async churchEvents(){
-    const { base, listId, dateCol, hasNotes, hasAnn, hasUntil, hasFlyer } = await this.churchMeta();
-    const select = `Title,${dateCol}` + (hasNotes ? ",Notes" : "") + (hasAnn ? ",Announcements" : "") + (hasUntil ? ",ShowUntil" : "") + (hasFlyer ? ",Flyer" : "");
+    const { base, listId, dateCol, hasNotes, hasServiceNotes, hasAnn, hasUntil, hasFlyer } = await this.churchMeta();
+    const select = `Title,${dateCol}` + (hasNotes ? ",Notes" : "") + (hasServiceNotes ? ",ServiceNotes" : "") + (hasAnn ? ",Announcements" : "") + (hasUntil ? ",ShowUntil" : "") + (hasFlyer ? ",Flyer" : "");
     const rows = await this.all(`${base}/${listId}/items?$expand=fields($select=${select})&$top=500`);
-    const events = [], anns = [];
+    const events = [], anns = [], skips = [];
     for (const r of rows){
+      const title = r.fields.Title || "";
+      if (title.startsWith(SKIP_PREFIX)){
+        const date = spDate(r.fields[dateCol]); if (date) skips.push({ date, title: title.slice(SKIP_PREFIX.length), rowId: r.id });
+        continue;
+      }
       const annText = (r.fields.Announcements || "").trim();
       if (annText){ anns.push({ id: Number(r.id), team: "church", created: r.createdDateTime || "", text: annText, until: spDate(r.fields.ShowUntil), flyer: r.fields.Flyer || "" }); continue; }
       const date = spDate(r.fields[dateCol]); if (!date) continue;
-      events.push({ id: "church-" + r.id, rowId: r.id, date, title: r.fields.Title || "", notes: r.fields.Notes || "", flyer: r.fields.Flyer || "" });
+      events.push({ id: "church-" + r.id, rowId: r.id, date, title, notes: r.fields.Notes || "", serviceNotes: r.fields.ServiceNotes || "", flyer: r.fields.Flyer || "" });
     }
-    return { events, anns };
+    return { events, anns, skips };
   },
   /* A separate Church Calendar row (distinct from the announcement row itself) for when an announcement
      is posted with an Event Date — so it shows up on the Calendar too, with the flyer and announcement
@@ -764,9 +776,9 @@ const API = {
     await this.g(`${base}/${listId}/items/${id}`, { method: "DELETE" });
   },
   async churchSaveNotes(rowId, html){
-    const { base, listId, hasNotes } = await this.churchMeta();
-    if (!hasNotes) throw new Error('The Church Calendar list needs a "Notes" (multiple lines of text) column added in SharePoint before notes can be saved on it.');
-    await this.g(`${base}/${listId}/items/${rowId}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ Notes: html }) });
+    const { base, listId, hasServiceNotes } = await this.churchMeta();
+    if (!hasServiceNotes) throw new Error('The Church Calendar list needs a "Service Notes" (multiple lines of text) column added in SharePoint before notes can be saved on it.');
+    await this.g(`${base}/${listId}/items/${rowId}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ServiceNotes: html }) });
   },
   async churchCreate(title, date){
     const { base, listId, dateCol } = await this.churchMeta();
@@ -1027,7 +1039,7 @@ const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams
             busy: new Set(), cal: { month: null, sel: null, off: loadFilter("cal"), form: null, busy: false }, hideInstall: false,
             annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"), payrollOff: loadFilter("payroll"), payrollDayOff: loadFilter("payroll-day"),
             notesSeen: loadNotesSeen(),
-            notesPage: null, notesBack: "home" };
+            churchEventPage: null, calEventBack: "home" };
 /* Teams this signed-in person can "Send to": only the ones they actually admin. */
 const sendableTeams = () => TEAMS.filter(isEditorOf);
 /* Always pushed to on every Service Notes save, for any RCI Leader, regardless of their own
@@ -1175,8 +1187,8 @@ async function loadAll(){
     });
     S.teams = next;
     const cr = churchResult[0];
-    if (cr.status === "fulfilled") S.church = { items: cr.value.events, anns: cr.value.anns, error: "" };
-    else { console.warn("Church Calendar", cr.reason); S.church = { items: S.church.items || [], anns: S.church.anns || [], error: cr.reason?.message || "Couldn't load" }; }
+    if (cr.status === "fulfilled") S.church = { items: cr.value.events, anns: cr.value.anns, skips: cr.value.skips || [], error: "" };
+    else { console.warn("Church Calendar", cr.reason); S.church = { items: S.church.items || [], anns: S.church.anns || [], skips: S.church.skips || [], error: cr.reason?.message || "Couldn't load" }; }
     saveCache();
   }
   S.loading = false; S.loadedAt = Date.now(); S.phase = "ready";
@@ -1203,7 +1215,8 @@ async function accept(id){
    Service" every Sunday, and a "Wednesday Night Bible Study" every Wednesday unless that Wednesday
    already has a "No Service" entry. Runs quietly after the calendar loads, only for someone who can
    edit the Church Calendar (it writes new rows), and only adds what's missing for a date/title pair
-   that isn't already there — it never touches or removes anything already set up for that date. */
+   that isn't already there and hasn't been explicitly deleted (see SKIP_PREFIX / S.church.skips) —
+   it never touches or removes anything already set up for that date. */
 const RECURRING_SERVICES = [
   { day: 0, title: "Sunday Morning Worship Service", skipIfNoService: false },
   { day: 3, title: "Wednesday Night Bible Study", skipIfNoService: true }
@@ -1212,6 +1225,7 @@ async function ensureRecurringServices(){
   if (DEMO || !isEditorOf(CHURCH_CAL)) return;
   const have = new Set((S.church.items || []).map(i => i.date + "|" + lc(i.title)));
   const noService = new Set((S.church.items || []).filter(i => lc(i.title) === "no service").map(i => i.date));
+  const skipped = new Set((S.church.skips || []).map(s => s.date + "|" + lc(s.title)));
   const today = todayKey();
   let added = false;
   for (let n = 0; n <= 56; n++){
@@ -1219,6 +1233,7 @@ async function ensureRecurringServices(){
     const r = RECURRING_SERVICES.find(x => x.day === dow); if (!r) continue;
     if (r.skipIfNoService && noService.has(d)) continue;
     if (have.has(d + "|" + lc(r.title))) continue;
+    if (skipped.has(d + "|" + lc(r.title))) continue;
     try {
       const e = await API.churchCreate(r.title, d);
       S.church.items = [...S.church.items, e];
@@ -1257,10 +1272,20 @@ async function churchSave(){
 }
 async function churchRemove(rowId){
   if (S.cal.busy) return;
+  const item = (S.church.items || []).find(x => x.rowId === rowId);
   S.cal.busy = true; render();
   try {
     if (!DEMO) await API.churchDelete(rowId);
     S.church.items = (S.church.items || []).filter(x => x.rowId !== rowId);
+    // Deleting a recurring service (Sunday Worship / Wednesday Bible Study) shouldn't bring it right back
+    // the next time ensureRecurringServices() runs — leave a quiet marker so that date stays skipped.
+    const recurring = item && RECURRING_SERVICES.find(r => lc(r.title) === lc(item.title));
+    if (recurring && !DEMO){
+      try {
+        const skip = await API.churchCreate(SKIP_PREFIX + recurring.title, item.date);
+        S.church.skips = [...(S.church.skips || []), { date: item.date, title: recurring.title, rowId: skip.rowId }];
+      } catch(e){ console.warn("Couldn't mark recurring service as skipped", e); }
+    }
     toast("Removed");
     saveCache();
   } catch(e){ toast("Couldn't remove it. " + e.message, true); }
@@ -1391,45 +1416,20 @@ function churchRow(i, editable){
   const noService = lc(i.title) === "no service";
   const style = noService ? `--tl:var(--stop);--td:var(--stop)` : tvars(CHURCH_CAL);
   // Anyone can tap the row to see the announcement info (text/flyer) behind this event — same audience
-  // as the Announcements shown on Home. Service Notes is a separate, RCI-Leaders-only page (the icon below).
-  const hasInfo = !noService && (i.notes || i.flyer);
-  const canServiceNotes = !noService && Rosters.isLeadershipMember();
-  return `<div class="row team${hasInfo ? " row-clickable" : ""}" style="${style}"${hasInfo ? ` data-act="church-event-info" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" role="button" tabindex="0" aria-label="View announcement details for ${esc(i.title || "Event")}"` : ""}><span class="bar"></span>
+  // as the Announcements shown on Home. An RCI Leader can also tap in with nothing posted yet, since
+  // that page is where they'd add Service Notes (a private container only they can see).
+  const hasInfo = !noService && (i.notes || i.flyer || Rosters.isLeadershipMember());
+  return `<div class="row team${hasInfo ? " row-clickable" : ""}" style="${style}"${hasInfo ? ` data-act="church-event-info" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" role="button" tabindex="0" aria-label="View details for ${esc(i.title || "Event")}"` : ""}><span class="bar"></span>
     ${noService ? `<span style="display:grid;place-items:center;width:28px;height:28px;color:var(--stop);flex:none">${ICON.ban}</span>` : ""}
     <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small></div>
-    ${editable || canServiceNotes ? `<div class="row-acts">
-      ${canServiceNotes ? `<button class="iconbtn sm${i.notes ? " edit-on" : ""}" data-act="notes" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" aria-label="Service Notes">${ICON.notes}</button>` : ""}
-      ${editable ? `<button class="iconbtn sm" data-act="church-edit" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" data-title="${esc(i.title)}" aria-label="Edit">${ICON.edit}</button>
-      <button class="iconbtn sm" data-act="church-delete" data-id="${esc(i.rowId)}" aria-label="Delete">${ICON.trash}</button>` : ""}</div>` : ""}</div>`;
+    ${editable ? `<div class="row-acts">
+      <button class="iconbtn sm" data-act="church-edit" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" data-title="${esc(i.title)}" aria-label="Edit">${ICON.edit}</button>
+      <button class="iconbtn sm" data-act="church-delete" data-id="${esc(i.rowId)}" aria-label="Delete">${ICON.trash}</button></div>` : ""}</div>`;
 }
-/* A dedicated Service Notes page — same role as Production's own Notes page, but RCI-Leaders-only: the
-   icon that opens it only shows for Rosters.isLeadershipMember(), and only a Church Calendar editor (or a
-   leader) can edit/save it. Reached via S.view === "notes". */
-function viewServiceNotes(){
-  const p = S.notesPage; if (!p) return `<div class="empty">No notes selected.</div>`;
-  const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId));
-  const canEdit = isEditorOf(CHURCH_CAL) || Rosters.isLeadershipMember();
-  const editing = canEdit && p.editing;
-  const body = editing ? (p.body ?? (row?.notes || "")) : (row?.notes || "");
-  const busy = p.busy;
-  const pencil = canEdit ? (editing
-      ? `<button class="iconbtn edit-on" data-act="notes-cancel-edit" aria-label="Stop editing" title="Stop editing">${ICON.check}</button>`
-      : `<button class="iconbtn" data-act="notes-edit" aria-label="Edit Service Notes" title="Edit Service Notes">${ICON.edit}</button>`) : "";
-  const head = `<div class="page-h"><button class="back" data-act="notes-back">${ICON.prev}Back</button></div>
-    <div class="page-h"><h1>Service Notes</h1><span style="flex:1"></span>${pencil}</div>
-    <p class="sub notes-date">${esc(fmtDay(p.date))}</p>`;
-  if (editing){
-    return `${head}
-      ${notesToolbar()}
-      <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Service Notes">${body || ""}</div>
-      <div class="cform-acts"><button class="btn primary" data-act="notes-save" id="notes-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save Notes"}</button><button class="btn" data-act="notes-cancel-edit" ${busy ? "disabled" : ""}>Cancel</button></div>`;
-  }
-  const empty = canEdit ? "No Service Notes for this date yet. Tap the pencil to add them." : "No Service Notes for this date yet.";
-  return `${head}${body ? `<div class="panel notes">${cleanHtml(body)}</div>` : `<div class="empty">${esc(empty)}</div>`}`;
-}
-/* The announcement info behind a Church Calendar event (flyer + text) — open to everyone, same audience
-   as the Announcements shown on Home. Separate from, and not gated like, Service Notes above.
-   Reached via S.view === "church-event". */
+/* The announcement info behind a Church Calendar event (flyer + public text) — open to everyone, same
+   audience as the Announcements shown on Home. RCI Leaders additionally see a private Service Notes
+   container below it (svcNotesBlock), backed by its own SharePoint column (ServiceNotes) so saving one
+   never overwrites the other. Reached via S.view === "church-event". */
 function viewChurchEventInfo(){
   const p = S.churchEventPage; if (!p) return `<div class="empty">No event selected.</div>`;
   const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId));
@@ -1437,16 +1437,38 @@ function viewChurchEventInfo(){
     <div class="page-h"><h1>${esc(row?.title || "Event")}</h1></div>
     <p class="sub notes-date">${esc(fmtDay(p.date))}</p>`;
   const flyerHtml = row?.flyer ? `<div class="ann-fly"><button class="flyer" data-act="flyer-open" data-flyer="church-event:${esc(row.rowId)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button></div>` : "";
-  return `${head}${flyerHtml}${row?.notes ? `<div class="panel notes">${cleanHtml(row.notes)}</div>` : `<div class="empty">No announcement details for this event.</div>`}`;
+  const body = row?.notes ? `<div class="panel notes">${cleanHtml(row.notes)}</div>` : "";
+  const svc = Rosters.isLeadershipMember() ? svcNotesBlock(row, p) : "";
+  return `${head}${flyerHtml}${body}${svc}`;
 }
-async function notesSave(){
-  const p = S.notesPage; if (!p || p.busy) return;
+/* The RCI-Leaders-only Service Notes container embedded on the announcement info page above — same role
+   as Production's own Notes page, just folded into this page instead of a separate icon/page. */
+function svcNotesBlock(row, p){
+  const canEdit = isEditorOf(CHURCH_CAL) || Rosters.isLeadershipMember();
+  const editing = canEdit && p.svcEditing;
+  const text = editing ? (p.svcBody ?? (row?.serviceNotes || "")) : (row?.serviceNotes || "");
+  const busy = p.svcBusy;
+  const pencil = canEdit ? (editing
+      ? `<button class="iconbtn edit-on" data-act="svc-cancel-edit" aria-label="Stop editing" title="Stop editing">${ICON.check}</button>`
+      : `<button class="iconbtn" data-act="svc-edit" aria-label="Edit Service Notes" title="Edit Service Notes">${ICON.edit}</button>`) : "";
+  const head = `<div class="sec-head"><h2>Service Notes</h2>${pencil}</div>`;
+  if (editing){
+    return `<section class="sec">${head}
+      ${notesToolbar()}
+      <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Service Notes">${text || ""}</div>
+      <div class="cform-acts"><button class="btn primary" data-act="svc-save" id="notes-save" ${busy ? "disabled" : ""}>${busy ? "Saving…" : "Save Notes"}</button><button class="btn" data-act="svc-cancel-edit" ${busy ? "disabled" : ""}>Cancel</button></div></section>`;
+  }
+  const empty = canEdit ? "No Service Notes for this date yet. Tap the pencil to add them." : "No Service Notes for this date yet.";
+  return `<section class="sec">${head}${text ? `<div class="panel notes">${cleanHtml(text)}</div>` : `<div class="empty">${esc(empty)}</div>`}</section>`;
+}
+async function svcNotesSave(){
+  const p = S.churchEventPage; if (!p || p.svcBusy) return;
   const text = cleanHtml($("#notes-editor")?.innerHTML || "").trim();
   if (!text){ toast("Write the notes first.", true); return; }
-  p.body = text; p.busy = true; render();
+  p.svcBody = text; p.svcBusy = true; render();
   try {
     if (!DEMO) await API.churchSaveNotes(p.rowId, text);
-    const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId)); if (row) row.notes = text;
+    const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId)); if (row) row.serviceNotes = text;
     markNotesSeen(p.rowId, text);   // the person who just wrote it has obviously seen it
     const sent = [];
     // Pushed for every RCI Leader regardless of their own Production/Worship team membership or SharePoint
@@ -1460,9 +1482,9 @@ async function notesSave(){
       } catch(e){ /* that team's row may not exist yet (e.g. no Production Director scheduled) — don't block the main save */ }
     }
     toast(sent.length ? `Notes saved and sent to ${sent.join(" and ")}` : "Notes saved");
-    p.editing = false; p.targets = []; p.body = null;
+    p.svcEditing = false; p.svcBody = null;
   } catch(e){ toast("Couldn't save it. " + e.message, true); }
-  if (S.notesPage) S.notesPage.busy = false;
+  if (S.churchEventPage) S.churchEventPage.svcBusy = false;
   render();
 }
 function todayChurchRow(){
@@ -1470,7 +1492,7 @@ function todayChurchRow(){
 }
 function todayNotesUnseen(){
   const row = todayChurchRow();
-  return !!(row && row.notes && S.notesSeen[row.rowId] !== row.notes);
+  return !!(row && row.serviceNotes && S.notesSeen[row.rowId] !== row.serviceNotes);
 }
 function overlaps(){
   const by = {};
@@ -1705,10 +1727,15 @@ function markNewAnns(list){
   return fresh;
 }
 const team_id = a => a.team + ":" + a.id;
+// The first line is the headline (shown as the title elsewhere, e.g. a Church Calendar entry's Title);
+// this splits it from the rest so the two aren't shown twice over.
+function annHeadRest(text){
+  const lines = (text || "").split(/\n/).map(l => l.trim()).filter(Boolean);
+  return { head: lines.shift() || "", rest: lines.join("\n") };
+}
 function annCard(a, isNew){
   const t = teamOf(a.team);
-  const lines = a.text.split(/\n/).map(l => l.trim()).filter(Boolean);
-  const head = lines.shift() || "", rest = lines.join("\n");
+  const { head, rest } = annHeadRest(a.text);
   const share = a.team === 'church' && AnnShare.targets().length ? `<button class="iconbtn sm" data-act="ann-share" data-id="${esc(a.id)}" aria-label="Share church announcement" title="Share to another team"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></button>` : '';
   return `<article class="ann-card team${annToday(a) ? " ann-today" : ""}" style="${tvars(t)}">
     <div class="ann-body"><div class="ann-heading"><span class="ann-tlabel">${esc(t.name)}</span></div>
@@ -1786,7 +1813,7 @@ function render(){
     return;
   }
   const tabsArr = tabsList();
-  const body = S.view === "notes" ? viewServiceNotes() : S.view === "church-event" ? viewChurchEventInfo() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
+  const body = S.view === "church-event" ? viewChurchEventInfo() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
     : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "access-log" ? AccessLog.view() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
@@ -1932,47 +1959,33 @@ document.addEventListener("click", async e => {
   }
   else if (act === "ann-target"){ const k = b.dataset.k; annDraftSave(); const f = S.annDraft; f.targets = f.targets || []; const i = f.targets.indexOf(k); i >= 0 ? f.targets.splice(i, 1) : f.targets.push(k); render(); }
   else if (act === "today-notes"){
-    // The Home-page shortcut: opens today's Service Notes directly, same page as the Calendar's own
-    // notes icon, skipping a "No Service" day since there's nothing to take notes on.
+    // The Home-page shortcut: opens today's announcement-info page directly (same page the Calendar's
+    // own event row opens), skipping a "No Service" day since there's nothing to take notes on.
     const row = (S.church.items || []).find(i => i.date === todayKey() && lc(i.title) !== "no service");
     if (!row){ toast("No Church Calendar event today, so there's no Service Notes yet."); return; }
-    S.notesBack = S.view === "notes" ? S.notesBack : S.view;
-    S.notesPage = { rowId: row.rowId, date: row.date, editing: false, body: null, targets: [], busy: false };
-    markNotesSeen(row.rowId, row.notes);
-    S.view = "notes"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){}
+    S.calEventBack = S.view === "church-event" ? S.calEventBack : S.view;
+    S.churchEventPage = { rowId: row.rowId, date: row.date };
+    markNotesSeen(row.rowId, row.serviceNotes);
+    S.view = "church-event"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){}
     render(); window.scrollTo(0, 0);
   }
-  else if (act === "notes" || act === "notes-new"){
-    // Opens the dedicated Service Notes page (same role as each team app's own Notes page) —
-    // reached from Next 7 Days or from the Calendar day panel's notes icon.
-    S.notesBack = S.view === "notes" ? S.notesBack : S.view;
-    S.notesPage = { rowId: b.dataset.id, date: b.dataset.date, editing: false, body: null, targets: [], busy: false };
-    markNotesSeen(b.dataset.id, (S.church.items || []).find(i => String(i.rowId) === String(b.dataset.id))?.notes);
-    S.view = "notes"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){}
-    render(); window.scrollTo(0, 0);
-  }
-  else if (act === "notes-back"){ S.view = S.notesBack || "home"; S.notesPage = null; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
   else if (act === "church-event-info"){
-    // Tapping a Church Calendar event's row: shows the announcement info (flyer/text) behind it,
-    // open to everyone — a separate, lighter-weight page from the RCI-Leaders-only Service Notes above.
+    // Tapping a Church Calendar event's row: shows the announcement info (flyer/text) behind it, open to
+    // everyone, plus — for an RCI Leader — the private Service Notes container further down the page.
     S.calEventBack = S.view === "church-event" ? S.calEventBack : S.view;
     S.churchEventPage = { rowId: b.dataset.id, date: b.dataset.date };
+    markNotesSeen(b.dataset.id, (S.church.items || []).find(i => String(i.rowId) === String(b.dataset.id))?.serviceNotes);
     S.view = "church-event"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){}
     render(); window.scrollTo(0, 0);
   }
   else if (act === "church-event-back"){ S.view = S.calEventBack || "home"; S.churchEventPage = null; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); }
-  else if (act === "notes-edit"){
-    const p = S.notesPage; if (!p) return;
+  else if (act === "svc-edit"){
+    const p = S.churchEventPage; if (!p) return;
     const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId));
-    p.editing = true; p.body = row?.notes || ""; p.targets = []; render(); setTimeout(() => $("#notes-editor")?.focus(), 0);
+    p.svcEditing = true; p.svcBody = row?.serviceNotes || ""; render(); setTimeout(() => $("#notes-editor")?.focus(), 0);
   }
-  else if (act === "notes-cancel-edit"){ const p = S.notesPage; if (p) p.editing = false; render(); }
-  else if (act === "notes-target"){
-    const k = b.dataset.k, p = S.notesPage; if (!p) return;
-    p.body = cleanHtml($("#notes-editor")?.innerHTML || "");   // keep what was typed — a re-render would otherwise rebuild the editor from the old body
-    const i = (p.targets = p.targets || []).indexOf(k); i >= 0 ? p.targets.splice(i, 1) : p.targets.push(k); render();
-  }
-  else if (act === "notes-save") notesSave();
+  else if (act === "svc-cancel-edit"){ const p = S.churchEventPage; if (p) p.svcEditing = false; render(); }
+  else if (act === "svc-save") svcNotesSave();
   else if (act === "fmt"){
     const ed = $("#notes-editor"); if (!ed) return;
     ed.focus();
@@ -2010,10 +2023,10 @@ document.addEventListener("submit", async e => {
       // placed on the Church Calendar by adding an Event Date to it during Edit.
       if (isChurch && d.eventDate){
         try {
-          const headline = (d.text.split("\n")[0] || "Announcement").trim();
+          const { head: headline, rest } = annHeadRest(d.text);
           const flyerValue = !flyer && !d.removeFlyer ? (cur && cur.flyer) || "" : "";
-          const entry = DEMO ? { id: "church-" + Date.now(), rowId: "demo-" + Date.now(), date: d.eventDate, title: headline, notes: d.text }
-            : await API.churchAddCalendarEntry({ title: headline, date: d.eventDate, notesText: d.text, flyerBlob: flyer, flyerName: d.file?.name, flyerValue });
+          const entry = DEMO ? { id: "church-" + Date.now(), rowId: "demo-" + Date.now(), date: d.eventDate, title: headline || "Announcement", notes: rest }
+            : await API.churchAddCalendarEntry({ title: headline || "Announcement", date: d.eventDate, notesText: rest, flyerBlob: flyer, flyerName: d.file?.name, flyerValue });
           S.church.items = [...(S.church.items || []), entry];
           calendarAdded = true;
         } catch(e){ /* the announcement edit itself still saved fine — the Calendar entry is a bonus */ }
@@ -2044,9 +2057,9 @@ document.addEventListener("submit", async e => {
     // covers Church. Skipped quietly (not an error) when Church wasn't one of the chosen destinations.
     if (d.eventDate && targets.includes("church")){
       try {
-        const headline = (d.text.split("\n")[0] || "Announcement").trim();
-        const entry = DEMO ? { id: "church-" + Date.now(), rowId: "demo-" + Date.now(), date: d.eventDate, title: headline, notes: d.text }
-          : await API.churchAddCalendarEntry({ title: headline, date: d.eventDate, notesText: d.text, flyerBlob: flyer, flyerName: d.file?.name });
+        const { head: headline, rest } = annHeadRest(d.text);
+        const entry = DEMO ? { id: "church-" + Date.now(), rowId: "demo-" + Date.now(), date: d.eventDate, title: headline || "Announcement", notes: rest }
+          : await API.churchAddCalendarEntry({ title: headline || "Announcement", date: d.eventDate, notesText: rest, flyerBlob: flyer, flyerName: d.file?.name });
         S.church.items = [...(S.church.items || []), entry];
         calendarAdded = true;
       } catch(e){ /* the announcement itself still posted fine — the Calendar entry is a bonus */ }
