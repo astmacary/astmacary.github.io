@@ -85,8 +85,9 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .event-info-row .flyer-col{flex:none;display:flex}
 .event-info-row .flyer-col .flyer{width:auto;max-width:140px;height:100%}
 .event-info-row .flyer-col .flyer img{width:100%;height:100%;object-fit:cover;max-height:none}
-.notes-date-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.notes-date-row{display:flex;align-items:center;gap:8px}
 .notes-date-row .notes-date{margin:0}
+.notes-date-fill{flex:1}
 .sec-head .acts{display:flex;flex-direction:row;gap:8px;flex:none}
 .iconbtn.sm{width:32px;height:32px}
 .iconbtn.sm svg{width:16px;height:16px}
@@ -122,13 +123,13 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .hint{font-size:13px;color:var(--muted);margin:0}
 
 /* team tiles */
-.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.tile{position:relative;display:flex;flex-direction:column;gap:5px;padding:10px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);text-decoration:none;color:var(--fg);min-height:76px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
+.tile{position:relative;display:flex;flex-direction:column;gap:4px;padding:8px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);text-decoration:none;color:var(--fg);min-height:72px}
 .tile:active{transform:scale(.98)}
-.t-ic{width:30px;height:30px;border-radius:9px;background:var(--tl);color:#FFFFFF;display:grid;place-items:center;flex:none}
-.t-ic svg{width:16px;height:16px}
-.tile b{font-size:15px;line-height:1.2}
-.tile small{font-size:12px;color:var(--muted)}
+.t-ic{width:26px;height:26px;border-radius:8px;background:var(--tl);color:#FFFFFF;display:grid;place-items:center;flex:none}
+.t-ic svg{width:14px;height:14px}
+.tile b{font-size:13px;line-height:1.2}
+.tile small{font-size:11px;color:var(--muted)}
 .tile small.hot{color:var(--bad);font-weight:600}
 .tile small.good{color:var(--ok);font-weight:600}
 .tile .count{position:absolute;top:8px;right:10px}
@@ -238,7 +239,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .cal-head b{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase}
 .cal-head .iconbtn{border:0;background:var(--surface-2);color:var(--fg)}
-.cal-today-row{display:flex;justify-content:center;margin-bottom:8px}
+.cal-nav{display:flex;align-items:center;gap:8px}
 .dow,.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
 .dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;padding-bottom:4px}
 .day{height:46px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:10px;border:0;background:transparent;font-size:14px;font-weight:500;padding:0}
@@ -347,7 +348,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "120";   // bump together with CACHE in sw.js
+const APP_VERSION = "121";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -749,7 +750,7 @@ const API = {
         await this.g(`${base}/${listId}/items/${r.id}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ Flyer: flyer }) });
       } catch(e){ flyerOk = false; }
     }
-    return { id: "church-" + r.id, rowId: r.id, date, title: fields.Title, notes: fields.Notes || "", flyerError: !!((flyerBlob || flyerValue) && !flyerOk) };
+    return { id: "church-" + r.id, rowId: r.id, date, title: fields.Title, notes: fields.Notes || "", flyer: flyerOk ? (flyerValue || (flyerBlob ? "pending" : "")) : "", flyerError: !!((flyerBlob || flyerValue) && !flyerOk) };
   },
   async churchAnnouncementPush({ text, until, flyerBlob, flyerName }){
     const { base, listId, dateCol, hasAnn } = await this.churchMeta();
@@ -1462,7 +1463,7 @@ function viewChurchEventInfo(){
   const collapseBtn = isLeader ? `<button class="iconbtn sm" data-act="ann-info-collapse" data-id="${esc(p.rowId)}" aria-label="${collapsed ? "Show" : "Hide"} announcement info" aria-pressed="${collapsed}" title="${collapsed ? "Show" : "Hide"} announcement info">${collapsed ? ICON.chevronDown : ICON.chevronUp}</button>` : "";
   const head = `<div class="page-h"><button class="back" data-act="church-event-back">${ICON.prev}Back</button></div>
     <div class="page-h"><h1>${esc(row?.title || "Event")}</h1></div>
-    <div class="notes-date-row"><p class="sub notes-date">${esc(fmtDay(p.date))}</p>${collapseBtn}</div>`;
+    <div class="notes-date-row"><p class="sub notes-date">${esc(fmtDay(p.date))}</p>${collapseBtn}<span class="notes-date-fill"></span></div>`;
   const flyerHtml = row?.flyer ? `<div class="flyer-col"><button class="flyer" data-act="flyer-open" data-flyer="church-event:${esc(row.rowId)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button></div>` : "";
   const body = row?.notes ? `<div class="panel notes">${cleanHtml(row.notes)}</div>` : "";
   const infoRow = (body || flyerHtml) && !collapsed ? `<div class="event-info-row">${body}${flyerHtml}</div>` : "";
@@ -1664,8 +1665,7 @@ function viewCalendar(){
   const f = S.cal.form;
   return `<h1 class="page">My Calendar</h1>
     ${chips.length > 1 ? `<div class="chips" role="group" aria-label="Show calendars">${chips.map(t => `<button class="chip team team-pill${off.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="filter" data-k="${t.key}" aria-pressed="${!off.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
-    <section class="panel cal"><div class="cal-head"><button class="iconbtn" data-act="month" data-d="-1" aria-label="Previous month">${ICON.prev}</button><b>${esc(label)}</b><button class="iconbtn" data-act="month" data-d="1" aria-label="Next month">${ICON.next}</button></div>
-      <div class="cal-today-row"><button class="btn sm" data-act="cal-today">Today</button></div>
+    <section class="panel cal"><div class="cal-head"><div class="cal-nav"><button class="btn sm" data-act="cal-today">Today</button><button class="iconbtn" data-act="month" data-d="-1" aria-label="Previous month">${ICON.prev}</button></div><b>${esc(label)}</b><button class="iconbtn" data-act="month" data-d="1" aria-label="Next month">${ICON.next}</button></div>
       <div class="dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
       <div class="days">${cells}</div></section>
     <section class="sec"><div class="sec-head"><h2>${esc(fmtDay(sel))}</h2>${canEditChurch ? `<div class="acts">
