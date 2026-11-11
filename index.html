@@ -315,7 +315,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "101";   // bump together with CACHE in sw.js
+const APP_VERSION = "102";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1065,7 +1065,8 @@ function saveShared(){
   if (!S.me || S.imp) return;
   try {
     const teams = myTeams().map(t => ({ key: t.key, count: S.teams[t.key]?.items ? pendingOf(t.key).length : 0, admin: isEditorOf(t) }));
-    localStorage.setItem("rci-serve:state", JSON.stringify({ emails: S.me.emails, name: S.me.name, at: Date.now(), teams }));
+    const ministries = MINISTRIES.filter(m => S.ministries?.[m.key]?.member || (Rosters.isHubAdmin(S.me || {}) && S.ministries?.[m.key] && !S.ministries[m.key].noAccess)).map(m => ({ key: m.key }));
+    localStorage.setItem("rci-serve:state", JSON.stringify({ emails: S.me.emails, name: S.me.name, at: Date.now(), teams, ministries }));
   } catch(e){}
 }
 function saveCache(){
