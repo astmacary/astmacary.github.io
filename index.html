@@ -317,7 +317,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "110";   // bump together with CACHE in sw.js
+const APP_VERSION = "111";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -961,15 +961,36 @@ function loadFilter(key){
 function saveFilter(key, set){
   try { localStorage.setItem("rci-serve:filter:" + key, JSON.stringify([...set])); } catch(e){}
 }
+/* Remembers the Service Notes text each row looked like the last time this device's viewer opened it,
+   so the Home shortcut's red dot can tell a fresh edit from one already seen. Per-device, like the filters above. */
+function loadNotesSeen(){
+  try { return JSON.parse(localStorage.getItem("rci-serve:notes-seen") || "{}"); } catch(e){ return {}; }
+}
+/* Remembers which announcement flyers someone has collapsed, so they stay hidden across visits (same device/browser). */
+function flyerCollapsed(id){
+  try { return JSON.parse(localStorage.getItem("rci-serve:flyer-collapsed") || "[]").includes(String(id)); } catch(e){ return false; }
+}
+function toggleFlyerCollapsed(id){
+  let list; try { list = new Set(JSON.parse(localStorage.getItem("rci-serve:flyer-collapsed") || "[]")); } catch(e){ list = new Set(); }
+  const k = String(id); list.has(k) ? list.delete(k) : list.add(k);
+  try { localStorage.setItem("rci-serve:flyer-collapsed", JSON.stringify([...list])); } catch(e){}
+}
+function markNotesSeen(rowId, notes){
+  if (!rowId) return;
+  S.notesSeen[rowId] = notes || "";
+  try { localStorage.setItem("rci-serve:notes-seen", JSON.stringify(S.notesSeen)); } catch(e){}
+}
 const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams: {}, church: { items: [], anns: [], error: "" }, loading: false, loadedAt: 0,
             busy: new Set(), cal: { month: null, sel: null, off: loadFilter("cal"), form: null, busy: false }, hideInstall: false,
             annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"), payrollOff: loadFilter("payroll"), payrollDayOff: loadFilter("payroll-day"),
+            notesSeen: loadNotesSeen(),
             notesPage: null, notesBack: "home" };
 /* Teams this signed-in person can "Send to": only the ones they actually admin. */
 const sendableTeams = () => TEAMS.filter(isEditorOf);
-const NOTES_TARGETS = [{ key: "production-notes", label: "Production", team: () => TEAMS.find(t => t.key === "productions") },
-                        { key: "worship-notes", label: "Worship & Arts", team: () => TEAMS.find(t => t.key === "worship") }];
-const sendableNotesTargets = () => NOTES_TARGETS.filter(n => isEditorOf(n.team()));
+/* Always pushed to on every Service Notes save, for any RCI Leader, regardless of their own
+   Production/Worship team membership — see the comment in notesSave(). */
+const NOTES_TARGETS = [{ key: "production-notes", label: "Production" },
+                        { key: "worship-notes", label: "Worship & Arts" }];
 const mineRow = i => (i.email && S.me.emails.includes(lc(i.email))) || (!i.email && i.fullName && lc(i.fullName) === lc(S.me.name));
 const isEditorOf = t => !!S.me && (DEMO || t.editors.some(e => S.me.emails.includes(lc(e))));
 /* On a team: an admin of it, has a (not archived) Roster / profile row, or has been scheduled in the last 120 days or later. */
@@ -1340,10 +1361,10 @@ function churchRow(i, editable, canViewNotes = editable){
 function viewServiceNotes(){
   const p = S.notesPage; if (!p) return `<div class="empty">No notes selected.</div>`;
   const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId));
-  const canEdit = isEditorOf(CHURCH_CAL);
+  const canEdit = isEditorOf(CHURCH_CAL) || Rosters.isLeadershipMember();
   const editing = canEdit && p.editing;
   const body = editing ? (p.body ?? (row?.notes || "")) : (row?.notes || "");
-  const targets = sendableNotesTargets(), busy = p.busy;
+  const targets = NOTES_TARGETS, busy = p.busy;
   const targetNames = targets.map(n => n.label).join(" and ");
   const pencil = canEdit ? (editing
       ? `<button class="iconbtn edit-on" data-act="notes-cancel-edit" aria-label="Stop editing" title="Stop editing">${ICON.check}</button>`
@@ -1369,8 +1390,12 @@ async function notesSave(){
   try {
     if (!DEMO) await API.churchSaveNotes(p.rowId, text);
     const row = (S.church.items || []).find(x => String(x.rowId) === String(p.rowId)); if (row) row.notes = text;
+    markNotesSeen(p.rowId, text);   // the person who just wrote it has obviously seen it
     const sent = [];
-    for (const n of sendableNotesTargets()){
+    // Pushed for every RCI Leader regardless of their own Production/Worship team membership or SharePoint
+    // access — this only writes the Notes field on each team's own calendar row, it doesn't grant the
+    // editor any visibility into those apps.
+    for (const n of NOTES_TARGETS){
       try {
         if (n.key === "production-notes") await API.pushProductionNotes(p.date, text);
         else if (n.key === "worship-notes") await API.pushWorshipNotes(p.date, text);
@@ -1383,9 +1408,12 @@ async function notesSave(){
   if (S.notesPage) S.notesPage.busy = false;
   render();
 }
-function todayHasNotes(){
-  const row = (S.church.items || []).find(i => i.date === todayKey() && lc(i.title) !== "no service");
-  return !!(row && row.notes);
+function todayChurchRow(){
+  return (S.church.items || []).find(i => i.date === todayKey() && lc(i.title) !== "no service");
+}
+function todayNotesUnseen(){
+  const row = todayChurchRow();
+  return !!(row && row.notes && S.notesSeen[row.rowId] !== row.notes);
 }
 function overlaps(){
   const by = {};
@@ -1399,7 +1427,7 @@ function viewHome(){
   let out = `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div class="kicker">${esc(new Date().toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"}))}</div>
     <h1 class="greet">Good ${part}, ${esc(firstOf(S.me.name) || "friend")}</h1>
     ${S.loading ? `<div class="updating" style="margin-top:6px"><span class="spinner"></span>Checking your teams…</div>` : ""}</div>
-    ${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes${todayHasNotes() ? ", notes have been added" : ""}" title="Today's Service Notes">${ICON.notes}${todayHasNotes() ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div>`;
+    ${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes${todayNotesUnseen() ? ", unread edit" : ""}" title="Today's Service Notes">${ICON.notes}${todayNotesUnseen() ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div>`;
   out += badgeAsk();
   if (!teams.length && !isEditorOf(CHURCH_CAL) && !S.loading && !MINISTRIES.some(m => S.ministries?.[m.key]?.member)){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
@@ -1600,7 +1628,9 @@ function annCard(a, isNew){
   return `<article class="ann-card team${annToday(a) ? " ann-today" : ""}" style="${tvars(t)}">
     <div class="ann-body"><div class="ann-heading"><span class="ann-tlabel">${esc(t.name)}</span>${a.team === 'church' && AnnShare.targets().length ? `<button class="iconbtn sm" data-act="ann-share" data-id="${esc(a.id)}" aria-label="Share church announcement" title="Share to another team"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></button>` : ''}</div>
       <b class="ann-title">${annToday(a) ? todayPill() : ""}${isNew ? newPill() : ""}${esc(head)}</b>${rest ? `<p class="ann-text">${esc(rest)}</p>` : ""}${S.annEdit && canEditAnn(a) ? annEditLine(a) : ""}</div>
-    ${a.flyer ? `<button class="flyer" data-act="flyer-open" data-flyer="${team_id(a)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button>` : ""}
+    ${a.flyer ? (flyerCollapsed(team_id(a))
+      ? `<button class="linkbtn" data-act="flyer-toggle" data-flyer-id="${esc(team_id(a))}" style="align-self:flex-start;margin:0 12px 12px">Show flyer</button>`
+      : `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><button class="flyer" data-act="flyer-open" data-flyer="${team_id(a)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button><button class="linkbtn" data-act="flyer-toggle" data-flyer-id="${esc(team_id(a))}">Hide flyer</button></div>`) : ""}
   </article>`;
 }
 function viewAnnouncements(){
@@ -1752,6 +1782,7 @@ document.addEventListener("click", async e => {
   else if (act === "payroll-filter"){ const k = b.dataset.k; S.payrollOff.has(k) ? S.payrollOff.delete(k) : S.payrollOff.add(k); saveFilter("payroll", S.payrollOff); render(); }
   else if (act === "payroll-day-toggle"){ const k = b.dataset.k; S.payrollDayOff.has(k) ? S.payrollDayOff.delete(k) : S.payrollDayOff.add(k); saveFilter("payroll-day", S.payrollDayOff); render(); }
   else if (act === "flyer-open"){ if (b.dataset.url) openLightbox(b.dataset.url, b.querySelector("img")?.alt); }
+  else if (act === "flyer-toggle"){ toggleFlyerCollapsed(b.dataset.flyerId); render(); }
   else if (act === "church-add"){ S.cal.form = { mode: "add", rowId: null, title: "", date: S.cal.sel || todayKey(), targets: [] }; render(); document.querySelector('[data-field="title"]')?.focus(); }
   else if (act === "church-edit"){
     const date = b.dataset.date || S.cal.sel;
@@ -1812,6 +1843,7 @@ document.addEventListener("click", async e => {
     if (!row){ toast("No Church Calendar event today, so there's no Service Notes yet."); return; }
     S.notesBack = S.view === "notes" ? S.notesBack : S.view;
     S.notesPage = { rowId: row.rowId, date: row.date, editing: false, body: null, targets: [], busy: false };
+    markNotesSeen(row.rowId, row.notes);
     S.view = "notes"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){}
     render(); window.scrollTo(0, 0);
   }
@@ -1820,6 +1852,7 @@ document.addEventListener("click", async e => {
     // reached from Next 7 Days or from the Calendar day panel's notes icon.
     S.notesBack = S.view === "notes" ? S.notesBack : S.view;
     S.notesPage = { rowId: b.dataset.id, date: b.dataset.date, editing: false, body: null, targets: [], busy: false };
+    markNotesSeen(b.dataset.id, (S.church.items || []).find(i => String(i.rowId) === String(b.dataset.id))?.notes);
     S.view = "notes"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){}
     render(); window.scrollTo(0, 0);
   }
