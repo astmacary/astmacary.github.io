@@ -170,12 +170,31 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .payroll-item{display:flex;align-items:baseline;gap:8px;font-size:14px}
 .payroll-item .dot{width:8px;height:8px;border-radius:50%;background:var(--t);flex:none;align-self:center}
 .payroll-item small{color:var(--muted);font-size:12px}
+/* You're Serving Today card (same as the team apps) */
+.today-btns{display:flex;flex-wrap:wrap;gap:8px}
+.today-hero .confirm-row{margin-top:6px}
+.today-hero{position:relative;display:flex;flex-direction:column;gap:10px;padding:16px 16px 14px;border-radius:var(--r);border:2px solid var(--accent);background:linear-gradient(135deg,var(--accent-soft),var(--surface) 70%);box-shadow:0 6px 22px -10px var(--accent)}
+.today-h{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.today-dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 var(--accent);animation:todayPulse 1.8s ease-out infinite}
+@keyframes todayPulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent)}100%{box-shadow:0 0 0 10px transparent}}
+@media (prefers-reduced-motion:reduce){.today-dot{animation:none}}
+.today-item{display:flex;flex-direction:column;gap:2px}
+.today-item + .today-item{border-top:1px solid var(--line);padding-top:10px}
+.today-role{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.05;letter-spacing:.01em;color:var(--fg);overflow-wrap:anywhere}
+.today-meta{font-size:14px;color:var(--muted)}
+.today-meta b{color:var(--fg)}
+.today-act{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
+.today-team{align-self:flex-start;border-color:var(--accent);color:var(--accent);font-weight:700}
 .pill.today-pill{background:var(--accent);color:var(--accent-ink);font-weight:800}
 .pill.new-pill{background:var(--accent);color:var(--accent-ink);font-size:10.5px;padding:1px 7px;vertical-align:2px;margin-right:4px}
 .ann-meta{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:6px;font-size:13px;font-weight:500;color:var(--muted)}
 .ann-meta .linkbtn{margin:0;padding:0}
 .iconbtn.edit-on{background:var(--go);border-color:var(--go);color:#FFFFFF}
 .linkbtn{background:none;border:none;padding:4px 0;margin-top:4px;color:var(--muted);font-size:13px;font-weight:600;text-decoration:underline}
+.ann-side{flex:none;align-self:stretch;display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;gap:6px}
+.ann-side > .iconbtn{margin:-2px -2px 0 0}
+.ann-fly{display:flex;flex-direction:column;align-items:flex-end;gap:4px;margin-top:auto}
+.linkbtn.flyer-tog{text-decoration:none;margin-top:auto}
 .linkbtn.danger{color:var(--bad)}
 .linkbtn.go-link{color:var(--ok)}
 .ann-form{border-top:1px solid var(--line);margin-top:14px;padding-top:14px;display:flex;flex-direction:column;gap:12px}
@@ -317,7 +336,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "111";   // bump together with CACHE in sw.js
+const APP_VERSION = "112";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1421,6 +1440,22 @@ function overlaps(){
   return Object.entries(by).filter(([, l]) => new Set(l.map(i => i.team)).size > 1 && l.some(i => i.pending)).map(([k, l]) => ({ date: k, list: l }));
 }
 
+/* "You're Serving Today" card — same look as the team apps' Home card, for every team you serve on today. */
+function todayHero(){
+  const t = todayKey();
+  const list = myItems().filter(i => i.date === t && (i.confirmed || i.pending)).sort((a, b) => a.team.localeCompare(b.team));
+  if (!list.length) return "";
+  const teamsToday = [...new Set(list.map(i => i.team))].map(teamOf);
+  return `<section class="today-hero" aria-label="Where you're serving today">
+    <div class="today-h"><span class="today-dot" aria-hidden="true"></span>You're Serving Today</div>
+    ${list.map(i => { const tm = teamOf(i.team); return `<div class="today-item">
+      <span class="tlabel team" style="${tvars(tm)}">${esc(tm.name)}</span>
+      <div class="today-role">${esc(i.role || "Serving")}</div>
+      <div class="today-meta">${esc(i.category || "")}${i.call ? ` · Call Time <b>${esc(i.call)}</b>` : ""}</div>
+      ${i.pending ? `<div class="today-act"><span class="pill warn">Needs your reply</span><button class="btn accept" data-act="accept" data-id="${esc(i.id)}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Saving…" : "Accept"}</button></div>` : ""}
+    </div>`; }).join("")}
+    <div class="today-btns">${teamsToday.map(tm => `<a class="btn today-team" href="${tm.path}?home${DEMO ? "&amp;demo" : ""}">See Today's ${teamsToday.length > 1 ? esc(tm.name) + " " : ""}Team</a>`).join("")}</div></section>`;
+}
 function viewHome(){
   const h = new Date().getHours(), part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
   const teams = myTeams(), reqs = pendingOf();
@@ -1429,6 +1464,7 @@ function viewHome(){
     ${S.loading ? `<div class="updating" style="margin-top:6px"><span class="spinner"></span>Checking your teams…</div>` : ""}</div>
     ${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes${todayNotesUnseen() ? ", unread edit" : ""}" title="Today's Service Notes">${ICON.notes}${todayNotesUnseen() ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div>`;
   out += badgeAsk();
+  out += todayHero();
   if (!teams.length && !isEditorOf(CHURCH_CAL) && !S.loading && !MINISTRIES.some(m => S.ministries?.[m.key]?.member)){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
       <p class="hint">RCI Serve shows the teams where your email (${esc(S.me.emails[0] || "")}) is on the roster or schedule. If you serve on a team, ask that team's leader to add this email address, then pull this page back up.</p>
@@ -1455,7 +1491,7 @@ function viewHome(){
   {
     const admin = isAnyAdmin(), wk = addDays(todayKey(), 7);
     const weekChips = [...(admin ? [CHURCH_CAL] : []), ...myTeams()];
-    const mine = upcoming().filter(i => i.confirmed && i.date <= wk).map(i => ({ ...i, kind: "item" }));
+    const mine = upcoming().filter(i => i.confirmed && i.date <= wk && i.date !== todayKey()).map(i => ({ ...i, kind: "item" }));
     const church = admin ? (S.church.items || []).filter(e => e.date >= todayKey() && e.date <= wk).map(e => ({ ...e, team: "church", kind: "church" })) : [];
     const week = [...mine, ...church].filter(i => !S.weekOff.has(i.team)).sort((a, b) => a.date.localeCompare(b.date) || a.team.localeCompare(b.team));
     const byDate = {}; week.forEach(i => { (byDate[i.date] = byDate[i.date] || []).push(i); });
@@ -1625,12 +1661,13 @@ function annCard(a, isNew){
   const t = teamOf(a.team);
   const lines = a.text.split(/\n/).map(l => l.trim()).filter(Boolean);
   const head = lines.shift() || "", rest = lines.join("\n");
+  const share = a.team === 'church' && AnnShare.targets().length ? `<button class="iconbtn sm" data-act="ann-share" data-id="${esc(a.id)}" aria-label="Share church announcement" title="Share to another team"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></button>` : '';
   return `<article class="ann-card team${annToday(a) ? " ann-today" : ""}" style="${tvars(t)}">
-    <div class="ann-body"><div class="ann-heading"><span class="ann-tlabel">${esc(t.name)}</span>${a.team === 'church' && AnnShare.targets().length ? `<button class="iconbtn sm" data-act="ann-share" data-id="${esc(a.id)}" aria-label="Share church announcement" title="Share to another team"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></button>` : ''}</div>
+    <div class="ann-body"><div class="ann-heading"><span class="ann-tlabel">${esc(t.name)}</span></div>
       <b class="ann-title">${annToday(a) ? todayPill() : ""}${isNew ? newPill() : ""}${esc(head)}</b>${rest ? `<p class="ann-text">${esc(rest)}</p>` : ""}${S.annEdit && canEditAnn(a) ? annEditLine(a) : ""}</div>
-    ${a.flyer ? (flyerCollapsed(team_id(a))
-      ? `<button class="linkbtn" data-act="flyer-toggle" data-flyer-id="${esc(team_id(a))}" style="align-self:flex-start;margin:0 12px 12px">Show flyer</button>`
-      : `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><button class="flyer" data-act="flyer-open" data-flyer="${team_id(a)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button><button class="linkbtn" data-act="flyer-toggle" data-flyer-id="${esc(team_id(a))}">Hide flyer</button></div>`) : ""}
+    ${share || a.flyer ? `<div class="ann-side">${share}${a.flyer ? (flyerCollapsed(team_id(a))
+      ? `<button class="linkbtn flyer-tog" data-act="flyer-toggle" data-flyer-id="${esc(team_id(a))}">Show Flyer</button>`
+      : `<div class="ann-fly"><button class="flyer" data-act="flyer-open" data-flyer="${team_id(a)}" aria-label="Open the flyer"><span class="flyer-load">Loading…</span></button><button class="linkbtn flyer-tog" data-act="flyer-toggle" data-flyer-id="${esc(team_id(a))}">Hide Flyer</button></div>`) : ""}</div>` : ""}
   </article>`;
 }
 function viewAnnouncements(){
