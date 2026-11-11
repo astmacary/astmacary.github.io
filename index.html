@@ -62,7 +62,6 @@ header.top .wrap{display:flex;align-items:center;gap:12px;padding-top:16px;paddi
 .iconbtn svg{width:18px;height:18px}
 .iconbtn.spin svg{animation:spin 1s linear infinite}
 .me-btn{border:2px solid var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:14px;overflow:visible;width:50px;height:50px}
-.me-col{display:flex;flex-direction:column;align-items:center;gap:4px}
 .me-btn img{width:100%;height:100%;border-radius:50%;object-fit:cover}
 .red-dot{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:var(--stop);border:2px solid var(--surface)}
 
@@ -316,7 +315,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "106";   // bump together with CACHE in sw.js
+const APP_VERSION = "107";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1388,9 +1387,10 @@ function overlaps(){
 function viewHome(){
   const h = new Date().getHours(), part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
   const teams = myTeams(), reqs = pendingOf();
-  let out = `<div><div class="kicker">${esc(new Date().toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"}))}</div>
+  let out = `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div class="kicker">${esc(new Date().toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"}))}</div>
     <h1 class="greet">Good ${part}, ${esc(firstOf(S.me.name) || "friend")}</h1>
-    ${S.loading ? `<div class="updating" style="margin-top:6px"><span class="spinner"></span>Checking your teams…</div>` : ""}</div>`;
+    ${S.loading ? `<div class="updating" style="margin-top:6px"><span class="spinner"></span>Checking your teams…</div>` : ""}</div>
+    ${isAnyAdmin() ? `<button class="iconbtn sm" data-act="today-notes" aria-label="Today's Service Notes" title="Today's Service Notes">${ICON.notes}</button>` : ""}</div>`;
   out += badgeAsk();
   if (!teams.length && !isEditorOf(CHURCH_CAL) && !S.loading && !MINISTRIES.some(m => S.ministries?.[m.key]?.member)){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
@@ -1648,9 +1648,8 @@ function render(){
   const header = `<header class="top"><div class="wrap"><button class="brand" data-act="tab" data-view="home" aria-label="RCI Serve, go to Home"><img class="wm wm-light" src="/icons/wordmark.png?v=${APP_VERSION}" alt=""><img class="wm wm-dark" src="/icons/wordmark-dark.png?v=${APP_VERSION}" alt=""></button>
     ${S.phase === "ready" ? `<button class="iconbtn${S.loading ? " spin" : ""}" data-act="refresh" aria-label="Refresh">${ICON.refresh}</button>` : ""}
     ${themeBtn}
-    ${S.phase === "ready" ? `<div class="me-col">
-    <button class="iconbtn me-btn" data-act="tab" data-view="profile" aria-label="Profile${n ? `, ${n} pending request${n > 1 ? "s" : ""}` : ""}">${Rosters.ownProfile().photo ? `<img src="${Rosters.ownProfile().photo}" alt="">` : esc(initials(Rosters.ownProfile().name))}${n ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>
-    ${S.view === "home" && isAnyAdmin() ? `<button class="iconbtn sm" data-act="today-notes" aria-label="Today's Service Notes" title="Today's Service Notes">${ICON.notes}</button>` : ""}</div>` : ""}</div></header>`;
+    ${S.phase === "ready" ? `
+    <button class="iconbtn me-btn" data-act="tab" data-view="profile" aria-label="Profile${n ? `, ${n} pending request${n > 1 ? "s" : ""}` : ""}">${Rosters.ownProfile().photo ? `<img src="${Rosters.ownProfile().photo}" alt="">` : esc(initials(Rosters.ownProfile().name))}${n ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div></header>`;
   if (S.phase !== "ready"){
     let body = "";
     if (S.phase === "boot") body = `<div class="center"><p role="status">Opening RCI Serve…</p></div>`;
