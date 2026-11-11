@@ -317,7 +317,7 @@ const Rosters = {
       return '<h1 class="page">Your Teams</h1><p class="hint" role="status">Loading teams and roster counts…</p>';
     }
     for (const t of teams) if ((DEMO || S.teams[t.key]?.accessVerified) && !this.data[t.key] && !this.errors[t.key]) void this.load(t.key);
-    return `<div class="teams-page-heading"><h1 class="page">Your Teams</h1><div class="teams-page-heading-r">${this.layoutToggle()}<input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div></div>${this.search.trim() ? this.searchView() : ''}<div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.rosterToggle('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
+    return `<div class="teams-page-heading"><h1 class="page">Your Teams</h1><div class="teams-page-heading-r">${this.layoutToggle()}<input id="roster-search" type="search" aria-label="Search people" placeholder="Search people" value="${esc(this.search)}" autocomplete="off"></div></div>${this.search.trim() ? this.searchView() : ''}${AccessLog.teamsSection()}<div class="team-containers"><section class="panel leadership-panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.leadership}</span><b>RCI Leadership</b>${this.rosterToggle('leadership','RCI Leadership')}</div>${this.controls('leadership','RCI Leadership')}</div>${this.section('leadership')}</section>
       ${teams.map(t => `<section class="panel"><div class="team-heading team" style="${tvars(t)}"><div class="team-title"><a class="team-name" href="${t.path}?home${DEMO ? '&amp;demo' : ''}"><span class="t-ic">${ICON[t.icon]}</span><b>${esc(t.full)}</b></a>${this.rosterToggle(t.key,t.full)}</div>${this.controls(t.key,t.full)}</div>${this.section(t.key)}</section>`).join('')}${this.marriagePanel()}</div>${this.modal()}`;
   },
   async deleteMember(key, person) {
@@ -447,6 +447,30 @@ const Rosters = {
       if(generation===this.generation && S.phase==='ready') render();
     })().finally(()=>{if(this.leadershipAccessTask===task) this.leadershipAccessTask=null;});
     this.leadershipAccessTask=task;
+  },
+  // Manual retry for the "Has Access to RCI Serve" section on the Teams page. Unlike syncLeadershipAccess
+  // (silent, runs automatically after every Leadership load), this runs from a real button click, so it's
+  // allowed to pop the Microsoft consent dialog the first time a FullControl token is needed.
+  recheckingAccess: false,
+  async recheckAccess() {
+    if (this.recheckingAccess || DEMO) return;
+    if (!this.canManage()) { toast('Only RCI Serve administrators can do this.', true); return; }
+    this.recheckingAccess = true; render();
+    const people = [...(this.data.leadership || [])];
+    let failed = 0;
+    for (const person of people) {
+      try {
+        await this.ensureLeadershipAccess(person, true);
+        const state = {status:'verified',label:'Access verified',detail:'RCI Serve Members membership and Church Calendar access are confirmed.'};
+        this.accessStates[person.userId] = await this.saveAccessState(person, state);
+      } catch (e) {
+        failed++;
+        this.accessStates[person.userId] = {status:'needs-attention',label:'Access needs attention',detail:e.message,saved:false};
+      }
+    }
+    this.recheckingAccess = false;
+    toast(failed ? `Checked everyone. ${failed} ${failed === 1 ? 'person needs' : 'people need'} attention — see their profile for details.` : 'Everyone on RCI Leadership has access.', !!failed);
+    render();
   },
   async save(person, action) {
     if (!this.canManage()) throw new Error('Only RCI Serve administrators can change Leadership members.');
@@ -620,11 +644,12 @@ const Rosters = {
     try { if(navigator.share){await navigator.share({title:'RCI Serve',text,url});return;} } catch(e){if(e?.name==='AbortError')return;}
     try { await navigator.clipboard.writeText(text+'\n'+url); toast('Link copied. Paste it into a text or email.'); } catch(_){prompt('Copy this RCI Serve link:',url);}
   },
+  // The per-person Access Status / Check Access box was retired in favor of one consolidated
+  // "Has Access to RCI Serve" list on the Teams page (see AccessLog.teamsSection). This keeps just
+  // the Manage Access / Share App actions that still make sense on a specific person's page.
   accessPanel(p) {
     if (!this.canManage()) return '';
-    const state = this.accessStates[p.userId];
-    if (state?.status === 'verified' && state.saved) return '';
-    return `<section class="panel sec access-box" aria-label="Access status"><h2 class="section-label">Access Status</h2><strong role="status">${esc(state?.label || 'Access not checked')}</strong><p class="hint">${esc(state?.detail || 'Check Microsoft access to the RCI Serve board and Church Calendar.')}</p><p class="hint">${esc(p.email || '')}</p><div class="acts2"><button class="btn" data-act="leader-check-access" ${state?.busy ? 'disabled' : ''}>${state?.busy ? 'Checking…' : 'Check Access'}</button><div class="access-share-actions"><a class="btn" href="https://${CONFIG.siteHost}${CHURCH_CAL.sitePath}/_layouts/15/user.aspx" target="_blank" rel="noopener">Manage Access</a><button class="btn share-app" data-act="leader-share-app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V3m-5 5 5-5 5 5M5 13v7h14v-7"/></svg>Share App</button></div></div></section>`;
+    return `<section class="panel sec access-box" aria-label="Access actions"><div class="acts2"><a class="btn" href="https://${CONFIG.siteHost}${CHURCH_CAL.sitePath}/_layouts/15/user.aspx" target="_blank" rel="noopener">Manage Access</a><button class="btn share-app" data-act="leader-share-app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V3m-5 5 5-5 5 5M5 13v7h14v-7"/></svg>Share App</button></div></section>`;
   },
   async checkAccess(p) {
     if (!this.canManage() || !p) return;
@@ -654,10 +679,9 @@ const Rosters = {
     if (!p) return back+'<div class="empty">This person is not on the Leadership roster.</div>';
     const d = this.detailsFor(p), index = this.data.leadership.indexOf(p), canEdit = this.canEditAbout(p);
     const bd = d.birthday ? new Date(d.birthday+'T12:00:00').toLocaleDateString(undefined,{month:'long',day:'numeric'}) : '—';
-    const active = this.accessStates[p.userId];
     const upcoming = TEAMS.flatMap(t => S.teams[t.key]?.accessVerified ? (S.teams[t.key].items || []).filter(i => i.kind === 'assign' && i.confirmed && i.date >= todayKey() && i.email && (p.emails || [p.email]).map(lc).includes(lc(i.email))).map(i => ({...i,teamName:t.name})) : []).sort((a,b) => a.date.localeCompare(b.date)).slice(0,3);
     return `<div class="page-h">${back}<h1>About ${esc(d.first || p.name.split(' ')[0])}</h1></div>
-      <section class="panel profile-hero">${this.canManage() ? `<span title="${active?.checkedAt ? esc('Checked on '+new Date(active.checkedAt).toLocaleString()) : ''}" class="access-flag ${active?.label === 'Access verified' ? 'complete' : active?.label === 'Access needs attention' ? 'failed' : 'pending'}">${esc(active?.label || 'Access not checked')}</span>` : ''}<span class="profile-avatar-wrap"><span class="av" data-roster-photo="leadership:${index}">${esc(initials(p.name))}</span>${this.star(p)}</span><h2>${esc(p.name)}</h2>${this.tagFor(p) ? `<span class="pill admin-tag">${esc(this.tagFor(p))}</span>` : ''}${this.isHubAdmin(p) ? '<span class="pill admin-tag">★ Admin</span>' : ''}${p.email && !this.isSelf(p) ? `<a class="btn" href="mailto:${esc(p.email)}">Email Me</a>` : ''}</section>
+      <section class="panel profile-hero"><span class="profile-avatar-wrap"><span class="av" data-roster-photo="leadership:${index}">${esc(initials(p.name))}</span>${this.star(p)}</span><h2>${esc(p.name)}</h2>${this.tagFor(p) ? `<span class="pill admin-tag">${esc(this.tagFor(p))}</span>` : ''}${this.isHubAdmin(p) ? '<span class="pill admin-tag">★ Admin</span>' : ''}${p.email && !this.isSelf(p) ? `<a class="btn" href="mailto:${esc(p.email)}">Email Me</a>` : ''}</section>
       ${this.accessPanel(p)}
       ${this.aboutEditing && canEdit ? `<form id="leader-info-form" class="panel sec about-edit"><h2 class="section-label">Edit ${esc(d.first || p.name)}’s Info</h2>${this.detailsFields(this.aboutDraft || d)}<label>Email</label><input value="${esc(p.email || '')}" disabled><span class="hint">Linked to their sign-in, so it cannot be changed here.</span><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>Save</button><button type="button" class="btn" data-act="leader-info-cancel">Cancel</button></div></form>` : ''}
       <section class="panel info-card">${canEdit && !this.aboutEditing ? `<button class="iconbtn card-edit" data-act="leader-info-edit" aria-label="Edit ${esc(p.name)}'s info" title="Edit">✎</button>` : ''}<dl class="kv"><dt>First Name</dt><dd>${esc(d.first || '—')}</dd><dt>Birthday</dt><dd>${esc(bd)}</dd><dt>Email</dt><dd>${p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : '—'}</dd><dt>Phone</dt><dd>${d.phone ? `<a href="tel:${esc(d.phone.replace(/[^\d+]/g,''))}">${esc(d.phone)}</a>` : '—'}</dd></dl></section>
@@ -834,6 +858,17 @@ const AccessLog = {
     const opened = this.open.has(key);
     return `<section class="panel"><div class="team-title" style="padding:12px 14px 0"><h2 class="section-label" style="margin:0">${esc(label)}</h2><button class="roster-heading-toggle" data-act="access-toggle" data-k="${key}" aria-label="${esc(label)} list" aria-expanded="${opened}" aria-controls="access-${key}" style="flex:none"><span class="roster-count">${rows.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button></div><div id="access-${key}" style="padding:0 14px 14px" ${opened ? '' : 'hidden'}>${opened ? this.accessList(rows, key, emptyText) : ''}</div></section>`;
   },
+  // One consolidated, read-only "who has access" list on the Teams page, replacing the per-person
+  // Access Status box that used to show up on every Leadership member's own profile.
+  teamsSection() {
+    if (!Rosters.canManage()) return '';
+    if (this.rows === null && !this.error) void this.load();
+    const rows = this.rows || [];
+    const active = rows.filter(r => r.status === 'Successfully logged in');
+    const recheckBtn = `<button class="btn sm" data-act="leadership-recheck-access" ${Rosters.recheckingAccess ? 'disabled' : ''}>${Rosters.recheckingAccess ? 'Checking…' : 'Recheck Access'}</button>`;
+    return this.error ? `<section class="panel pad"><div class="err">${esc(this.error)}</div><button class="btn" data-act="access-log-refresh">Try again</button></section>`
+      : `${this.accessSection('active', 'Has Access to RCI Serve', active, 'No one has signed in yet.')}<div class="acts2" style="padding:0 2px 14px">${recheckBtn}</div>`;
+  },
   view() {
     if (!Rosters.canManage()) return '<h1 class="page">Access Check</h1><section class="panel pad"><p>Only RCI Serve administrators can view this.</p></section>';
     if (this.rows === null && !this.error) void this.load();
@@ -865,6 +900,7 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-act="access-log-refresh"]')) void AccessLog.load(true);
   const toggleBtn = e.target.closest('[data-act="access-toggle"]');
   if (toggleBtn) AccessLog.toggle(toggleBtn.dataset.k);
+  if (e.target.closest('[data-act="leadership-recheck-access"]')) void Rosters.recheckAccess();
 });
 document.addEventListener('click', e => {
   if (!e.target.closest('[data-ministry-profile]')) return;

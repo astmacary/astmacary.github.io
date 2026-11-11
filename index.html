@@ -348,7 +348,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "125";   // bump together with CACHE in sw.js
+const APP_VERSION = "126";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1795,7 +1795,6 @@ function viewProfile(){
     ${Rosters.profileEditor()}
     ${Push.panel()}
     ${badgeAsk()}
-    ${Rosters.canManage() ? `<section class="panel"><button class="setrow" data-act="tab" data-view="access-log"><span>RCI Serve Access Check</span></button></section>` : ""}
     <section class="panel">
       ${DEMO ? "" : `<button class="setrow" data-act="signout" style="color:var(--bad)"><span>Sign out</span></button>`}
     </section>`;
@@ -1843,7 +1842,7 @@ function render(){
   }
   const tabsArr = tabsList();
   const body = S.view === "church-event" ? viewChurchEventInfo() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
-    : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "access-log" ? AccessLog.view() : S.view === "profile" ? viewProfile() : viewHome();
+    : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${S.imp && S.view !== "profile" ? impBanner() : ""}${body}</div></main>` + tabs + AnnShare.modal();
@@ -1896,7 +1895,6 @@ document.addEventListener("click", async e => {
   else if (act === "leader-remove") { const p = Rosters.aboutPerson(); if (p && Rosters.canManage()){ Rosters.deleteKey = 'leadership'; Rosters.deleteSelection = p.userId; render(); } }
   else if (act === "leader-about-back") { S.view = 'teams'; Rosters.aboutEditing = false; try { sessionStorage.setItem('rci-serve:view',S.view); } catch (_) {} render(); window.scrollTo(0,0); }
   else if (act === "leader-share-app") void Rosters.shareApp();
-  else if (act === "leader-check-access") void Rosters.checkAccess(Rosters.aboutPerson());
   else if (act === "leader-info-edit") { const p = Rosters.aboutPerson(); if (p && Rosters.canEditAbout(p)){ Rosters.aboutDraft = Rosters.detailsFor(p); Rosters.aboutEditing = true; render(); } }
   else if (act === "leader-info-cancel") { Rosters.aboutEditing = false; render(); }
   else if (act === "roster-toggle") Rosters.toggle(b.dataset.k);
