@@ -315,7 +315,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "96";   // bump together with CACHE in sw.js
+const APP_VERSION = "97";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -336,6 +336,11 @@ const TEAMS = [
   { key: "worship", name: "Worship & Arts", full: "RCI Worship & Arts", path: "/rci-worship-arts/", tl: "#4A2F7A", td: "#B9A1EA", icon: "music",
     sitePath: "/sites/RCIMusicDept", listId: "ce2715b8-f330-4471-8e20-adeae324d21c", announcementsListId: "e912e877-d00e-4971-bcd4-df25f621f03d",
     editors: ["ashley.stmacary@therampchurch.com", "cassie.carter.inc@gmail.com"] }
+];
+/* Ministry apps (not serving teams: no schedule or requests). Shown to people on that ministry's roster. */
+const MINISTRIES = [
+  { key: "marriage", name: "Marriage", full: "RCI Marriage", path: "/rci-marriage/", tl: "#0A2440", td: "#D4A66E", icon: "rings",
+    sitePath: "/sites/RCIMarriage", listName: "Couples" }
 ];
 /* The church-wide calendar (not a team — no membership, no requests). Listed first in the calendar's chip row. */
 const CHURCH_CAL = { key: "church", name: "Church", full: "Church Calendar", tl: "#8A6631", td: "#D2B07C",
@@ -381,6 +386,7 @@ const todayPill = () => `<span class="pill today-pill">TODAY</span> `;
 const newPill = () => `<span class="pill new-pill">NEW</span> `;
 
 const ICON = {
+  rings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="13" r="5"/><circle cx="15" cy="13" r="5"/></svg>',
   cam: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4V8z"/></svg>',
   shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
   door: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M10 21v-6h4v6"/></svg>',
@@ -573,6 +579,15 @@ const API = {
     try { const r = await this.g("/me/photo/$value", { raw: true }); return URL.createObjectURL(await r.blob()); } catch(e){ return null; }
   },
   /* Loads one team's rows. Throws an error with .noAccess when the person can't open that team's site. */
+  // A ministry tile shows when the signed-in person is on its Couples list (or can open it as a site owner/leader).
+  async ministry(m){
+    try {
+      const site = await this.g(`/sites/${CONFIG.siteHost}:${m.sitePath}?$select=id`);
+      const rows = await this.all(`/sites/${site.id}/lists/${encodeURIComponent(m.listName)}/items?$expand=fields($select=Spouse1Email,Spouse2Email)&$top=500`);
+      const mine = new Set(S.me?.emails || []);
+      return { member: rows.some(r => [r.fields?.Spouse1Email, r.fields?.Spouse2Email].some(e => e && mine.has(lc(e)))), count: rows.length };
+    } catch(e){ return { member: false, noAccess: true }; }
+  },
   async team(t){
     try { return await this.teamRows(t); }
     catch(e){ if (e.status === 403 || e.status === 404 || e.status === 401) e.noAccess = true; throw e; }
@@ -1063,12 +1078,14 @@ async function loadAll(){
   if (S.loading) return;
   S.loading = true; render();
   if (DEMO){
-    const d = demoTeams(); S.me = d.me; S.teams = d.teams; S.church = { items: d.church, anns: d.churchAnns || [], error: "" };
+    const d = demoTeams(); S.me = d.me; S.teams = d.teams; S.ministries = { marriage: { member: true } }; S.church = { items: d.church, anns: d.churchAnns || [], error: "" };
   } else {
-    const [results, churchResult] = await Promise.all([
+    const [results, churchResult, ministryResults] = await Promise.all([
       Promise.allSettled(TEAMS.map(t => API.team(t))),
-      Promise.allSettled([API.churchEvents()])
+      Promise.allSettled([API.churchEvents()]),
+      Promise.all(MINISTRIES.map(m => API.ministry(m)))
     ]);
+    S.ministries = Object.fromEntries(MINISTRIES.map((m, n) => [m.key, ministryResults[n]]));
     const next = {};
     results.forEach((r, n) => {
       const t = TEAMS[n];
@@ -1325,12 +1342,14 @@ function viewHome(){
     <h1 class="greet">Good ${part}, ${esc(firstOf(S.me.name) || "friend")}</h1>
     ${S.loading ? `<div class="updating" style="margin-top:6px"><span class="spinner"></span>Checking your teams…</div>` : ""}</div>`;
   out += badgeAsk();
-  if (!teams.length && !isEditorOf(CHURCH_CAL) && !S.loading){
+  if (!teams.length && !isEditorOf(CHURCH_CAL) && !S.loading && !MINISTRIES.some(m => S.ministries?.[m.key]?.member)){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
       <p class="hint">RCI Serve shows the teams where your email (${esc(S.me.emails[0] || "")}) is on the roster or schedule. If you serve on a team, ask that team's leader to add this email address, then pull this page back up.</p>
       <button class="btn" style="align-self:flex-start" data-act="refresh">Check again</button></section>`;
   }
   if (teams.length) out += `<section class="sec"><h2>Your Teams</h2><div class="tiles">${teams.map(teamTile).join("")}</div></section>`;
+  const mins = MINISTRIES.filter(m => S.ministries?.[m.key]?.member || (Rosters.isHubAdmin(S.me || {}) && !S.ministries?.[m.key]?.noAccess));
+  if (mins.length) out += `<section class="sec"><h2>Your Ministries</h2><div class="tiles">${mins.map(m => `<a class="tile team" style="${tvars(m)}" href="${m.path}"><span class="t-ic">${ICON[m.icon]}</span><b>${esc(m.name)}</b><small>Fruit of Our Union</small></a>`).join("")}</div></section>`;
   {
     const annFilterChips = [...(isAnyAdmin() ? [CHURCH_CAL] : []), ...myTeams()];   // Church is admin-only, not for everyone
     const anns = myAnnouncements().filter(a => !S.annOff.has(a.team));
