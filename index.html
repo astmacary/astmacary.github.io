@@ -80,8 +80,8 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .sec h2{margin:0;font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
 .sec-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .svc-notes-h{font-size:24px}
-.event-info-row{display:flex;gap:14px;align-items:stretch}
-.event-info-row .panel.notes{flex:1;min-width:0;margin:0}
+.event-info-row{display:flex;gap:14px;align-items:stretch;max-height:260px}
+.event-info-row .panel.notes{flex:1;min-width:0;margin:0;overflow-y:auto}
 .event-info-row .flyer-col{flex:none;display:flex}
 .event-info-row .flyer-col .flyer{width:auto;max-width:140px;height:100%}
 .event-info-row .flyer-col .flyer img{width:100%;height:100%;object-fit:cover;max-height:none}
@@ -348,7 +348,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "121";   // bump together with CACHE in sw.js
+const APP_VERSION = "122";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1665,7 +1665,7 @@ function viewCalendar(){
   const f = S.cal.form;
   return `<h1 class="page">My Calendar</h1>
     ${chips.length > 1 ? `<div class="chips" role="group" aria-label="Show calendars">${chips.map(t => `<button class="chip team team-pill${off.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="filter" data-k="${t.key}" aria-pressed="${!off.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
-    <section class="panel cal"><div class="cal-head"><div class="cal-nav"><button class="btn sm" data-act="cal-today">Today</button><button class="iconbtn" data-act="month" data-d="-1" aria-label="Previous month">${ICON.prev}</button></div><b>${esc(label)}</b><button class="iconbtn" data-act="month" data-d="1" aria-label="Next month">${ICON.next}</button></div>
+    <section class="panel cal"><div class="cal-head"><b>${esc(label)}</b><div class="cal-nav"><button class="btn sm" data-act="cal-today">Today</button><button class="iconbtn" data-act="month" data-d="-1" aria-label="Previous month">${ICON.prev}</button><button class="iconbtn" data-act="month" data-d="1" aria-label="Next month">${ICON.next}</button></div></div>
       <div class="dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
       <div class="days">${cells}</div></section>
     <section class="sec"><div class="sec-head"><h2>${esc(fmtDay(sel))}</h2>${canEditChurch ? `<div class="acts">
