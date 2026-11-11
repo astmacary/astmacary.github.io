@@ -858,15 +858,37 @@ const AccessLog = {
     const opened = this.open.has(key);
     return `<section class="panel"><div class="team-title" style="padding:12px 14px 0"><h2 class="section-label" style="margin:0">${esc(label)}</h2><button class="roster-heading-toggle" data-act="access-toggle" data-k="${key}" aria-label="${esc(label)} list" aria-expanded="${opened}" aria-controls="access-${key}" style="flex:none"><span class="roster-count">${rows.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button></div><div id="access-${key}" style="padding:0 14px 14px" ${opened ? '' : 'hidden'}>${opened ? this.accessList(rows, key, emptyText) : ''}</div></section>`;
   },
+  // Which SharePoint-permission tier a signed-in person falls in, based on data the app already has:
+  // RCI Serve administrators (CHURCH_CAL.editors, "RCI Serve Owners"-equivalent full control), RCI
+  // Leadership members (granted Edit via the "RCI Serve Members" group), or everyone else who has
+  // signed in (read-only / "RCI Serve Visitors").
+  permLevels: {
+    owner: { label: 'Admin — Full Control', color: 'var(--accent)' },
+    member: { label: 'Leadership — Edit', color: 'var(--ok)' },
+    visitor: { label: 'Signed in — Read', color: 'var(--muted)' }
+  },
+  permLevel(r) {
+    const email = lc(r.email);
+    if (Rosters.hubAdmins().includes(email)) return 'owner';
+    if ((Rosters.data.leadership || []).some(p => (p.emails || []).includes(email))) return 'member';
+    return 'visitor';
+  },
+  // A key explaining what each ring color means, shown above the list.
+  permLegend() {
+    return `<div class="access-legend">${Object.entries(this.permLevels).map(([k, v]) =>
+      `<span class="access-legend-item"><span class="access-legend-dot" style="background:${v.color}"></span>${esc(v.label)}</span>`).join('')}</div>`;
+  },
   // A name-only row for the Teams page's "RCI Serve Access" section — no email, unlike accessRow above
   // (which still backs the unreachable-but-kept AccessLog.view()). List-view variant.
   teamsAccessRow(r) {
     const fmt = d => d ? new Date(d).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
-    return `<li class="roster-row-item"><span class="roster-row"><span class="roster-avatar">${esc(initials(r.name || r.email))}</span><span class="rr-info"><span class="rr-name"><b>${esc(r.name || r.email)}</b></span><small class="muted">Last signed in ${esc(fmt(r.last))}</small></span></span></li>`;
+    const perm = this.permLevel(r), permLabel = this.permLevels[perm].label;
+    return `<li class="roster-row-item"><span class="roster-row"><span class="roster-avatar access-ring-${perm}" title="${esc(permLabel)}" aria-label="${esc(permLabel)}">${esc(initials(r.name || r.email))}</span><span class="rr-info"><span class="rr-name"><b>${esc(r.name || r.email)}</b></span><small class="muted">Last signed in ${esc(fmt(r.last))}</small></span></span></li>`;
   },
   // Grid/"circles" variant of the row above, matching Rosters.person() styling.
   teamsAccessCard(r) {
-    return `<li class="roster-person"><span class="roster-avatar">${esc(initials(r.name || r.email))}</span><b>${esc(r.name || r.email)}</b></li>`;
+    const perm = this.permLevel(r), permLabel = this.permLevels[perm].label;
+    return `<li class="roster-person"><span class="roster-avatar access-ring-${perm}" title="${esc(permLabel)}" aria-label="${esc(permLabel)}">${esc(initials(r.name || r.email))}</span><b>${esc(r.name || r.email)}</b></li>`;
   },
   // Only the signed-in RCI Serve administrator (canManage()) sees this — currently just Ashley, since
   // she's the only name in CHURCH_CAL.editors. Shown at the bottom of the Teams page, styled like the
@@ -883,7 +905,7 @@ const AccessLog = {
     const toggleBtn = `<button class="roster-heading-toggle" data-act="access-toggle" data-k="${key}" aria-label="RCI Serve Access list" aria-expanded="${opened}" aria-controls="access-${key}"><span class="roster-count" aria-label="${active.length} people">${active.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button>`;
     const body = this.error ? `<p class="hint" role="alert">${esc(this.error)}</p>`
       : !active.length ? '<p class="hint">No one has signed in yet.</p>'
-      : Rosters.getLayout() === 'list' ? `<ul class="roster-rows">${active.map(r => this.teamsAccessRow(r)).join('')}</ul>` : `<ul class="team-roster">${active.map(r => this.teamsAccessCard(r)).join('')}</ul>`;
+      : this.permLegend() + (Rosters.getLayout() === 'list' ? `<ul class="roster-rows">${active.map(r => this.teamsAccessRow(r)).join('')}</ul>` : `<ul class="team-roster">${active.map(r => this.teamsAccessCard(r)).join('')}</ul>`);
     return `<h2 class="section-label" style="margin:18px 0 4px">RCI Serve Access</h2><section class="panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${Rosters.icons.leadership}</span><b>Has Access</b>${toggleBtn}</div><div class="roster-actions">${recheckBtn}</div></div><div id="access-${key}" class="roster-section" ${opened ? '' : 'hidden'}>${opened ? `<div class="roster-content">${body}</div>` : ''}</div></section>`;
   },
   view() {
