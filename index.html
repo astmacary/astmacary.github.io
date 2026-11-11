@@ -315,7 +315,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "99";   // bump together with CACHE in sw.js
+const APP_VERSION = "100";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -339,7 +339,7 @@ const TEAMS = [
 ];
 /* Ministry apps (not serving teams: no schedule or requests). Shown to people on that ministry's roster. */
 const MINISTRIES = [
-  { key: "marriage", name: "Marriage", full: "RCI Marriage", path: "/rci-marriage/", tl: "#B8864B", td: "#D4A66E", icon: "rings",
+  { key: "marriage", name: "Marriage", full: "RCI Marriage", path: "/rci-marriage/", tl: "#0F6B73", td: "#5CC6CC", icon: "rings",
     sitePath: "/sites/RCIMarriage", listName: "Couples" }
 ];
 /* The church-wide calendar (not a team — no membership, no requests). Listed first in the calendar's chip row. */
