@@ -203,6 +203,7 @@ const Rosters = {
           : await this.ministry(t);
         const visible = key === 'leadership' ? people.filter(p => !this.hiddenLeadership.includes(lc(p.name).trim())) : people;
         if (generation === this.generation && identity === (S.me?.id || S.me?.emails.join("|"))) this.data[key] = this.orderPeople(key, visible);
+        if (key === 'leadership' && generation === this.generation && identity === (S.me?.id || S.me?.emails.join('|'))) this.syncLeadershipAccess();
       } catch (e) { if (generation === this.generation) this.errors[key] = e.message || 'Unable to load the roster.'; }
       finally { if (this.tasks[key] === task) delete this.tasks[key]; if (generation === this.generation && S.phase === 'ready' && ['teams','profile','leader-about'].includes(S.view) && !this.profileSaving) render(); }
     })();
@@ -372,8 +373,84 @@ const Rosters = {
       const img = document.createElement('img'); img.src = url; img.alt = ''; el.replaceChildren(img);
     });
   },
+  async leadershipAccessToken(interactive = false) {
+    const request = {scopes:[`https://${CONFIG.siteHost}/AllSites.FullControl`],account:API.account};
+    try { return (await API.msal.acquireTokenSilent(request)).accessToken; }
+    catch(e) {
+      if (!interactive) throw new Error('Open a Leadership profile and select Check Access as a SharePoint site owner to authorize calendar access setup.');
+      return (await API.msal.acquireTokenPopup(request)).accessToken;
+    }
+  },
+  async servePermissionRequest(path, token, body) {
+    const response = await fetch('https://'+CONFIG.siteHost+CHURCH_CAL.sitePath+'/_api/web/'+path,{
+      method:body ? 'POST' : 'GET', headers:{Authorization:'Bearer '+token,Accept:'application/json;odata=nometadata',...(body ? {'Content-Type':'application/json;odata=verbose'} : {})},
+      ...(body ? {body:JSON.stringify(body)} : {})
+    });
+    const raw = response.status === 204 ? null : await response.json().catch(()=>null);
+    if (!response.ok) throw new Error(raw?.error?.message?.value || raw?.error?.message || 'Microsoft could not update RCI Serve Members ('+response.status+').');
+    return raw?.d || raw;
+  },
+  async ensureLeadershipAccess(person, interactive = false) {
+    if (!this.canManage()) throw new Error('Only RCI Serve administrators can set up Leadership calendar access.');
+    if (DEMO) return;
+    const actor=S.me?.id || S.me?.emails.join('|'), generation=this.generation;
+    const guard=()=>{if(!this.canManage() || generation!==this.generation || actor!==(S.me?.id || S.me?.emails.join('|'))) throw new Error('The signed-in account changed. Try again.');};
+    const ids=[...new Set(person.userIds || [person.userId])];
+    if (!ids.length || ids.some(id=>!id)) throw new Error('A Microsoft account is required for Leadership access.');
+    const token=await this.leadershipAccessToken(interactive);
+    guard();
+    const group=await this.servePermissionRequest("sitegroups/getbyname('RCI Serve Members')?$select=Id,Title",token);
+    if (!Number.isInteger(group?.Id) || group.Title!=='RCI Serve Members') throw new Error('The RCI Serve Members SharePoint group was not found.');
+    const base=await Comm.list({...CHURCH_CAL,key:'serve'},'Team Board');
+    const board=Comm.lists.serve?.board || base.match(/\/lists\/([^/]+)\/items/)?.[1];
+    const calendar=(await API.churchMeta()).listId;
+    const lists=[board,calendar];
+    if(lists.some(id=>!/^[a-f0-9-]{36}$/i.test(id || ''))) throw new Error('The RCI Serve board or Church Calendar could not be identified.');
+    for(const id of ids) {
+      guard();
+      const account=await API.g('/users/'+encodeURIComponent(id)+'?$select=id,userPrincipalName');
+      if(account.id!==id || !account.userPrincipalName) throw new Error('Microsoft could not confirm the Leadership account.');
+      const login='i:0#.f|membership|'+account.userPrincipalName;
+      const query="?@u="+encodeURIComponent("'"+login.replace(/'/g,"''")+"'");
+      const present=async()=>{const users=await this.servePermissionRequest('sitegroups('+group.Id+')/users?$select=Id,LoginName',token);return (users.value || users.results || []).some(u=>lc(u.LoginName)===lc(login));};
+      if(!await present()) {
+        guard();
+        const user=await this.servePermissionRequest('ensureuser',token,{logonName:login});
+        if(lc(user?.LoginName)!==lc(login)) throw new Error('SharePoint resolved a different account. Access was not granted.');
+        guard();
+        await this.servePermissionRequest('sitegroups('+group.Id+')/users',token,{__metadata:{type:'SP.User'},LoginName:login});
+        if(!await present()) throw new Error('Microsoft has not confirmed RCI Serve Members membership yet. Try Check Access again.');
+      }
+      for(const listId of lists) {
+        const raw=await this.servePermissionRequest("lists(guid'"+listId+"')/getusereffectivepermissions(@u)"+query,token);
+        const permissions=raw?.GetUserEffectivePermissions || raw?.getUserEffectivePermissions || raw;
+        if(permissions?.Low===undefined || (BigInt(permissions.Low)&1n)!==1n) throw new Error('RCI Serve Members membership is confirmed, but calendar or board access is not available yet. Check the list permissions and try again.');
+      }
+    }
+    guard();
+  },
+  syncLeadershipAccess() {
+    if(DEMO || !this.canManage() || this.leadershipAccessTask) return;
+    const generation=this.generation, people=[...(this.data.leadership || [])];
+    const task=(async()=>{
+      for(const person of people) {
+        if(generation!==this.generation || !this.canManage()) break;
+        try {
+          await this.ensureLeadershipAccess(person);
+          const state={status:'verified',label:'Access verified',detail:'RCI Serve Members membership and Church Calendar access are confirmed.'};
+          if(this.accessStates[person.userId]?.status!=='verified' || !this.accessStates[person.userId]?.saved) this.accessStates[person.userId]=await this.saveAccessState(person,state);
+        } catch(e) {
+          if(generation!==this.generation) break;
+          this.accessStates[person.userId]={status:'needs-attention',label:'Access needs attention',detail:e.message,saved:false};
+        }
+      }
+      if(generation===this.generation && S.phase==='ready') render();
+    })().finally(()=>{if(this.leadershipAccessTask===task) this.leadershipAccessTask=null;});
+    this.leadershipAccessTask=task;
+  },
   async save(person, action) {
     if (!this.canManage()) throw new Error('Only RCI Serve administrators can change Leadership members.');
+    if (action === 'add' && !DEMO) await this.ensureLeadershipAccess(person, true);
     const ids = [...new Set(person.userIds || [person.userId])];
     if (!ids.length || ids.some(id => !id)) throw new Error('Refresh the roster and try again.');
     for (const userId of ids) {
@@ -557,6 +634,7 @@ const Rosters = {
     try {
       if (DEMO) this.accessStates[p.userId] = {status:'verified',label:'Access verified',detail:'Demo access only. No Microsoft permissions were changed.'};
       else {
+        await this.ensureLeadershipAccess(p, true);
         const person = await this.identity(p.email), token = await API.spToken(); if (!token) throw new Error('Microsoft access could not be checked.');
         const board = Comm.lists.serve.board, calendar = (await API.churchMeta()).listId;
         const login = "i:0#.f|membership|"+person.principal;
