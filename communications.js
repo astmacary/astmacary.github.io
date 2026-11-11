@@ -538,7 +538,7 @@ const Comm = {
       }).join('') : '<div class="empty">No conversations yet. Start the first one.</div>');
     }
     const chips = spaces.map(s => `<button class="chipcheck team team-pill" style="${typeof tvars === 'function' ? tvars(s) : ''}" data-comm="space" data-key="${s.key}" aria-pressed="${s.key === t.key}"><span class="dot" aria-hidden="true"></span>${esc(s.name)}${this.unread(s.key) ? ` <span aria-label="${this.unread(s.key)} unread messages">(${this.unread(s.key)})</span>` : ''}</button>`).join('');
-    return `<div class="comm"><div class="comm-head"><h1 class="page">Messages</h1><button class="iconbtn" data-comm="refresh" aria-label="Refresh messages" title="Refresh messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-5L23 10M1 14l4.6 6A9 9 0 0 0 20.5 15"/></svg></button></div><div class="chiprow" aria-label="Choose a board">${chips}</div><h2>${esc(t.name)}</h2><div class="chiprow"><button class="chipcheck" data-comm="mode" data-mode="board" aria-pressed="${this.mode === 'board'}">Team board</button><button class="chipcheck" data-comm="mode" data-mode="contact" aria-pressed="${this.mode === 'contact'}">Contact leaders privately</button>${this.mode === 'board' && this.isAdmin() ? `<button class="chipcheck" data-comm="toggle-hidden" aria-pressed="${this.showHidden}">${this.showHidden ? 'Hide hidden messages' : 'Show hidden messages'}</button>` : ''}</div>${this.forwardForm()}${content}</div>`;
+    return `<div class="comm"><div class="comm-head"><h1 class="page">Messages</h1><button class="iconbtn" data-comm="refresh" aria-label="Refresh messages" title="Refresh messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-5L23 10M1 14l4.6 6A9 9 0 0 0 20.5 15"/></svg></button></div><div class="chiprow" aria-label="Choose a board">${chips}</div><h2>${esc(t.name)}</h2><div class="chiprow"><button class="chipcheck" data-comm="mode" data-mode="board" aria-pressed="${this.mode === 'board'}">Team board</button><button class="chipcheck" data-comm="mode" data-mode="contact" aria-pressed="${this.mode === 'contact'}">Contact leaders privately</button>${this.mode === 'board' && this.isAdmin() ? `<button class="chipcheck" data-comm="toggle-hidden" aria-pressed="${this.showHidden}">${this.showHidden ? 'Hide hidden messages' : 'Show hidden messages'}</button>` : ''}${CommBlast.chip()}</div>${this.forwardForm()}${content}</div>`;
   },
   async send(form) {
     if (this.busy) return;
@@ -667,11 +667,12 @@ const CommBlast = {
     list.sort((a,b) => a.name.localeCompare(b.name));
     return { list, missing };
   },
+  chip() { return this.allowed() ? `<button class="chipcheck" data-comm="blast-toggle" aria-pressed="${this.open}">Email the Team</button>` : ''; },
   allowed() { return !S.imp && Comm.mode === 'board' && !Comm.thread && Comm.isAdmin() && !!Comm.space(); },
   view() {
     if (!this.allowed()) return '';
     if (this.space !== Comm.selected) { this.space = Comm.selected; this.open = false; this.showList = false; }
-    const btn = `<button type="button" class="btn comm-blast-toggle" data-comm="blast-toggle" aria-expanded="${this.open}">${this.open ? '− Hide Email' : '✉️ Email All Team Members'}</button>`;
+    const btn = '';
     if (!this.open) return btn;
     const t = Comm.space(), r = this.people();
     let who;
@@ -684,7 +685,7 @@ const CommBlast = {
       <p class="hint">Everyone is added as BCC, so they won't see each other's addresses. You'll get a copy too.</p>`;
     const ready = r && !r.error && r.list.length, dis = this.busy || !ready ? 'disabled' : '';
     return btn + `<form class="panel pad comm-blast-form">
-      <h2>Email All Team Members</h2>${who}
+      <h2>Email the Team</h2>${who}
       <div class="field"><label for="comm-blast-subject">Subject</label><input id="comm-blast-subject" name="subject" maxlength="200" value="${esc(this.subject)}" required></div>
       <div class="field"><label for="comm-blast-body">Message</label>${commToolbar('comm-blast-body')}<div class="panel notes notes-editor" id="comm-blast-body" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Email message">${cleanHtml(this.body || '')}</div></div>
       <div class="comm-edit-buttons">
