@@ -906,10 +906,25 @@ const AccessLog = {
     member: { label: 'Leadership — Edit', color: 'var(--ok)' },
     visitor: { label: 'Signed in — Read', color: 'var(--muted)' }
   },
+  permissionRows() {
+    // Membership and sign-in history are separate: a new leader has a role before their first login.
+    const logs=(this.rows || []).filter(r=>r.status==='Successfully logged in');
+    const used=new Set(), rows=[];
+    for(const person of (Rosters.data.leadership || [])) {
+      const emails=new Set([person.email,...(person.emails || [])].filter(Boolean).map(lc));
+      const history=logs.filter(r=>emails.has(lc(r.email)));
+      history.forEach(r=>used.add(r));
+      const newest=[...history].sort((a,b)=>String(b.last || '').localeCompare(String(a.last || '')))[0];
+      rows.push({...newest,userId:person.userId,name:person.name,email:person.email || newest?.email || '',leadership:true,
+        last:newest?.last || '',status:newest?.status || 'Not signed in'});
+    }
+    rows.push(...logs.filter(r=>!used.has(r)));
+    return rows.sort((a,b)=>(a.name || a.email || '').localeCompare(b.name || b.email || '','en',{sensitivity:'base'}));
+  },
   permLevel(r) {
     const email = lc(r.email);
     if (Rosters.hubAdmins().includes(email)) return 'owner';
-    if ((Rosters.data.leadership || []).some(p => (p.emails || []).includes(email))) return 'member';
+    if (r.leadership || (Rosters.data.leadership || []).some(p => [p.email,...(p.emails || [])].filter(Boolean).map(lc).includes(email))) return 'member';
     return 'visitor';
   },
   // A key explaining what each ring color means, shown above the list.
@@ -922,7 +937,7 @@ const AccessLog = {
   teamsAccessRow(r) {
     const fmt = d => d ? new Date(d).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
     const perm = this.permLevel(r), permLabel = this.permLevels[perm].label;
-    return `<li class="roster-row-item"><span class="roster-row"><span class="roster-avatar access-ring-${perm}" title="${esc(permLabel)}" aria-label="${esc(permLabel)}">${esc(initials(r.name || r.email))}</span><span class="rr-info"><span class="rr-name"><b>${esc(r.name || r.email)}</b></span><small class="muted">Last signed in ${esc(fmt(r.last))}</small></span></span></li>`;
+    return `<li class="roster-row-item"><span class="roster-row"><span class="roster-avatar access-ring-${perm}" title="${esc(permLabel)}" aria-label="${esc(permLabel)}">${esc(initials(r.name || r.email))}</span><span class="rr-info"><span class="rr-name"><b>${esc(r.name || r.email)}</b></span><small class="muted">${r.last ? 'Last signed in '+esc(fmt(r.last)) : 'Not signed in yet'}</small></span></span></li>`;
   },
   // Grid/"circles" variant of the row above, matching Rosters.person() styling.
   teamsAccessCard(r) {
@@ -937,13 +952,12 @@ const AccessLog = {
   teamsSection() {
     if (!Rosters.canManage()) return '';
     if (this.rows === null && !this.error) void this.load();
-    const rows = this.rows || [];
-    const active = rows.filter(r => r.status === 'Successfully logged in').sort((a,b) => a.name.localeCompare(b.name,'en',{sensitivity:'base'}));
+    const active = this.permissionRows();
     const key = 'teams', opened = this.open.has(key);
     const recheckBtn = `<button class="iconbtn sm${Rosters.recheckingAccess ? ' spin' : ''}" data-act="leadership-recheck-access" aria-label="Recheck Access" title="Recheck Access" ${Rosters.recheckingAccess ? 'disabled' : ''}>${ICON.refresh}</button>`;
     const toggleBtn = `<button class="roster-heading-toggle" data-act="access-toggle" data-k="${key}" aria-label="RCI Serve Access list" aria-expanded="${opened}" aria-controls="access-${key}"><span class="roster-count" aria-label="${active.length} people">${active.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button>`;
     const body = this.error ? `<p class="hint" role="alert">${esc(this.error)}</p>`
-      : !active.length ? '<p class="hint">No one has signed in yet.</p>'
+      : !active.length ? '<p class="hint">No Leadership members or sign-ins to show yet.</p>'
       : this.permLegend() + (Rosters.getLayout() === 'list' ? `<ul class="roster-rows">${active.map(r => this.teamsAccessRow(r)).join('')}</ul>` : `<ul class="team-roster">${active.map(r => this.teamsAccessCard(r)).join('')}</ul>`);
     return `<h2 class="section-label" style="margin:18px 0 0">RCI Serve Access</h2><section class="panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${Rosters.icons.access}</span><b>Roles &amp; Permissions</b>${toggleBtn}</div><div class="roster-actions">${recheckBtn}</div></div><div id="access-${key}" class="roster-section" ${opened ? '' : 'hidden'}>${opened ? `<div class="roster-content">${body}</div>` : ''}</div></section>`;
   },
