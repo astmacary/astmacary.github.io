@@ -334,7 +334,7 @@ const Rosters = {
   },
 
   modal() {
-    if (this.adding && this.canManage()) return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Add Leadership member</h2><form id="leadership-form" class="sec"><label for="leadership-name">Full Name</label><input id="leadership-name" type="text" name="name" maxlength="120" value="${esc(this.draftName || '')}" required autocomplete="name"><label for="leadership-email">Sign-in email</label><input id="leadership-email" type="email" name="email" value="${esc(this.draft || '')}" required autocomplete="email"><label for="leadership-role">Role / title</label><input id="leadership-role" type="text" name="role" maxlength="120" value="${esc(this.draftRole || '')}" placeholder="For example, Production Coordinator" required><p class="hint">This title appears on their profile and under Auxiliary Leaders. Leadership access is set up automatically.</p><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add member'}</button><button class="btn" type="button" data-act="leadership-cancel">Cancel</button></div></form></section></div>`;
+    if (this.adding && this.canManage()) return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Add Leadership member</h2><form id="leadership-form" class="sec"><label for="leadership-name">Full Name</label><input id="leadership-name" type="text" name="name" maxlength="120" value="${esc(this.draftName || '')}" required autocomplete="name"><label for="leadership-email">Sign-in email</label><input id="leadership-email" type="email" name="email" value="${esc(this.draft || '')}" required autocomplete="email"><label for="leadership-role">Role tag <span class="hint">(optional)</span></label><input id="leadership-role" type="text" name="role" maxlength="120" value="${esc(this.draftRole || '')}" placeholder="For example, Production Coordinator"><p class="hint">Add a role tag to show it on their profile and include them under Auxiliary Leaders. Leadership access is set up automatically.</p><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add member'}</button><button class="btn" type="button" data-act="leadership-cancel">Cancel</button></div></form></section></div>`;
     if (!this.deleteKey || !this.canManageTeam(this.deleteKey)) return '';
     const key = this.deleteKey, label = key === 'leadership' ? 'RCI Leadership' : TEAMS.find(t => t.key === key)?.full, people = this.data[key] || [];
     return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Delete ${esc(label)} member</h2><form id="roster-delete-form" class="sec">
@@ -762,10 +762,9 @@ document.addEventListener('submit', async e => {
   Rosters.saving = true; render();
   try {
     if (!Rosters.draftName) throw new Error('Enter a full name.');
-    if (!Rosters.draftRole) throw new Error('Enter their Leadership role or title.');
     const p = await Rosters.identity(Rosters.draft);
     await Rosters.save({ ...p, name: Rosters.draftName, role:Rosters.draftRole }, 'add');
-    Rosters.adding = false; Rosters.draft = ''; Rosters.draftName = ''; Rosters.draftRole = ''; toast('Added to Leadership, Auxiliary Leaders, and Roles & Permissions.');
+    Rosters.adding = false; Rosters.draft = ''; Rosters.draftName = ''; Rosters.draftRole = ''; toast(Rosters.tagFor(p) ? 'Added to Leadership, Auxiliary Leaders, and Roles & Permissions.' : 'Added to Leadership and Roles & Permissions.');
   }
   catch (err) { toast(err.message || 'Unable to add this member.', true); }
   Rosters.saving = false; render();
@@ -941,22 +940,29 @@ const AccessLog = {
     if (r.leadership || (Rosters.data.leadership || []).some(p => [p.email,...(p.emails || [])].filter(Boolean).map(lc).includes(email))) return 'member';
     return 'visitor';
   },
+  loginBadge(r) {
+    if (r?.status !== 'Successfully logged in') return '';
+    return '<span class="access-login-badge" role="img" aria-label="Verified sign-in" title="Has signed in to RCI Serve"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m4 8 2.5 2.5L12 5"/></svg></span>';
+  },
+  permissionAvatar(r, perm, label) {
+    return `<span class="access-avatar-wrap"><span class="roster-avatar access-ring-${perm}" title="${esc(label)}" aria-label="${esc(label)}">${esc(initials(r.name || r.email))}</span>${this.loginBadge(r)}</span>`;
+  },
   // A key explaining what each ring color means, shown above the list.
   permLegend() {
     return `<div class="access-legend">${Object.entries(this.permLevels).map(([k, v]) =>
-      `<span class="access-legend-item"><span class="access-legend-dot" style="background:${v.color}"></span>${esc(v.label)}</span>`).join('')}</div>`;
+      `<span class="access-legend-item"><span class="access-legend-dot" style="background:${v.color}"></span>${esc(v.label)}</span>`).join('')}<span class="access-legend-item"><span class="access-login-key" aria-hidden="true">✓</span>Has signed in</span></div>`;
   },
   // A name-only row for the Teams page's "RCI Serve Access" section — no email, unlike accessRow above
   // (which still backs the unreachable-but-kept AccessLog.view()). List-view variant.
   teamsAccessRow(r) {
     const fmt = d => d ? new Date(d).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
     const perm = this.permLevel(r), permLabel = this.permLevels[perm].label;
-    return `<li class="roster-row-item"><span class="roster-row"><span class="roster-avatar access-ring-${perm}" title="${esc(permLabel)}" aria-label="${esc(permLabel)}">${esc(initials(r.name || r.email))}</span><span class="rr-info"><span class="rr-name"><b>${esc(r.name || r.email)}</b></span><small class="muted">${r.last ? 'Last signed in '+esc(fmt(r.last)) : 'Not signed in yet'}</small></span></span></li>`;
+    return `<li class="roster-row-item"><span class="roster-row">${this.permissionAvatar(r,perm,permLabel)}<span class="rr-info"><span class="rr-name"><b>${esc(r.name || r.email)}</b></span><small class="muted">${r.last ? 'Last signed in '+esc(fmt(r.last)) : r.status === 'Successfully logged in' ? 'Has signed in' : 'Not signed in yet'}</small></span></span></li>`;
   },
   // Grid/"circles" variant of the row above, matching Rosters.person() styling.
   teamsAccessCard(r) {
     const perm = this.permLevel(r), permLabel = this.permLevels[perm].label;
-    return `<li class="roster-person"><span class="roster-avatar access-ring-${perm}" title="${esc(permLabel)}" aria-label="${esc(permLabel)}">${esc(initials(r.name || r.email))}</span><b>${esc(r.name || r.email)}</b></li>`;
+    return `<li class="roster-person">${this.permissionAvatar(r,perm,permLabel)}<b>${esc(r.name || r.email)}</b></li>`;
   },
   // Only the signed-in RCI Serve administrator (canManage()) sees this — currently just Ashley, since
   // she's the only name in CHURCH_CAL.editors. Shown at the bottom of the Teams page, styled like the
