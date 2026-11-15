@@ -40,7 +40,14 @@ const Rosters = {
   leadershipAccountTags: {
     '48bd5b24-3a7e-4ded-9c9b-12eea8616241': 'Production Coordinator'
   },
+  assignedLeadershipRole(p) {
+    const entries=[...new Set(p.userIds || [p.userId])].map(id=>this.leadershipChanges.get(id)).filter(e=>e?.action==='add' && typeof e.role==='string');
+    entries.sort((a,b)=>String(a.recordedAt || '').localeCompare(String(b.recordedAt || '')) || (a.recordOrder || 0)-(b.recordOrder || 0));
+    return entries.at(-1)?.role;
+  },
   tagFor(p) {
+    const assigned=this.assignedLeadershipRole(p);
+    if (assigned !== undefined) return assigned;
     for (const e of (p.emails || [p.email]).filter(Boolean).map(lc)) if (this.leadershipTags[e]) return this.leadershipTags[e];
     for (const id of (p.userIds || [p.userId])) if (this.leadershipAccountTags[id]) return this.leadershipAccountTags[id];
     return '';
@@ -154,7 +161,8 @@ const Rosters = {
       try {
         const p = JSON.parse(r.text);
         if (!p.userId || r.parent !== 'leadership:' + p.userId || !p.name || !p.email) continue;
-        latest.set(p.userId, p);
+        if (p.role !== undefined && (typeof p.role !== 'string' || p.role.length > 120)) continue;
+        latest.set(p.userId, {...p,...(p.role !== undefined ? {role:p.role.trim().replace(/\s+/g,' ')} : {}),recordedAt:r.at,recordOrder:Number(r.id)});
       } catch (_) {}
     }
     this.leadershipChanges = latest;
@@ -265,7 +273,7 @@ const Rosters = {
     const list = this.auxiliaryLeaders(), opened = this.open.has('auxiliary');
     const toggle = `<button class="roster-heading-toggle" data-act="aux-toggle" aria-label="Auxiliary Leaders team roster" aria-expanded="${opened}" aria-controls="roster-auxiliary"><span class="roster-count" aria-label="${list.length} members">${list.length}</span><span class="roster-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></span></button>`;
     const body = !opened ? '' : `<div class="roster-content">${list.length ? (this.getLayout() === 'list' ? `<ul class="roster-rows">${list.map(x => this.auxPersonRow(x)).join('')}</ul>` : `<ul class="team-roster">${list.map(x => this.auxPerson(x)).join('')}</ul>`) : '<p class="hint">No auxiliary leaders yet.</p>'}</div>`;
-    return `<section class="panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.auxiliary}</span><b>Auxiliary Leaders</b>${toggle}</div></div><div id="roster-auxiliary" class="roster-section" ${opened ? '' : 'hidden'}>${body}</div></section>`;
+    return `<section class="panel"><div class="team-heading"><div class="team-title"><span class="t-ic leadership-icon">${this.icons.auxiliary}</span><b>Auxiliary Leaders</b>${toggle}</div>${this.canManage() ? `<div class="roster-actions"><button class="iconbtn sm" data-act="leadership-add" aria-label="Add Auxiliary Leader" title="Add Auxiliary Leader">${this.icons.add}</button></div>` : ''}</div><div id="roster-auxiliary" class="roster-section" ${opened ? '' : 'hidden'}>${body}</div></section>`;
   },
   person(p, index, key) {
     const leader = p.ministryLeader === true;
@@ -326,7 +334,7 @@ const Rosters = {
   },
 
   modal() {
-    if (this.adding && this.canManage()) return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Add Leadership member</h2><form id="leadership-form" class="sec"><label for="leadership-name">Full Name</label><input id="leadership-name" type="text" name="name" maxlength="120" value="${esc(this.draftName || '')}" required autocomplete="name"><label for="leadership-email">Sign-in email</label><input id="leadership-email" type="email" name="email" value="${esc(this.draft || '')}" required autocomplete="email"><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add member'}</button><button class="btn" type="button" data-act="leadership-cancel">Cancel</button></div></form></section></div>`;
+    if (this.adding && this.canManage()) return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Add Leadership member</h2><form id="leadership-form" class="sec"><label for="leadership-name">Full Name</label><input id="leadership-name" type="text" name="name" maxlength="120" value="${esc(this.draftName || '')}" required autocomplete="name"><label for="leadership-email">Sign-in email</label><input id="leadership-email" type="email" name="email" value="${esc(this.draft || '')}" required autocomplete="email"><label for="leadership-role">Role / title</label><input id="leadership-role" type="text" name="role" maxlength="120" value="${esc(this.draftRole || '')}" placeholder="For example, Production Coordinator" required><p class="hint">This title appears on their profile and under Auxiliary Leaders. Leadership access is set up automatically.</p><div class="acts2"><button class="btn primary" ${this.saving ? 'disabled' : ''}>${this.saving ? 'Adding…' : 'Add member'}</button><button class="btn" type="button" data-act="leadership-cancel">Cancel</button></div></form></section></div>`;
     if (!this.deleteKey || !this.canManageTeam(this.deleteKey)) return '';
     const key = this.deleteKey, label = key === 'leadership' ? 'RCI Leadership' : TEAMS.find(t => t.key === key)?.full, people = this.data[key] || [];
     return `<div class="roster-overlay"><section class="panel roster-dialog" role="dialog" aria-modal="true" aria-labelledby="roster-dialog-title"><h2 id="roster-dialog-title">Delete ${esc(label)} member</h2><form id="roster-delete-form" class="sec">
@@ -513,11 +521,13 @@ const Rosters = {
   },
   async save(person, action) {
     if (!this.canManage()) throw new Error('Only RCI Serve administrators can change Leadership members.');
+    const role=person.role === undefined ? this.tagFor(person) : person.role;
+    if (typeof role !== 'string' || role.length > 120) throw new Error('Enter a role or title of up to 120 characters.');
     if (action === 'add' && !DEMO) await this.ensureLeadershipAccess(person, true);
     const ids = [...new Set(person.userIds || [person.userId])];
     if (!ids.length || ids.some(id => !id)) throw new Error('Refresh the roster and try again.');
     for (const userId of ids) {
-      const entry = { userId, name: person.name, email: person.email, action };
+      const entry = { userId, name: person.name, email: person.email, action, ...(action==='add' ? {role:role.trim().replace(/\s+/g,' ')} : {}) };
       if (DEMO) this.demoLeadershipEvents.push({ id: String(this.demoLeadershipEvents.length + 1), email: this.hubAdmins()[0], parent: 'leadership:' + userId, text: JSON.stringify(entry), at: new Date().toISOString() });
       else {
         const base = await Comm.list({ ...CHURCH_CAL, key: 'serve' }, 'Team Board');
@@ -635,7 +645,9 @@ const Rosters = {
   detailsFor(p) {
     const ids = p.userIds || [p.userId];
     const inferred = TEAMS.filter(t => (S.teams[t.key]?.items || []).some(i => i.kind === 'profile' && !i.gone && i.email && (p.emails || [p.email]).filter(Boolean).map(lc).includes(lc(i.email)))).map(t => t.key === 'ushers' ? 'Ushers & Altar Workers' : t.name);
-    const out = {first:p.first || (p.name || '').split(/\s+/)[0] || '',birthday:p.birthday || '',phone:p.phone || '',places:p.places || this.places.filter(x => inferred.includes(x))};
+    const rolePlace=this.places.find(x=>lc(x)===lc(this.tagFor(p)));
+    const defaultPlaces=[...new Set([...(p.places || this.places.filter(x => inferred.includes(x))),...(rolePlace ? [rolePlace] : [])])];
+    const out = {first:p.first || (p.name || '').split(/\s+/)[0] || '',birthday:p.birthday || '',phone:p.phone || '',places:defaultPlaces};
     for (const e of [...this.profileDetailEvents,...this.cardDetailEvents].filter(e => ids.includes(e.userId)).sort((a,b) => a.at.localeCompare(b.at) || a.order-b.order)) Object.assign(out,this.cleanDetails(e));
     return out;
   },
@@ -738,7 +750,7 @@ const Rosters = {
     this.cardDetailEvents.push({userId:targetId,...details,at,order:Date.now()});
     this.data.leadership = this.applyProfiles(this.data.leadership);
   },
-  reset() { this.invalidate(); this.search = ""; this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.draftName = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.leadershipSettings = {}; this.profileDetailEvents = []; this.cardDetailEvents = []; this.aboutId = ''; this.aboutEditing = false; this.accessStates = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
+  reset() { this.invalidate(); this.search = ""; this.open.clear(); this.data = {}; this.errors = {}; this.identities.clear(); this.photos.clear(); this.adding = false; this.draft = ''; this.draftName = ''; this.draftRole = ''; this.deleteKey = ''; this.demoLeadershipEvents = []; this.rolesLoaded = false; this.profiles = {}; this.leadershipSettings = {}; this.profileDetailEvents = []; this.cardDetailEvents = []; this.aboutId = ''; this.aboutEditing = false; this.accessStates = {}; this.editingProfile = false; this.profileDraft = null; if (this.baseHubAdmins) CHURCH_CAL.editors = [...this.baseHubAdmins]; }
 };
 document.addEventListener('submit', async e => {
   if (e.target.id !== 'leadership-form') return;
@@ -746,12 +758,14 @@ document.addEventListener('submit', async e => {
   const f = new FormData(e.target);
   Rosters.draft = String(f.get('email') || '').trim();
   Rosters.draftName = String(f.get('name') || '').trim();
+  Rosters.draftRole = String(f.get('role') || '').trim().replace(/\s+/g,' ');
   Rosters.saving = true; render();
   try {
     if (!Rosters.draftName) throw new Error('Enter a full name.');
+    if (!Rosters.draftRole) throw new Error('Enter their Leadership role or title.');
     const p = await Rosters.identity(Rosters.draft);
-    await Rosters.save({ ...p, name: Rosters.draftName }, 'add');
-    Rosters.adding = false; Rosters.draft = ''; Rosters.draftName = ''; toast('Leadership member added');
+    await Rosters.save({ ...p, name: Rosters.draftName, role:Rosters.draftRole }, 'add');
+    Rosters.adding = false; Rosters.draft = ''; Rosters.draftName = ''; Rosters.draftRole = ''; toast('Added to Leadership, Auxiliary Leaders, and Roles & Permissions.');
   }
   catch (err) { toast(err.message || 'Unable to add this member.', true); }
   Rosters.saving = false; render();
