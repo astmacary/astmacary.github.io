@@ -37,8 +37,12 @@ const Rosters = {
     'tammyrambler@gmail.com': 'Ushers & Altar Workers Leader',
     'delisa.rogers@therampchurch.com': 'Ushers & Altar Workers Leader'
   },
+  leadershipAccountTags: {
+    '48bd5b24-3a7e-4ded-9c9b-12eea8616241': 'Production Coordinator'
+  },
   tagFor(p) {
     for (const e of (p.emails || [p.email]).filter(Boolean).map(lc)) if (this.leadershipTags[e]) return this.leadershipTags[e];
+    for (const id of (p.userIds || [p.userId])) if (this.leadershipAccountTags[id]) return this.leadershipAccountTags[id];
     return '';
   },
   isLeadershipMember() { return DEMO || !!this.data.leadership?.some(p => this.isSelf(p)); },
