@@ -355,7 +355,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "138";   // bump together with CACHE in sw.js
+const APP_VERSION = "139";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1565,7 +1565,12 @@ const AB_GUESTS = ["Guest Preacher", "Guest Singer"];
 const abRole = i => AB_GUESTS.includes(i.role) && i.guestName ? `${i.role}: ${i.guestName}` : (i.role || "");
 /* Which Assigned To pastor is the signed-in person. Listed emails win; otherwise every word of the
    name after the title (Pastor/Bishop/…) must be in their account name ("Pastor Marvin" → a "Marvin"). */
-const PASTOR_EMAILS = { "Pastor Marvin": ["pastormarvin@therampchurch.com"] };
+const PASTOR_EMAILS = {
+  "Bishop Younger": ["pastor@therampchurch.com", "pastor@therampchurch.org"],
+  "Pastor Marvin": ["pastormarvin@therampchurch.com"],
+  "Pastor Westgate": ["pastor.westgate@therampchurch.com"],
+  "Pastor Claude": ["claude@therampchurch.com"]
+};
 const PASTOR_TITLES = ["pastor", "bishop", "elder", "minister", "apostle", "prophet", "evangelist", "dr", "dr.", "overseer", "mother", "lady", "first"];
 function isMePastor(role){
   if (!role || AB_GUESTS.includes(role) || !S.me) return false;
