@@ -191,6 +191,10 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 @media (prefers-reduced-motion:reduce){.today-dot{animation:none}}
 .today-item{display:flex;flex-direction:column;gap:2px}
 .today-who{display:flex;align-items:center;gap:12px}
+.pastor-ab{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ab-contact{display:flex;gap:8px;flex-wrap:wrap}
+.ab-contact .btn{padding:6px 14px;min-height:34px;border-color:var(--accent);color:var(--accent);font-weight:700;gap:6px}
+.ab-contact .btn svg{width:15px;height:15px}
 .av.upic{width:56px;height:56px;border-radius:50%;flex:none;display:grid;place-items:center;position:relative;overflow:hidden;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:18px;box-shadow:0 0 0 2px var(--accent)}
 .av.upic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .today-item + .today-item{border-top:1px solid var(--line);padding-top:10px}
@@ -358,7 +362,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "140";   // bump together with CACHE in sw.js
+const APP_VERSION = "141";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -373,7 +377,7 @@ const TEAMS = [
   { key: "security", name: "Security", full: "RCI Security", path: "/rci-security/", tl: "#7A1F1F", td: "#EB9393", icon: "shield",
     sitePath: "/sites/RCISecurity", listName: "Security Schedule", announcementsListName: "Announcements",
     editors: ["delisa.rogers@therampchurch.com", "hal.hanson@therampchurch.com", "halrhansonjr@gmail.com", "gilbertwilfred7@gmail.com", "ashley.stmacary@therampchurch.com"] },
-  { key: "armorbearers", name: "Armor Bearers", full: "RCI Armor Bearers", path: "/rci-armor-bearers/", tl: "#6B4E16", td: "#E0B865", icon: "shield",
+  { key: "armorbearers", name: "Armor Bearers", full: "RCI Armor Bearers", path: "/rci-armor-bearers/", tl: "#8E2453", td: "#E68AB0", icon: "abshield",
     sitePath: "/sites/RCIArmorBearers", listName: "Armor Bearers Schedule", announcementsListName: "Announcements",
     editors: ["ashley.stmacary@therampchurch.com"] },
   { key: "ushers", name: "Ushers & Altar Workers", full: "RCI Ushers & Altar Workers", path: "/rci-ushers/", tl: "#1E5E43", td: "#6CC69C", icon: "door",
@@ -446,6 +450,7 @@ const newPill = () => `<span class="pill new-pill">NEW</span> `;
 const ICON = {
   rings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="13" r="5"/><circle cx="15" cy="13" r="5"/></svg>',
   cam: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4V8z"/></svg>',
+  abshield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 7v10M8 11h8"/></svg>',
   shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
   door: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M10 21v-6h4v6"/></svg>',
   music: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
@@ -685,14 +690,15 @@ const API = {
         Placement: ["Placement", "Usher Placement"], Placement2: ["Placement2", "Altar Worker Placement"],
         Status2: ["Placement 2 Status", "Placement2 Status", "Altar Worker Placement Status", "Altar Worker Status"],
         Status: ["Status"], ServiceCategory: ["Service Category"], CallTime: ["Call Time"], ArchiveStatus: ["Archive Status"],
-        GuestName: ["Guest Name"], Instructions: ["Instructions"]   // Armor Bearers only (guest preacher/singer rows)
+        GuestName: ["Guest Name"], Instructions: ["Instructions"],   // Armor Bearers only (guest preacher/singer rows)
+        PhoneNumber: ["Phone Number"]   // Roster phone, for a pastor's Call / Text buttons
       };
       let cols = [];
       try { cols = (await this.g(`${base}/${listId}/columns?$select=name,displayName`)).value || []; } catch(e){}
       const norm = v => lc(v).replace(/[’']/g, "'");
       for (const [k, labels] of Object.entries(COLS)){
         const hit = cols.find(c => c.name === k) || cols.find(c => labels.map(norm).includes(norm(c.displayName)));
-        if (hit) col[k] = hit.name; else if (!cols.length && !["Placement2", "Status2", "GuestName", "Instructions"].includes(k)) col[k] = k;
+        if (hit) col[k] = hit.name; else if (!cols.length && !["Placement2", "Status2", "GuestName", "Instructions", "PhoneNumber"].includes(k)) col[k] = k;
       }
       sel = ["Title", ...Object.entries(col).map(([k, v]) => k === "Name" ? v + "LookupId" : v)].join(",");
     }
@@ -998,7 +1004,7 @@ function normalize(t, id, f, emailById, col){
   const name = g("SecurityName") || "", status = g("Status") || "";
   const email = emailById[f[(col.Name || "Name") + "LookupId"]] || "";
   const common = { ...base, date: dateRaw ? spDate(dateRaw) : "", category: roster ? "" : cat, fullName: name, email, call, time: "",
-    guestName: g("GuestName") || "", instructions: g("Instructions") || "" };
+    guestName: g("GuestName") || "", instructions: g("Instructions") || "", phone: g("PhoneNumber") || "" };
   if (roster) return [{ ...common, kind: "profile", role: "", pending: false, confirmed: false,
     gone: (t.key === "security" || t.key === "armorbearers") ? lc(g("ArchiveStatus")) === "archive" : lc(status) === "unavailable" }];
   const kind = (!dateRaw || lc(cat) === "no service") ? "other" : "assign";
@@ -1603,11 +1609,18 @@ function pastorHero(){
     <div class="today-h"><span class="today-dot" aria-hidden="true"></span>Serving You Today</div>
     ${list.map(i => `<div class="today-item">
       <span class="tlabel team" style="${tvars(tm)}">${esc(tm.name)}</span>
-      <div class="today-who">${userPic(i.email, i.fullName)}<div class="today-role">${esc(i.fullName)}</div></div>
-      <div class="today-meta">Your Armor Bearer · ${esc(i.role)}</div>
-      <div class="today-meta">${esc(i.category || "")} · Call Time <b>${esc(i.call || "TBD")}</b></div>
-      <div class="today-act">${i.confirmed ? `<span class="pill ok">CONFIRMED</span>` : `<span class="pill warn">Waiting for their reply</span>`}</div>
+      <div class="today-who">${userPic(i.email, i.fullName)}<div class="pastor-ab"><div class="today-role">${esc(i.fullName)}</div>
+        ${(() => { const ph = abPhone(i); return ph ? `<div class="ab-contact"><a class="btn" href="tel:${esc(ph)}">${ICON.phone || ""}Call</a><a class="btn" href="sms:${esc(ph)}">${ICON.chat || ""}Text</a></div>` : `<div class="today-meta">No phone number on file</div>`; })()}
+        ${i.confirmed ? "" : `<div class="today-meta">Waiting for their reply</div>`}</div></div>
     </div>`).join("")}</section>`;
+}
+/* The Armor Bearer's phone from their Roster row (same email, else same name), digits only for tel:/sms:. */
+function abPhone(i){
+  const rows = (S.teams.armorbearers?.items || []).filter(p => p.kind === "profile" && !p.gone);
+  const p = rows.find(p => i.email && p.email && lc(p.email) === lc(i.email)) || rows.find(p => p.fullName && lc(p.fullName) === lc(i.fullName));
+  const raw = String(p?.phone || "").replace(/<[^>]*>/g, " ");
+  const digits = raw.replace(/[^\d+]/g, "");
+  return digits.length >= 7 ? digits : "";
 }
 async function declineItem(id){
   const item = myItems().find(i => i.id === id); if (!item || S.busy.has(id)) return;
@@ -1705,7 +1718,7 @@ function viewHome(){
     const NAMES = [...ALWAYS, ...CONDITIONAL].map(lc);
     const teamOrder = t => TEAMS.findIndex(x => x.key === t);
     const hits = [];
-    for (const t of TEAMS) (S.teams[t.key]?.items || []).forEach(i => {
+    for (const t of TEAMS.filter(t => ["productions", "worship"].includes(t.key))) (S.teams[t.key]?.items || []).forEach(i => {   // payroll applies only to Productions and Worship & Arts
       if (i.kind === "assign" && i.confirmed && i.date >= today && i.date <= end && NAMES.includes(lc(i.fullName))) hits.push({ ...i, team: t.key });
     });
     const payrollChips = TEAMS.filter(t => hits.some(h => h.team === t.key));
