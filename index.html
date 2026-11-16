@@ -355,7 +355,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "137";   // bump together with CACHE in sw.js
+const APP_VERSION = "138";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -681,14 +681,15 @@ const API = {
         ServiceDate: ["Service Date"], Name: ["Name"], SecurityName: ["Security Name", "Usher's Name", "Usher’s Name", "Ushers Name", "Usher Name"],
         Placement: ["Placement", "Usher Placement"], Placement2: ["Placement2", "Altar Worker Placement"],
         Status2: ["Placement 2 Status", "Placement2 Status", "Altar Worker Placement Status", "Altar Worker Status"],
-        Status: ["Status"], ServiceCategory: ["Service Category"], CallTime: ["Call Time"], ArchiveStatus: ["Archive Status"]
+        Status: ["Status"], ServiceCategory: ["Service Category"], CallTime: ["Call Time"], ArchiveStatus: ["Archive Status"],
+        GuestName: ["Guest Name"], Instructions: ["Instructions"]   // Armor Bearers only (guest preacher/singer rows)
       };
       let cols = [];
       try { cols = (await this.g(`${base}/${listId}/columns?$select=name,displayName`)).value || []; } catch(e){}
       const norm = v => lc(v).replace(/[’']/g, "'");
       for (const [k, labels] of Object.entries(COLS)){
         const hit = cols.find(c => c.name === k) || cols.find(c => labels.map(norm).includes(norm(c.displayName)));
-        if (hit) col[k] = hit.name; else if (!cols.length && k !== "Placement2" && k !== "Status2") col[k] = k;
+        if (hit) col[k] = hit.name; else if (!cols.length && !["Placement2", "Status2", "GuestName", "Instructions"].includes(k)) col[k] = k;
       }
       sel = ["Title", ...Object.entries(col).map(([k, v]) => k === "Name" ? v + "LookupId" : v)].join(",");
     }
@@ -993,7 +994,8 @@ function normalize(t, id, f, emailById, col){
   const roster = !dateRaw && !cat && !call;
   const name = g("SecurityName") || "", status = g("Status") || "";
   const email = emailById[f[(col.Name || "Name") + "LookupId"]] || "";
-  const common = { ...base, date: dateRaw ? spDate(dateRaw) : "", category: roster ? "" : cat, fullName: name, email, call, time: "" };
+  const common = { ...base, date: dateRaw ? spDate(dateRaw) : "", category: roster ? "" : cat, fullName: name, email, call, time: "",
+    guestName: g("GuestName") || "", instructions: g("Instructions") || "" };
   if (roster) return [{ ...common, kind: "profile", role: "", pending: false, confirmed: false,
     gone: (t.key === "security" || t.key === "armorbearers") ? lc(g("ArchiveStatus")) === "archive" : lc(status) === "unavailable" }];
   const kind = (!dateRaw || lc(cat) === "no service") ? "other" : "assign";
@@ -1557,21 +1559,70 @@ function teamNotesRowFor(key, date){
   if (key === "worship") return (S.teams.worship?.items || []).find(i => i.kind === "other" && i.role === "Coordinator" && i.date === date);
   return null;
 }
+/* Armor Bearers: Assigned To holds the pastor (or "Guest Preacher"/"Guest Singer" + Guest Name);
+   Full Name is the Armor Bearer serving them. */
+const AB_GUESTS = ["Guest Preacher", "Guest Singer"];
+const abRole = i => AB_GUESTS.includes(i.role) && i.guestName ? `${i.role}: ${i.guestName}` : (i.role || "");
+/* Which Assigned To pastor is the signed-in person. Listed emails win; otherwise every word of the
+   name after the title (Pastor/Bishop/…) must be in their account name ("Pastor Marvin" → a "Marvin"). */
+const PASTOR_EMAILS = { "Pastor Marvin": ["pastormarvin@therampchurch.com"] };
+const PASTOR_TITLES = ["pastor", "bishop", "elder", "minister", "apostle", "prophet", "evangelist", "dr", "dr.", "overseer", "mother", "lady", "first"];
+function isMePastor(role){
+  if (!role || AB_GUESTS.includes(role) || !S.me) return false;
+  const mine = (S.me.emails || []).map(lc), listed = (PASTOR_EMAILS[role] || []).map(lc);
+  if (listed.length) return listed.some(e => mine.includes(e));
+  const words = lc(role).split(/\s+/).filter(w => w && !PASTOR_TITLES.includes(w));
+  const have = lc(S.me.name || "").split(/[\s,]+/);
+  return words.length > 0 && words.every(w => have.includes(w));
+}
+/* Pastors: "Serving You Today" — who their Armor Bearer is today (same look as You're Serving Today). */
+function pastorHero(){
+  const t = todayKey(), tm = teamOf("armorbearers");
+  const list = (S.teams.armorbearers?.items || []).filter(i => i.kind === "assign" && i.date === t && i.fullName && (i.confirmed || i.pending) && isMePastor(i.role));
+  if (!list.length) return "";
+  return `<section class="today-hero" aria-label="Who is serving you today">
+    <div class="today-h"><span class="today-dot" aria-hidden="true"></span>Serving You Today</div>
+    ${list.map(i => `<div class="today-item">
+      <span class="tlabel team" style="${tvars(tm)}">${esc(tm.name)}</span>
+      <div class="today-role">${esc(i.fullName)}</div>
+      <div class="today-meta">Your Armor Bearer · ${esc(i.role)}</div>
+      <div class="today-meta">${esc(i.category || "")} · Call Time <b>${esc(i.call || "TBD")}</b></div>
+      <div class="today-act">${i.confirmed ? `<span class="pill ok">CONFIRMED</span>` : `<span class="pill warn">Waiting for their reply</span>`}</div>
+    </div>`).join("")}</section>`;
+}
+async function declineItem(id){
+  const item = myItems().find(i => i.id === id); if (!item || S.busy.has(id)) return;
+  S.busy.add(id); render();
+  try {
+    if (!DEMO) await API.update(item.team, item.rowId, { [API.sites[item.team]?.col?.Status || "Status"]: "Declined" });
+    item.pending = false; item.confirmed = false; S.confirmDecline = null;
+    toast(`Declined: ${abRole(item) || item.role}, ${fmtShort(item.date)}`);
+    saveCache();
+  } catch(e){ toast("Couldn't save your reply. " + e.message, true); }
+  S.busy.delete(id); updateBadge(); render();
+}
 function todayHero(){
   const t = todayKey();
   const list = myItems().filter(i => i.date === t && (i.confirmed || i.pending)).sort((a, b) => a.team.localeCompare(b.team));
   if (!list.length) return "";
-  const teamsToday = [...new Set(list.map(i => i.team))].map(teamOf);
+  const teamsToday = [...new Set(list.map(i => i.team))].map(teamOf).filter(tm => tm.key !== "armorbearers");   // Armor Bearers: no See Today's Team
   return `<section class="today-hero" aria-label="Where you're serving today">
     <div class="today-h"><span class="today-dot" aria-hidden="true"></span>You're Serving Today</div>
     ${list.map(i => { const tm = teamOf(i.team); return `<div class="today-item">
       <span class="tlabel team" style="${tvars(tm)}">${esc(tm.name)}</span>
-      <div class="today-role">${esc(i.role || "Serving")}</div>
+      ${i.team === "armorbearers" ? `<div class="today-role">${esc(abRole(i) || "Serving")}</div>
+      <div class="today-meta">${esc(i.category || "")} · Call Time <b>${esc(i.call || "TBD")}</b></div>
+      ${i.instructions ? `<div class="today-meta" style="white-space:pre-line">${esc(i.instructions)}</div>` : ""}
+      ${S.confirmDecline === i.id ? `<div class="confirm-row">Can't make it to ${esc(abRole(i))} today?
+        <button class="btn decline" data-act="decline-yes" data-id="${esc(i.id)}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Saving…" : "Yes, Decline"}</button>
+        <button class="btn" data-act="decline-keep">Keep It</button></div>`
+      : `<div class="today-act">${i.pending ? `<span class="pill warn">Needs your reply</span><button class="btn accept" data-act="accept" data-id="${esc(i.id)}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Saving…" : "Accept"}</button>` : ""}<button class="btn decline" style="margin-left:auto" data-act="decline-ask" data-id="${esc(i.id)}">Can't Make It</button></div>`}`
+      : `<div class="today-role">${esc(i.role || "Serving")}</div>
       <div class="today-meta">${esc(i.category || "")}${i.call ? ` · Call Time <b>${esc(i.call)}</b>` : ""}</div>
-      ${i.pending ? `<div class="today-act"><span class="pill warn">Needs your reply</span><button class="btn accept" data-act="accept" data-id="${esc(i.id)}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Saving…" : "Accept"}</button></div>` : ""}
+      ${i.pending ? `<div class="today-act"><span class="pill warn">Needs your reply</span><button class="btn accept" data-act="accept" data-id="${esc(i.id)}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Saving…" : "Accept"}</button></div>` : ""}`}
     </div>`; }).join("")}
-    <div class="today-btns">${teamsToday.map(tm => { const multi = teamsToday.length > 1 ? esc(tm.name) + " " : "";
-      return `<a class="btn today-team" href="${tm.path}?home${DEMO ? "&amp;demo" : ""}">See Today's ${multi}Team</a>${teamNotesRowFor(tm.key, t)?.notes ? `<a class="btn today-team" href="${tm.path}?notes=today${DEMO ? "&amp;demo" : ""}">See Today's ${multi}Notes</a>` : ""}`; }).join("")}</div></section>`;
+    ${teamsToday.length ? `<div class="today-btns">` : ""}${teamsToday.map(tm => { const multi = teamsToday.length > 1 ? esc(tm.name) + " " : "";
+      return `<a class="btn today-team" href="${tm.path}?home${DEMO ? "&amp;demo" : ""}">See Today's ${multi}Team</a>${teamNotesRowFor(tm.key, t)?.notes ? `<a class="btn today-team" href="${tm.path}?notes=today${DEMO ? "&amp;demo" : ""}">See Today's ${multi}Notes</a>` : ""}`; }).join("")}${teamsToday.length ? `</div>` : ""}</section>`;
 }
 function viewHome(){
   const h = new Date().getHours(), part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
@@ -1582,6 +1633,7 @@ function viewHome(){
     ${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes${todayNotesUnseen() ? ", unread edit" : ""}" title="Today's Service Notes">${ICON.notes}${todayNotesUnseen() ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div>`;
   out += badgeAsk();
   out += todayHero();
+  out += pastorHero();
   if (!teams.length && !isEditorOf(CHURCH_CAL) && !S.loading && !MINISTRIES.some(m => canViewMinistry(m))){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
       <p class="hint">RCI Serve shows the teams where your email (${esc(S.me.emails[0] || "")}) is on the roster or schedule. If you serve on a team, ask that team's leader to add this email address, then pull this page back up.</p>
@@ -1940,6 +1992,9 @@ document.addEventListener("click", async e => {
   else if (act === "retry") location.reload();
   else if (act === "refresh") loadAll();
   else if (act === "accept") accept(b.dataset.id);
+  else if (act === "decline-ask"){ S.confirmDecline = b.dataset.id; render(); }
+  else if (act === "decline-keep"){ S.confirmDecline = null; render(); }
+  else if (act === "decline-yes") declineItem(b.dataset.id);
   else if (act === "theme") toggleTheme();
   else if (act === "hide-install"){ if(S.view === "install"){ S.view="home"; try { sessionStorage.setItem("rci-serve:view",S.view); } catch (_) {} const url=new URL(location.href); url.searchParams.delete("install"); history.replaceState(history.state,"",url.pathname+url.search+url.hash); } S.hideInstall = true; try { sessionStorage.setItem("rci-serve:noinstall", "1"); } catch(_){} render(); }
   else if (act === "install" && deferredInstall){ deferredInstall.prompt(); deferredInstall = null; render(); }
