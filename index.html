@@ -191,6 +191,8 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 @media (prefers-reduced-motion:reduce){.today-dot{animation:none}}
 .today-item{display:flex;flex-direction:column;gap:2px}
 .today-who{display:flex;align-items:center;gap:12px}
+.pastor-hero .today-who .av,.pastor-hero .today-who img{width:44px!important;height:44px!important;font-size:16px}
+.pastor-hero .today-role{font-size:21px}
 .pastor-ab{display:flex;flex-direction:column;gap:6px;min-width:0}
 .ab-contact{display:flex;gap:8px;flex-wrap:wrap}
 .ab-contact .btn{padding:6px 14px;min-height:34px;border-color:var(--accent);color:var(--accent);font-weight:700;gap:6px}
@@ -362,7 +364,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "141";   // bump together with CACHE in sw.js
+const APP_VERSION = "142";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -377,7 +379,7 @@ const TEAMS = [
   { key: "security", name: "Security", full: "RCI Security", path: "/rci-security/", tl: "#7A1F1F", td: "#EB9393", icon: "shield",
     sitePath: "/sites/RCISecurity", listName: "Security Schedule", announcementsListName: "Announcements",
     editors: ["delisa.rogers@therampchurch.com", "hal.hanson@therampchurch.com", "halrhansonjr@gmail.com", "gilbertwilfred7@gmail.com", "ashley.stmacary@therampchurch.com"] },
-  { key: "armorbearers", name: "Armor Bearers", full: "RCI Armor Bearers", path: "/rci-armor-bearers/", tl: "#8E2453", td: "#E68AB0", icon: "abshield",
+  { key: "armorbearers", name: "Armor Bearers", full: "RCI Armor Bearers", path: "/rci-armor-bearers/", tl: "#2B2B2E", td: "#B8B8BE", icon: "abshield",
     sitePath: "/sites/RCIArmorBearers", listName: "Armor Bearers Schedule", announcementsListName: "Announcements",
     editors: ["ashley.stmacary@therampchurch.com"] },
   { key: "ushers", name: "Ushers & Altar Workers", full: "RCI Ushers & Altar Workers", path: "/rci-ushers/", tl: "#1E5E43", td: "#6CC69C", icon: "door",
@@ -1603,15 +1605,15 @@ function isMePastor(role){
 /* Pastors: "Serving You Today" — who their Armor Bearer is today (same look as You're Serving Today). */
 function pastorHero(){
   const t = todayKey(), tm = teamOf("armorbearers");
-  const list = (S.teams.armorbearers?.items || []).filter(i => i.kind === "assign" && i.date === t && i.fullName && (i.confirmed || i.pending) && isMePastor(i.role));
+  const list = (S.teams.armorbearers?.items || []).filter(i => i.kind === "assign" && i.date === t && i.fullName && i.confirmed && isMePastor(i.role));
   if (!list.length) return "";
-  return `<section class="today-hero" aria-label="Who is serving you today">
+  return `<section class="today-hero pastor-hero" aria-label="Who is serving you today">
     <div class="today-h"><span class="today-dot" aria-hidden="true"></span>Serving You Today</div>
     ${list.map(i => `<div class="today-item">
       <span class="tlabel team" style="${tvars(tm)}">${esc(tm.name)}</span>
       <div class="today-who">${userPic(i.email, i.fullName)}<div class="pastor-ab"><div class="today-role">${esc(i.fullName)}</div>
         ${(() => { const ph = abPhone(i); return ph ? `<div class="ab-contact"><a class="btn" href="tel:${esc(ph)}">${ICON.phone || ""}Call</a><a class="btn" href="sms:${esc(ph)}">${ICON.chat || ""}Text</a></div>` : `<div class="today-meta">No phone number on file</div>`; })()}
-        ${i.confirmed ? "" : `<div class="today-meta">Waiting for their reply</div>`}</div></div>
+</div></div>
     </div>`).join("")}</section>`;
 }
 /* The Armor Bearer's phone from their Roster row (same email, else same name), digits only for tel:/sms:. */
