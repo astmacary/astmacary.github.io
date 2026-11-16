@@ -341,7 +341,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=105"></script>
+<script src="/communications.js?v=106"></script>
 <script src="/push-config.js?v=95"></script>
 <script src="/push-client.js?v=96"></script>
 <script src="/rosters.js?v=73"></script>
@@ -355,7 +355,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "136";   // bump together with CACHE in sw.js
+const APP_VERSION = "137";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -370,6 +370,9 @@ const TEAMS = [
   { key: "security", name: "Security", full: "RCI Security", path: "/rci-security/", tl: "#7A1F1F", td: "#EB9393", icon: "shield",
     sitePath: "/sites/RCISecurity", listName: "Security Schedule", announcementsListName: "Announcements",
     editors: ["delisa.rogers@therampchurch.com", "hal.hanson@therampchurch.com", "halrhansonjr@gmail.com", "gilbertwilfred7@gmail.com", "ashley.stmacary@therampchurch.com"] },
+  { key: "armorbearers", name: "Armor Bearers", full: "RCI Armor Bearers", path: "/rci-armor-bearers/", tl: "#6B4E16", td: "#E0B865", icon: "shield",
+    sitePath: "/sites/RCIArmorBearers", listName: "Armor Bearers Schedule", announcementsListName: "Announcements",
+    editors: ["ashley.stmacary@therampchurch.com"] },
   { key: "ushers", name: "Ushers & Altar Workers", full: "RCI Ushers & Altar Workers", path: "/rci-ushers/", tl: "#1E5E43", td: "#6CC69C", icon: "door",
     sitePath: "/sites/RCIUsherDept.-UsherSchedule", listName: "Usher Schedule", announcementsListName: "Announcements",
     editors: ["delisa.rogers@therampchurch.com", "ashley.stmacary@therampchurch.com", "tammyrambler@gmail.com"] },
@@ -992,12 +995,12 @@ function normalize(t, id, f, emailById, col){
   const email = emailById[f[(col.Name || "Name") + "LookupId"]] || "";
   const common = { ...base, date: dateRaw ? spDate(dateRaw) : "", category: roster ? "" : cat, fullName: name, email, call, time: "" };
   if (roster) return [{ ...common, kind: "profile", role: "", pending: false, confirmed: false,
-    gone: t.key === "security" ? lc(g("ArchiveStatus")) === "archive" : lc(status) === "unavailable" }];
+    gone: (t.key === "security" || t.key === "armorbearers") ? lc(g("ArchiveStatus")) === "archive" : lc(status) === "unavailable" }];
   const kind = (!dateRaw || lc(cat) === "no service") ? "other" : "assign";
   const p1 = g("Placement") || "", p2 = g("Placement2") || "", st2 = g("Status2") || "";
   const req = (role, st) => lc(st) === "pending" && filled(cat) && filled(name) && filled(role);
   const out = [];
-  if (t.key === "security" || filled(p1) || !filled(p2))
+  if (t.key === "security" || t.key === "armorbearers" || filled(p1) || !filled(p2))
     out.push({ ...common, kind, role: p1, status, pending: req(p1, status), confirmed: lc(status) === "accepted", gone: false });
   if (t.key === "ushers" && filled(p2))
     out.push({ ...common, kind, id: common.id + ":2", slot: 2, role: p2, pending: req(p2, st2 || "Pending"), confirmed: lc(st2) === "accepted", gone: false });
@@ -1158,7 +1161,7 @@ function impStop(){
   updateBadge(); render(); window.scrollTo(0, 0);
 }
 function impBanner(){
-  const names = impTeamNames(S.impTeams), on = names.length === TEAMS.length ? "On all 4 teams" : "On " + names.join(" + ");
+  const names = impTeamNames(S.impTeams), on = names.length === TEAMS.length ? "On all " + TEAMS.length + " teams" : "On " + names.join(" + ");
   return `<div class="imp-bar" role="status"><span><b>Previewing as a team member</b><small>${esc(on)} · not an admin · changes are turned off. Team apps still open as you.</small></span><button class="btn" data-act="imp-stop">Exit Preview</button></div>`;
 }
 /* Ashley picks any team or combination of teams; the preview person is a regular member of exactly those. */
@@ -1407,7 +1410,7 @@ function reqRow(i){
 }
 /* Which per-team buttons a team's row shows, matching that app's own Notes/Team/Decline capabilities —
    used on both the Calendar page's day panel and the Next 7 Days list. */
-const TEAM_WEEK_ACTS = { productions: ["notes", "team", "decline"], worship: ["notes", "team", "decline"], ushers: ["team", "decline"], security: ["team", "decline"] };
+const TEAM_WEEK_ACTS = { productions: ["notes", "team", "decline"], worship: ["notes", "team", "decline"], ushers: ["team", "decline"], security: ["team", "decline"], armorbearers: ["team", "decline"] };
 const statusPill = (i, today) => i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : today ? `<span class="pill today">TODAY</span>` : `<span class="pill ok">CONFIRMED</span>`;
 function teamActs(t){
   const acts = TEAM_WEEK_ACTS[t.key] || ["team", "decline"];
