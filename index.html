@@ -190,6 +190,9 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 @keyframes todayPulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent)}100%{box-shadow:0 0 0 10px transparent}}
 @media (prefers-reduced-motion:reduce){.today-dot{animation:none}}
 .today-item{display:flex;flex-direction:column;gap:2px}
+.today-who{display:flex;align-items:center;gap:12px}
+.av.upic{width:56px;height:56px;border-radius:50%;flex:none;display:grid;place-items:center;position:relative;overflow:hidden;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:18px;box-shadow:0 0 0 2px var(--accent)}
+.av.upic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .today-item + .today-item{border-top:1px solid var(--line);padding-top:10px}
 .today-role{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.05;letter-spacing:.01em;color:var(--fg);overflow-wrap:anywhere}
 .today-meta{font-size:14px;color:var(--muted)}
@@ -355,7 +358,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "139";   // bump together with CACHE in sw.js
+const APP_VERSION = "140";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1559,6 +1562,16 @@ function teamNotesRowFor(key, date){
   if (key === "worship") return (S.teams.worship?.items || []).find(i => i.kind === "other" && i.role === "Coordinator" && i.date === date);
   return null;
 }
+/* Small round photo for someone by their Microsoft 365 account (initials until/unless a photo loads). */
+const USER_PICS = new Map();
+const userPic = (email, name) => `<span class="av upic" data-upn="${esc(lc(email || ""))}" aria-hidden="true">${esc(initials(name || ""))}</span>`;
+function hydrateUserPics(){
+  document.querySelectorAll("[data-upn]").forEach(el => {
+    const e = el.dataset.upn; if (!e || DEMO || el.querySelector("img")) return;
+    if (!USER_PICS.has(e)) USER_PICS.set(e, API.g(`/users/${encodeURIComponent(e)}/photo/$value`, { raw: true }).then(r => r.blob()).then(b => URL.createObjectURL(b)).catch(() => null));
+    USER_PICS.get(e).then(url => { if (url && el.isConnected && !el.querySelector("img")) el.insertAdjacentHTML("beforeend", `<img alt="" src="${url}">`); });
+  });
+}
 /* Armor Bearers: Assigned To holds the pastor (or "Guest Preacher"/"Guest Singer" + Guest Name);
    Full Name is the Armor Bearer serving them. */
 const AB_GUESTS = ["Guest Preacher", "Guest Singer"];
@@ -1572,6 +1585,7 @@ const PASTOR_EMAILS = {
   "Pastor Claude": ["claude@therampchurch.com"]
 };
 const PASTOR_TITLES = ["pastor", "bishop", "elder", "minister", "apostle", "prophet", "evangelist", "dr", "dr.", "overseer", "mother", "lady", "first"];
+const pastorPicEmail = role => (PASTOR_EMAILS[role] || [])[0] || "";
 function isMePastor(role){
   if (!role || AB_GUESTS.includes(role) || !S.me) return false;
   const mine = (S.me.emails || []).map(lc), listed = (PASTOR_EMAILS[role] || []).map(lc);
@@ -1589,7 +1603,7 @@ function pastorHero(){
     <div class="today-h"><span class="today-dot" aria-hidden="true"></span>Serving You Today</div>
     ${list.map(i => `<div class="today-item">
       <span class="tlabel team" style="${tvars(tm)}">${esc(tm.name)}</span>
-      <div class="today-role">${esc(i.fullName)}</div>
+      <div class="today-who">${userPic(i.email, i.fullName)}<div class="today-role">${esc(i.fullName)}</div></div>
       <div class="today-meta">Your Armor Bearer · ${esc(i.role)}</div>
       <div class="today-meta">${esc(i.category || "")} · Call Time <b>${esc(i.call || "TBD")}</b></div>
       <div class="today-act">${i.confirmed ? `<span class="pill ok">CONFIRMED</span>` : `<span class="pill warn">Waiting for their reply</span>`}</div>
@@ -1615,7 +1629,7 @@ function todayHero(){
     <div class="today-h"><span class="today-dot" aria-hidden="true"></span>You're Serving Today</div>
     ${list.map(i => { const tm = teamOf(i.team); return `<div class="today-item">
       <span class="tlabel team" style="${tvars(tm)}">${esc(tm.name)}</span>
-      ${i.team === "armorbearers" ? `<div class="today-role">${esc(abRole(i) || "Serving")}</div>
+      ${i.team === "armorbearers" ? `<div class="today-who">${userPic(pastorPicEmail(i.role), AB_GUESTS.includes(i.role) ? (i.guestName || i.role) : i.role)}<div class="today-role">${esc(abRole(i) || "Serving")}</div></div>
       <div class="today-meta">${esc(i.category || "")} · Call Time <b>${esc(i.call || "TBD")}</b></div>
       ${i.instructions ? `<div class="today-meta" style="white-space:pre-line">${esc(i.instructions)}</div>` : ""}
       ${S.confirmDecline === i.id ? `<div class="confirm-row">Can't make it to ${esc(abRole(i))} today?
@@ -1924,7 +1938,7 @@ function render(){
     `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${S.imp && S.view !== "profile" ? impBanner() : ""}${body}</div></main>` + tabs + AnnShare.modal();
   if (rosterSearchFocus !== null && S.view === "teams") { const input = document.getElementById("roster-search"); input?.focus({preventScroll:true}); input?.setSelectionRange(rosterSearchFocus,rosterSearchFocus); }
-  hydrateFlyers(); if (["teams","leader-about"].includes(S.view)) Rosters.hydrate();
+  hydrateFlyers(); hydrateUserPics(); if (["teams","leader-about"].includes(S.view)) Rosters.hydrate();
 }
 function hydrateFlyers(){
   document.querySelectorAll("[data-flyer]").forEach(async el => {
