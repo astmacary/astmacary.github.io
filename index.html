@@ -141,7 +141,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .row:last-child{border-bottom:0}
 .bar{width:4px;align-self:stretch;border-radius:2px;background:var(--t);flex:none}
 .row .info{flex:1;min-width:0}
-.tlabel{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t)}
+.tlabel{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t);display:inline-flex;align-items:center;gap:4px}.tlabel-ic{display:inline-flex;width:11px;height:11px;flex:none}.tlabel-ic svg{width:11px;height:11px}
 .row .info b{display:block;font-weight:700;line-height:1.25}
 .row .info small{display:block;font-size:12px;color:var(--muted)}
 .acts{display:flex;flex-direction:column;gap:6px;flex:none}
@@ -167,7 +167,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .ann-card{display:flex;gap:10px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--t);border-radius:var(--r);padding:10px 10px 10px 12px}
 .ann-card.ann-today{border:2px solid var(--accent);border-left:4px solid var(--t);background:linear-gradient(135deg,var(--accent-soft),var(--surface) 70%);box-shadow:0 6px 22px -12px var(--accent)}
 .ann-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.ann-tlabel{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t)}
+.ann-tlabel{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t);display:inline-flex;align-items:center;gap:4px}.ann-tlabel-ic{display:inline-flex;width:11px;height:11px;flex:none}.ann-tlabel-ic svg{width:11px;height:11px}
 .ann-title{font-weight:700;font-size:14px;line-height:1.25;overflow-wrap:anywhere;margin:0}
 .ann-text{margin:0;white-space:pre-line;color:var(--muted);font-size:12.5px;line-height:1.35;overflow-wrap:anywhere}
 .day-sep{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 2px;padding-left:2px}
@@ -367,7 +367,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "150";   // bump together with CACHE in sw.js
+const APP_VERSION = "151";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1561,7 +1561,7 @@ function churchRow(i, editable){
   const hasInfo = !noService && (i.notes || i.flyer || Rosters.isLeadershipMember());
   return `<div class="row team${hasInfo ? " row-clickable" : ""}" style="${style}"${hasInfo ? ` data-act="church-event-info" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" role="button" tabindex="0" aria-label="View details for ${esc(i.title || "Event")}"` : ""}><span class="bar"></span>
     ${noService ? `<span style="display:grid;place-items:center;width:28px;height:28px;color:var(--stop);flex:none">${ICON.ban}</span>` : ""}
-    <div class="info"><span class="tlabel">Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small></div>
+    <div class="info"><span class="tlabel">${!noService && (i.notes || i.flyer) ? `<span class="tlabel-ic" aria-hidden="true" title="Announcement">${ICON.bullhorn}</span>` : ""}Church</span><b>${esc(i.title || "Event")}</b><small>${esc(fmtShort(i.date))}</small></div>
     ${editable ? `<div class="row-acts">
       <button class="iconbtn sm" data-act="church-edit" data-id="${esc(i.rowId)}" data-date="${esc(i.date)}" data-title="${esc(i.title)}" aria-label="Edit">${ICON.edit}</button>
       <button class="iconbtn sm" data-act="church-delete" data-id="${esc(i.rowId)}" aria-label="Delete">${ICON.trash}</button></div>` : ""}</div>`;
@@ -2061,7 +2061,7 @@ function annCard(a, isNew){
   const { head, rest } = annHeadRest(a.text);
   const share = a.team === 'church' && AnnShare.targets().length ? `<button class="iconbtn sm" data-act="ann-share" data-id="${esc(a.id)}" aria-label="Share church announcement" title="Share to another team"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></button>` : '';
   return `<article class="ann-card team${annToday(a) ? " ann-today" : ""}" style="${tvars(t)}">
-    <div class="ann-body"><div class="ann-heading"><span class="ann-tlabel">${esc(t.name)}</span></div>
+    <div class="ann-body"><div class="ann-heading"><span class="ann-tlabel">${a.team === "church" ? `<span class="ann-tlabel-ic" aria-hidden="true" title="Announcement">${ICON.bullhorn}</span>` : ""}${esc(t.name)}</span></div>
       <b class="ann-title">${annToday(a) ? todayPill() : ""}${isNew ? newPill() : ""}${esc(head)}</b>${rest ? `<p class="ann-text">${esc(rest)}</p>` : ""}${S.annEdit && canEditAnn(a) ? annEditLine(a) : ""}</div>
     ${share || a.flyer ? `<div class="ann-side">${share}${a.flyer ? (flyerCollapsed(team_id(a))
       ? `<button class="linkbtn flyer-tog" data-act="flyer-toggle" data-flyer-id="${esc(team_id(a))}">Show Flyer</button>`
