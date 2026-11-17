@@ -368,7 +368,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <script src="/push-client.js?v=96"></script>
 <script src="/rosters.js?v=74"></script>
 <script src="/announcement-sharing.js?v=47"></script>
-<script src="/attendance.js?v=1"></script>
+<script src="/attendance.js?v=3"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -378,7 +378,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "167";   // bump together with CACHE in sw.js
+const APP_VERSION = "168";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1930,11 +1930,10 @@ function viewHome(){
   let out = `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div class="kicker">${esc(new Date().toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"}))}</div>
     <h1 class="greet">Good ${part}, ${esc(firstOf(S.me.name) || "friend")}</h1>
     ${S.loading ? `<div class="updating" style="margin-top:6px"><span class="spinner"></span>Checking your teams…</div>` : ""}</div>
-    ${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes${todayNotesUnseen() ? ", unread edit" : ""}" title="Today's Service Notes">${ICON.notes}${todayNotesUnseen() ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}</div>`;
+    <span style="display:flex;gap:8px;flex:none">${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes${todayNotesUnseen() ? ", unread edit" : ""}" title="Today's Service Notes">${ICON.notes}${todayNotesUnseen() ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}${Attendance.button()}</span></div>`;
   out += badgeAsk();
   out += todayHero();
   out += pastorHero();
-  if (canEnterAttendance()) out += `<button class="btn" style="width:100%;justify-content:center;border:2px solid var(--accent);color:var(--accent);font-weight:700;background:transparent" data-act="att-open">＋ Enter Church Attendance</button>`;
   if (!teams.length && !canViewChurchItems() && !S.loading && !MINISTRIES.some(m => canViewMinistry(m))){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
       <p class="hint">RCI Serve shows the teams where your email (${esc(S.me.emails[0] || "")}) is on the roster or schedule. If you serve on a team, ask that team's leader to add this email address, then pull this page back up.</p>
@@ -2309,7 +2308,9 @@ function viewGiving(){
 const ATT_EXTRA = ["pastormarvin@therampchurch.com"];   // Ushers app admins added through its Make Admin button
 const canEnterAttendance = () => !!S.me && (DEMO || isEditorOf(TEAMS.find(t => t.key === "ushers")) || isEditorOf(CHURCH_CAL) || ATT_EXTRA.some(e => S.me.emails.includes(e)));
 Attendance.init({ g: (p, o) => API.g(p, o), render: () => { if (S.view === "attendance") render(); }, toast: (m, bad) => toast(m, bad), canEdit: canEnterAttendance,
-  services: () => ["Sunday Morning", "Sunday Evening", "Wednesday Night", "Tuesday 5am Prayer", "Tuesday Night", "Thursday Night", "Friday Night", "Friday 9pm Prayer", "Friday Night Revival", "Funeral"] });
+  // Today's services from the Church Calendar (the same rows Service Notes uses); "No Service" days have none.
+  services: () => (S.church.items || []).filter(i => i.date === todayKey()).some(i => lc(i.title) === "no service") ? []
+    : (S.church.items || []).filter(i => i.date === todayKey() && i.title).map(i => i.title.replace(/\s+service$/i, "").trim()) });
 function viewAttendance(){ return `<div class="page-h"><button class="back" data-act="tab" data-view="home">${ICON.prev}Back</button></div><h1 class="page">Church Attendance</h1>${Attendance.view()}`; }
 function render(){
   const rosterSearchFocus = document.activeElement?.id === "roster-search" ? document.activeElement.selectionStart : null;

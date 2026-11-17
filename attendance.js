@@ -10,7 +10,15 @@ const Attendance = {
   sitePath: "/sites/RCIServe",
   listId: "06990467-6806-419d-8287-ca7a511eb9d4",
   siteId: "", rows: null, loading: false, error: "", busy: false, editId: null, askDel: null,
+  // services(): the services on today's schedule (e.g. ["Sunday Morning"]); none = no button.
   host: { g: null, render: () => {}, toast: () => {}, canEdit: () => false, services: () => [] },
+  icon: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M16 11h6"/></svg>',
+  todayServices(){ return [...new Set((this.host.services() || []).filter(Boolean))]; },
+  /* The header icon: admins only, and only on a day with a service on the schedule. */
+  button(){
+    if (!this.host.canEdit() || !this.todayServices().length) return "";
+    return `<button class="iconbtn" data-act="att-open" aria-label="Enter church attendance" title="Church Attendance">${this.icon}</button>`;
+  },
   init(h){ Object.assign(this.host, h); },
   esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]); },
   pad(n){ return String(n).padStart(2, "0"); },
@@ -50,17 +58,21 @@ const Attendance = {
     if (!this.host.canEdit()) return `<div class="empty">Only admins can enter attendance.</div>`;
     if (!this.rows){ this.load(); return `<div class="empty">Loading attendance…</div>`; }
     const ed = this.editId ? this.rows.find(r => r.id === this.editId) : null;
-    const services = [...new Set([...(this.host.services() || []), ...(ed && ed.service ? [ed.service] : [])])];
+    // The date and service come from the schedule (today's service), or from the count being edited.
+    const services = ed ? [ed.service] : this.todayServices();
     const day = ed ? ed.date : this.today();
-    const defService = ed ? ed.service : (this.isSunday(day) && services.includes("Sunday Morning") ? "Sunday Morning" : (services[0] || ""));
+    const done = !ed && services.length === 1 ? this.rows.find(r => r.date === day && r.service === services[0]) : null;
+    const cur = ed || done;
     const recent = this.rows.slice(0, 30);
     return `<div class="att">${this.error ? `<div class="err">Couldn't read the Attendance list. ${this.esc(this.error)}</div>` : ""}
       <form class="panel stack" id="attForm">
-        <h2 class="section-label" style="margin:0">${ed ? "Edit Attendance" : "Enter Attendance"}</h2>
-        <div class="field"><label for="att-date">Service date</label><input id="att-date" type="date" required value="${this.esc(day)}" max="${this.today()}"></div>
-        <div class="field"><label for="att-service">Service</label><select id="att-service" required>${services.map(s => `<option ${s === defService ? "selected" : ""}>${this.esc(s)}</option>`).join("")}</select></div>
-        <div class="field"><label for="att-count">In the Sanctuary</label><input id="att-count" type="number" inputmode="numeric" min="0" step="1" required placeholder="0" value="${ed && ed.count != null ? this.esc(ed.count) : ""}"></div>
-        <div class="field"><label for="att-notes">Notes <span class="hint">(optional)</span></label><textarea id="att-notes" rows="2" maxlength="1000">${ed ? this.esc(ed.notes) : ""}</textarea></div>
+        <h2 class="section-label" style="margin:0">${ed || done ? "Update Attendance" : "Enter Attendance"}</h2>
+        <input type="hidden" id="att-date" value="${this.esc(day)}">
+        ${services.length > 1
+          ? `<div class="field"><label for="att-service">Which service?</label><select id="att-service" required>${services.map(s => `<option>${this.esc(s)}</option>`).join("")}</select></div>`
+          : `<input type="hidden" id="att-service" value="${this.esc(services[0] || "")}"><p class="hint" style="margin:0">${this.esc(services[0] || "")} · ${this.esc(this.fmt(day))}</p>`}
+        <div class="field"><label for="att-count">In the Sanctuary</label><input id="att-count" type="number" inputmode="numeric" min="0" step="1" required placeholder="0" value="${cur && cur.count != null ? this.esc(cur.count) : ""}"></div>
+        <div class="field"><label for="att-notes">Notes <span class="hint">(optional)</span></label><textarea id="att-notes" rows="2" maxlength="1000">${cur ? this.esc(cur.notes) : ""}</textarea></div>
         <button class="btn primary block" type="submit" ${this.busy ? "disabled" : ""}>${this.busy ? "Saving…" : ed ? "Save Changes" : "Save Attendance"}</button>
         ${ed ? `<button class="btn block" type="button" data-act="att-cancel">Cancel</button>` : ""}
       </form>
@@ -91,7 +103,8 @@ const Attendance = {
     if (!this.host.canEdit() || this.busy) return true;
     const date = form.querySelector("#att-date").value, service = form.querySelector("#att-service").value.trim();
     const count = Number(form.querySelector("#att-count").value), notes = form.querySelector("#att-notes").value.trim();
-    if (!date || !service || !Number.isInteger(count) || count < 0){ this.host.toast("Enter the date, service and a whole number.", true); return true; }
+    if (!date || !service){ this.host.toast("There's no service on today's schedule to count.", true); return true; }
+    if (!Number.isInteger(count) || count < 0){ this.host.toast("Enter a whole number.", true); return true; }
     // One count per date and service: saving the same pair again updates it.
     const same = this.rows.find(r => r.date === date && r.service === service && r.id !== this.editId);
     const id = this.editId || (same && same.id);
