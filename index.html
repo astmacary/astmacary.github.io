@@ -364,7 +364,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "142";   // bump together with CACHE in sw.js
+const APP_VERSION = "143";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1006,7 +1006,7 @@ function normalize(t, id, f, emailById, col){
   const name = g("SecurityName") || "", status = g("Status") || "";
   const email = emailById[f[(col.Name || "Name") + "LookupId"]] || "";
   const common = { ...base, date: dateRaw ? spDate(dateRaw) : "", category: roster ? "" : cat, fullName: name, email, call, time: "",
-    guestName: g("GuestName") || "", instructions: g("Instructions") || "", phone: g("PhoneNumber") || "" };
+    guestName: g("GuestName") || "", instructions: g("Instructions") || "", phone: g("PhoneNumber") || "", personId: f[(col.Name || "Name") + "LookupId"] || "" };
   if (roster) return [{ ...common, kind: "profile", role: "", pending: false, confirmed: false,
     gone: (t.key === "security" || t.key === "armorbearers") ? lc(g("ArchiveStatus")) === "archive" : lc(status) === "unavailable" }];
   const kind = (!dateRaw || lc(cat) === "no service") ? "other" : "assign";
@@ -1745,6 +1745,60 @@ function viewHome(){
   return out;
 }
 
+/* ---------- Armor Bearers time off from RCI Serve (Nov 16) ----------
+   Pastors (and Ashley) can mark themselves Absent on the Armor Bearers schedule from the hub's Calendar.
+   Same row the Armor Bearers app's Report Time Off writes: Service Category Absent, Status Unavailable,
+   Notes "Dates of Absence: …" (which also fires the Admin absence alert flow). Pastors → Assigned To (Placement) =
+   their pastor name; Ashley → her own Roster row (Name lookup), and she can also mark a pastor absent. */
+const myPastor = () => Object.keys(PASTOR_EMAILS).find(isMePastor) || "";
+const isAshley = () => (S.me?.emails || []).map(lc).some(e => PREVIEW_ALLOWED.includes(e));
+function abAbsentWho(){
+  if (S.imp || !S.teams.armorbearers || !API.sites?.armorbearers) return [];
+  const out = [], pr = myPastor();
+  if (pr) out.push({ key: "p:" + pr, label: pr, pastor: pr, self: true });
+  if (isAshley()){
+    const me = (S.teams.armorbearers.items || []).find(i => i.kind === "profile" && !i.gone && (S.me.emails || []).map(lc).includes(lc(i.email)));
+    if (me) out.push({ key: "me", label: "Me (" + (me.fullName || S.me.name) + ")", name: me.fullName || S.me.name, personId: me.personId, email: me.email, self: true });
+    Object.keys(PASTOR_EMAILS).filter(x => x !== pr).forEach(x => out.push({ key: "p:" + x, label: x, pastor: x }));
+  }
+  return out;
+}
+const abAbsenceOf = (w, k) => (S.teams.armorbearers?.items || []).find(i => i.date === k && lc(i.category) === "absent" &&
+  (w.pastor ? i.role === w.pastor : (lc(i.email) === lc(w.email) || (w.personId && String(i.personId) === String(w.personId)))));
+function abAbsentPanel(k){
+  const who = abAbsentWho(); if (!who.length || k < todayKey()) return "";
+  const tm = teamOf("armorbearers"), busy = S.abBusy;
+  const rows = who.map(w => { const a = abAbsenceOf(w, k);
+    return `<div class="row team" style="${tvars(tm)}"><span class="bar"></span><div class="info"><span class="tlabel">Armor Bearers</span><b>${esc(w.label)}</b><small>${a ? "Marked absent this day" : "Not marked absent"}</small></div>
+      <div class="acts">${a ? `<span class="pill warn">ABSENT</span><button class="btn" data-act="ab-unabsent" data-k="${esc(w.key)}" data-id="${esc(a.rowId)}" ${busy ? "disabled" : ""}>Cancel</button>`
+        : `<button class="btn" data-act="ab-absent" data-k="${esc(w.key)}" ${busy ? "disabled" : ""}>${busy === w.key ? "Saving…" : "Mark Absent"}</button>`}</div></div>`; }).join("");
+  return `<div class="day-sep">Armor Bearers Time Off</div><div class="panel">${rows}</div>`;
+}
+async function abMarkAbsent(key, k){
+  const w = abAbsentWho().find(x => x.key === key); if (!w || S.abBusy) return;
+  const site = API.sites.armorbearers, col = site.col || {}, c = n => col[n] || n;
+  const notes = `<p><strong>Dates of Absence:</strong> ${esc(fmtShort(k))}</p>` + (w.self ? "" : `<p><em>Entered by ${esc(S.me.name)}</em></p>`);
+  const fields = { [c("ServiceDate")]: k + "T12:00:00Z", [c("ServiceCategory")]: "Absent", [c("Status")]: "Unavailable", [c("ArchiveStatus")]: "Active",
+    [c("SecurityName")]: w.pastor || w.name, Notes: notes };
+  if (w.pastor) fields[c("Placement")] = w.pastor; else if (w.personId) fields[c("Name") + "LookupId"] = String(w.personId);
+  S.abBusy = key; render();
+  try {
+    const r = DEMO ? { id: "d" + Date.now() } : await API.g(`/sites/${site.siteId}/lists/${site.listId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
+    S.teams.armorbearers.items.push(...normalize(teamOf("armorbearers"), String(r.id), fields, {}, col).map(i => ({ ...i, email: w.email || "", personId: w.personId || "" })));
+    toast(`${w.self ? "You're" : w.label + " is"} marked absent on ${fmtShort(k)}`);
+  } catch(e){ toast("Couldn't mark it. " + e.message, true); }
+  S.abBusy = null; render();
+}
+async function abCancelAbsent(id){
+  if (S.abBusy) return; const site = API.sites.armorbearers;
+  S.abBusy = "x"; render();
+  try {
+    if (!DEMO) await API.g(`/sites/${site.siteId}/lists/${site.listId}/items/${id}`, { method: "DELETE" });
+    S.teams.armorbearers.items = S.teams.armorbearers.items.filter(i => String(i.rowId) !== String(id));
+    toast("Absence canceled");
+  } catch(e){ toast("Couldn't cancel it. " + e.message, true); }
+  S.abBusy = null; render();
+}
 function viewCalendar(){
   if (!S.cal.sel){ const first = upcoming()[0]; S.cal.sel = first && first.date <= addDays(todayKey(), 31) ? first.date : todayKey(); }
   const teams = myTeams(), off = S.cal.off;
@@ -1779,6 +1833,7 @@ function viewCalendar(){
         <button class="iconbtn sm danger" data-act="church-noservice" aria-label="Mark no service this day">${ICON.ban}</button></div>` : ""}</div>
       ${f ? churchForm(f) : ""}
       <div class="panel">${dayList.length ? dayList.map(i => i.team === "church" ? churchRow(i, canEditChurch) : MINISTRIES.some(x => x.key === i.team) ? ministryRow(i) : itemRow(i, false)).join("") : `<div class="empty">No events scheduled.</div>`}</div>
+      ${abAbsentPanel(sel)}
       <p class="hint">${canEditChurch ? "Shows your own assignments on every team, plus the Church calendar." : "Shows your own assignments on every team."} Each team's Calendar shows the whole team.</p></section>`;
 }
 /* Everyone sees announcements from the teams they're ON, plus Church (it's for everyone). Only admins can edit, and
@@ -2034,6 +2089,8 @@ document.addEventListener("click", async e => {
   else if (act === "install" && deferredInstall){ deferredInstall.prompt(); deferredInstall = null; render(); }
   else if (act === "allow-badge"){ try { await Notification.requestPermission(); } catch(_){} updateBadge(); render(); }
   else if (act === "day"){ S.cal.sel = b.dataset.k; render(); }
+  else if (act === "ab-absent") abMarkAbsent(b.dataset.k, S.cal.sel);
+  else if (act === "ab-unabsent") abCancelAbsent(b.dataset.id);
   else if (act === "cal-today"){ S.cal.sel = todayKey(); S.cal.month = todayKey().slice(0, 7); render(); }
   else if (act === "ann-info-collapse"){ toggleAnnInfoCollapsed(b.dataset.id); render(); }
   else if (act === "month"){ const [y, m] = S.cal.month.split("-").map(Number), d = new Date(y, m - 1 + Number(b.dataset.d), 1); S.cal.month = keyOf(d).slice(0, 7); render(); }
