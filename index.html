@@ -377,7 +377,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "162";   // bump together with CACHE in sw.js
+const APP_VERSION = "163";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1799,6 +1799,27 @@ function nextBirthdayKey(bday, t){
   const k = occ(y);
   return k >= t ? k : occ(y + 1);
 }
+/* Same person, matched by shared email or shared Microsoft account id — same comparison Rosters.isSelf
+   uses, just between two birthday entries instead of against the viewer. Someone on both a team roster
+   and the Leadership roster (e.g. a ministry leader) would otherwise show up twice. */
+function sameBdayPerson(a, b){
+  const ae = (a.emails || [a.email]).filter(Boolean).map(lc), be = (b.emails || [b.email]).filter(Boolean).map(lc);
+  if (ae.some(e => be.includes(e))) return true;
+  const au = (a.userIds || [a.userId]).filter(Boolean), bu = (b.userIds || [b.userId]).filter(Boolean);
+  return au.some(u => bu.includes(u));
+}
+/* One row per person: if they show up under Leadership and under one of their teams (a ministry leader
+   who's also on that team's roster), Leadership wins and the team copy is dropped. Two team copies
+   (on two rosters) just keep whichever was seen first. */
+function dedupeBdays(list){
+  const out = [];
+  for (const p of list){
+    const i = out.findIndex(q => sameBdayPerson(p, q));
+    if (i === -1) out.push(p);
+    else if (p.team === "leadership" && out[i].team !== "leadership") out[i] = p;
+  }
+  return out;
+}
 function teamBirthdays(){
   const t = todayKey(), wk = addDays(t, 7), out = [];
   for (const key of birthdayScope()){
@@ -1811,7 +1832,7 @@ function teamBirthdays(){
       if (d && d <= wk) out.push({ name: p.name, team: key, date: d, rowId: p.rowId, email: p.email, emails: p.emails, userId: p.userId, userIds: p.userIds });
     }
   }
-  return out;
+  return dedupeBdays(out);
 }
 /* Leadership has no numeric roster row (no SharePoint-backed roster), so its people are identified by
    userId instead — this is the one id to use everywhere a birthday row needs to key or post by person. */
