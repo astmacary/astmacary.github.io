@@ -367,7 +367,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "144";   // bump together with CACHE in sw.js
+const APP_VERSION = "145";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1336,6 +1336,7 @@ async function churchRemove(rowId){
   try {
     if (!DEMO) await API.churchDelete(rowId);
     S.church.items = (S.church.items || []).filter(x => x.rowId !== rowId);
+    const noSvc = item && lc(item.title) === "no service" ? await teamsNoService(item.date, false) : null;
     // Deleting a recurring service (Sunday Worship / Wednesday Bible Study) shouldn't bring it right back
     // the next time ensureRecurringServices() runs — leave a quiet marker so that date stays skipped.
     const recurring = item && RECURRING_SERVICES.find(r => lc(r.title) === lc(item.title));
@@ -1345,12 +1346,40 @@ async function churchRemove(rowId){
         S.church.skips = [...(S.church.skips || []), { date: item.date, title: recurring.title, rowId: skip.rowId }];
       } catch(e){ console.warn("Couldn't mark recurring service as skipped", e); }
     }
-    toast("Removed");
+    toast("Removed" + (noSvc ? noSvcNote(noSvc) : ""), !!noSvc?.failed.length);
     saveCache();
   } catch(e){ toast("Couldn't remove it. " + e.message, true); }
   S.cal.busy = false; render();
 }
 /* The red-X toggle: adds (or removes) a plain "No Service" entry on the selected day. */
+/* No Service on the Church Calendar → No Service on every team's schedule too (Nov 16).
+   Adds the same row each team app's own "No Service" button adds (Service Date + Service Category "No Service")
+   to every team schedule this person can write to, skipping teams that already have one that day.
+   Removing the church No Service removes those teams' No Service rows for that date. Returns the team names done. */
+const teamDateCol = (t, col) => t.key === "productions" ? "ServiceDates" : t.key === "worship" ? "ServiceDate" : (col.ServiceDate || "ServiceDate");
+const teamCatCol = (t, col) => (t.key === "productions" || t.key === "worship") ? "ServiceCategory" : (col.ServiceCategory || "ServiceCategory");
+const isNoSvcRow = (i, date) => i.date === date && lc(i.category) === "no service";
+async function teamsNoService(date, on){
+  const done = [], failed = [];
+  for (const t of TEAMS){
+    const site = API.sites?.[t.key], data = S.teams[t.key]; if (!data?.items || (!site && !DEMO)) continue;
+    try {
+      if (on){
+        if (data.items.some(i => isNoSvcRow(i, date))) continue;
+        const col = site?.col || {}, fields = { [teamDateCol(t, col)]: date + "T12:00:00Z", [teamCatCol(t, col)]: "No Service" };
+        const r = DEMO ? { id: "d" + Date.now() + t.key } : await API.g(`/sites/${site.siteId}/lists/${site.listId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
+        data.items.push({ team: t.key, rowId: String(r.id), id: t.key + ":" + r.id, kind: "other", date, category: "No Service", role: "", fullName: "", email: "", pending: false, confirmed: false });
+      } else {
+        const rows = data.items.filter(i => isNoSvcRow(i, date)); if (!rows.length) continue;
+        for (const i of rows){ if (!DEMO) await API.g(`/sites/${site.siteId}/lists/${site.listId}/items/${i.rowId}`, { method: "DELETE" }); }
+        data.items = data.items.filter(i => !isNoSvcRow(i, date));
+      }
+      done.push(t.name);
+    } catch(e){ failed.push(t.name); console.warn(t.name + ": couldn't update No Service", e); }
+  }
+  return { done, failed };
+}
+const noSvcNote = r => (r.done.length ? ` · also ${r.done.join(", ")}` : "") + (r.failed.length ? ` · couldn't update ${r.failed.join(", ")}` : "");
 async function churchToggleNoService(){
   if (S.cal.busy) return;
   const date = S.cal.sel;
@@ -1360,7 +1389,8 @@ async function churchToggleNoService(){
   try {
     const e = DEMO ? { id: "church-" + Date.now(), rowId: "demo-" + Date.now(), date, title: "No Service" } : await API.churchCreate("No Service", date);
     S.church.items = [...(S.church.items || []), e];
-    toast(`Marked No Service: ${fmtShort(date)}`);
+    const r = await teamsNoService(date, true);
+    toast(`Marked No Service: ${fmtShort(date)}` + noSvcNote(r), !!r.failed.length);
     saveCache();
   } catch(e){ toast("Couldn't save. " + e.message, true); }
   S.cal.busy = false; render();
