@@ -367,7 +367,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "149";   // bump together with CACHE in sw.js
+const APP_VERSION = "150";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1678,13 +1678,14 @@ const PASTOR_EMAILS = {
 };
 const PASTOR_TITLES = ["pastor", "bishop", "elder", "minister", "apostle", "prophet", "evangelist", "dr", "dr.", "overseer", "mother", "lady", "first"];
 const pastorPicEmail = role => (PASTOR_EMAILS[role] || [])[0] || "";
-/* Any of the 4 pastors (Bishop Younger, Pastor Marvin, Pastor Westgate, Pastor Claude) — used to let all
-   pastors see Church announcements and Church events in Next 7 Days on Home, even those who aren't RCI
-   Serve administrators or team editors. This is read-only visibility; editing Church Calendar events
-   still requires isEditorOf(CHURCH_CAL) separately. */
+/* Any of the 4 pastors (Bishop Younger, Pastor Marvin, Pastor Westgate, Pastor Claude). */
 const PASTOR_ALL_EMAILS = [...new Set(Object.values(PASTOR_EMAILS).flat())].map(lc);
 const isAnyPastor = () => !!S.me?.emails?.some(e => PASTOR_ALL_EMAILS.includes(lc(e)));
-const canViewChurchItems = () => isAnyAdmin() || isAnyPastor();
+/* The Church Calendar is for everyone signed in to RCI Serve — Church announcements and Church
+   events in Next 7 Days show on Home for every signed-in person, not just admins/editors/pastors.
+   This is read-only visibility; editing Church Calendar events still requires isEditorOf(CHURCH_CAL)
+   separately, and Payroll stays admin-only (gated on isAnyAdmin() directly, not this). */
+const canViewChurchItems = () => !!S.me;
 function isMePastor(role){
   if (!role || AB_GUESTS.includes(role) || !S.me) return false;
   const mine = (S.me.emails || []).map(lc), listed = (PASTOR_EMAILS[role] || []).map(lc);
@@ -1759,7 +1760,7 @@ function viewHome(){
   out += badgeAsk();
   out += todayHero();
   out += pastorHero();
-  if (!teams.length && !isEditorOf(CHURCH_CAL) && !isAnyPastor() && !S.loading && !MINISTRIES.some(m => canViewMinistry(m))){
+  if (!teams.length && !canViewChurchItems() && !S.loading && !MINISTRIES.some(m => canViewMinistry(m))){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
       <p class="hint">RCI Serve shows the teams where your email (${esc(S.me.emails[0] || "")}) is on the roster or schedule. If you serve on a team, ask that team's leader to add this email address, then pull this page back up.</p>
       <button class="btn" style="align-self:flex-start" data-act="refresh">Check again</button></section>`;
