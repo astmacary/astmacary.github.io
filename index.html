@@ -368,6 +368,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <script src="/push-client.js?v=96"></script>
 <script src="/rosters.js?v=74"></script>
 <script src="/announcement-sharing.js?v=47"></script>
+<script src="/attendance.js?v=1"></script>
 <script>
 /* ============================================================
    RCI Serve — one home for the four RCI team apps.
@@ -377,7 +378,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "166";   // bump together with CACHE in sw.js
+const APP_VERSION = "167";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1933,6 +1934,7 @@ function viewHome(){
   out += badgeAsk();
   out += todayHero();
   out += pastorHero();
+  if (canEnterAttendance()) out += `<button class="btn" style="width:100%;justify-content:center;border:2px solid var(--accent);color:var(--accent);font-weight:700;background:transparent" data-act="att-open">＋ Enter Church Attendance</button>`;
   if (!teams.length && !canViewChurchItems() && !S.loading && !MINISTRIES.some(m => canViewMinistry(m))){
     return out + `<section class="panel pad"><b>We couldn't find you on a team yet</b>
       <p class="hint">RCI Serve shows the teams where your email (${esc(S.me.emails[0] || "")}) is on the roster or schedule. If you serve on a team, ask that team's leader to add this email address, then pull this page back up.</p>
@@ -2302,6 +2304,13 @@ function viewGiving(){
       <a class="btn primary big" href="${GIVING_URL}" target="_blank" rel="noopener">Give now</a>
     </section>`;
 }
+/* Church attendance (shared attendance.js; list "Attendance" on this RCI Serve site): the Ushers app's admins
+   plus the Church Calendar editors (Ashley, Pastor Marvin) enter counts here or in the Ushers app. */
+const ATT_EXTRA = ["pastormarvin@therampchurch.com"];   // Ushers app admins added through its Make Admin button
+const canEnterAttendance = () => !!S.me && (DEMO || isEditorOf(TEAMS.find(t => t.key === "ushers")) || isEditorOf(CHURCH_CAL) || ATT_EXTRA.some(e => S.me.emails.includes(e)));
+Attendance.init({ g: (p, o) => API.g(p, o), render: () => { if (S.view === "attendance") render(); }, toast: (m, bad) => toast(m, bad), canEdit: canEnterAttendance,
+  services: () => ["Sunday Morning", "Sunday Evening", "Wednesday Night", "Tuesday 5am Prayer", "Tuesday Night", "Thursday Night", "Friday Night", "Friday 9pm Prayer", "Friday Night Revival", "Funeral"] });
+function viewAttendance(){ return `<div class="page-h"><button class="back" data-act="tab" data-view="home">${ICON.prev}Back</button></div><h1 class="page">Church Attendance</h1>${Attendance.view()}`; }
 function render(){
   const rosterSearchFocus = document.activeElement?.id === "roster-search" ? document.activeElement.selectionStart : null;
   const app = $("#app");
@@ -2324,7 +2333,7 @@ function render(){
     return;
   }
   const tabsArr = tabsList();
-  const body = S.view === "ab-timeoff" ? viewAbTimeOff() : S.view === "church-event" ? viewChurchEventInfo() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
+  const body = S.view === "attendance" ? viewAttendance() : S.view === "ab-timeoff" ? viewAbTimeOff() : S.view === "church-event" ? viewChurchEventInfo() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
     : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
@@ -2367,6 +2376,8 @@ function openLightbox(url, alt){
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act;
+  if (act === "att-open"){ Attendance.editId = null; Attendance.load(true); S.view = "attendance"; render(); window.scrollTo(0, 0); return; }
+  if (await Attendance.click(b)) return;
   if (act === "imp-start") impStart([...impPicked()]);
   else if (act === "imp-pick") { const p = impPicked(), k = b.dataset.k; p.has(k) ? p.delete(k) : p.add(k); render(); }
   else if (act === "imp-all") { S.impPick = new Set(TEAMS.map(t => t.key)); render(); }
@@ -2531,6 +2542,7 @@ document.addEventListener("change", e => {
   }
 });
 document.addEventListener("submit", async e => {
+  if (e.target.id === "attForm"){ e.preventDefault(); await Attendance.submit(e.target); return; }
   if (e.target.dataset.act === "bday-wish-form"){
     e.preventDefault();
     const text = $("#bday-wish-text")?.value.trim();
