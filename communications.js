@@ -531,14 +531,14 @@ const Comm = {
     } else {
       const roots = this.roots(d), seen = this.markShown(t.key, roots);
       const activity = r => this.board(d).filter(x => x.id === r.id || x.parent === r.id).reduce((at,x) => x.at > at ? x.at : at,r.at);
-      const composer = CommBlast.view() + `<button type="button" class="btn comm-compose-toggle" data-comm="toggle-compose" aria-expanded="${this.composeOpen}">${this.composeOpen ? '− Hide' : '+ Make a post'}</button>` + (this.composeOpen ? this.form('post') : '');
+      const composer = CommBlast.view() + CommText.view() + `<button type="button" class="btn comm-compose-toggle" data-comm="toggle-compose" aria-expanded="${this.composeOpen}">${this.composeOpen ? '− Hide' : '+ Make a post'}</button>` + (this.composeOpen ? this.form('post') : '');
       content = `<div class="comm-board" data-space="${esc(t.key)}" hidden></div>` + composer + (roots.length ? roots.sort((a,b) => Number(this.pinned(b.id,d)) - Number(this.pinned(a.id,d)) || activity(b).localeCompare(activity(a))).map(r => {
         const replies = this.visibleBoard(d).filter(x => x.parent === r.id), fresh = [r,...replies].some(x => (!seen.has(x.id) || this.newOnVisit.has(x.id)) && !this.own(x));
         return `<article class="panel pad"><div class="comm-topic-line"><button class="btn comm-topic" data-comm="thread" data-id="${esc(r.id)}">${this.pinned(r.id,d) ? '📌 ' : ''}${esc(r.title)}${fresh ? ' • New' : ''}</button>${this.actions(r,'board')}</div>${this.hiddenRow(r,d) ? '<span class="hint comm-hidden-label">Hidden from the board</span>' : ''}${this.edit?.id === r.id && this.edit?.kind === 'board' ? this.editForm(r,'board') : ''}<p class="hint">${esc(r.name)} · ${plural(replies.length,'reply','replies')}</p><div class="comm-text notes">${cleanHtml(r.text)}</div>${this.reactions(r)}</article>`;
       }).join('') : '<div class="empty">No conversations yet. Start the first one.</div>');
     }
     const chips = spaces.map(s => `<button class="chipcheck team team-pill" style="${typeof tvars === 'function' ? tvars(s) : ''}" data-comm="space" data-key="${s.key}" aria-pressed="${s.key === t.key}"><span class="dot" aria-hidden="true"></span>${esc(s.name)}${this.unread(s.key) ? ` <span aria-label="${this.unread(s.key)} unread messages">(${this.unread(s.key)})</span>` : ''}</button>`).join('');
-    return `<div class="comm"><div class="comm-head"><h1 class="page">Messages</h1><button class="iconbtn" data-comm="refresh" aria-label="Refresh messages" title="Refresh messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-5L23 10M1 14l4.6 6A9 9 0 0 0 20.5 15"/></svg></button></div><div class="chiprow" aria-label="Choose a board">${chips}</div><h2>${esc(t.name)}</h2><div class="chiprow"><button class="chipcheck" data-comm="mode" data-mode="board" aria-pressed="${this.mode === 'board'}">Team board</button><button class="chipcheck" data-comm="mode" data-mode="contact" aria-pressed="${this.mode === 'contact'}">Contact leaders privately</button>${this.mode === 'board' && this.isAdmin() ? `<button class="chipcheck" data-comm="toggle-hidden" aria-pressed="${this.showHidden}">${this.showHidden ? 'Hide hidden messages' : 'Show hidden messages'}</button>` : ''}${CommBlast.chip()}</div>${this.forwardForm()}${content}</div>`;
+    return `<div class="comm"><div class="comm-head"><h1 class="page">Messages</h1><button class="iconbtn" data-comm="refresh" aria-label="Refresh messages" title="Refresh messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-5L23 10M1 14l4.6 6A9 9 0 0 0 20.5 15"/></svg></button></div><div class="chiprow" aria-label="Choose a board">${chips}</div><h2>${esc(t.name)}</h2><div class="chiprow"><button class="chipcheck" data-comm="mode" data-mode="board" aria-pressed="${this.mode === 'board'}">Team board</button><button class="chipcheck" data-comm="mode" data-mode="contact" aria-pressed="${this.mode === 'contact'}">Contact leaders privately</button>${this.mode === 'board' && this.isAdmin() ? `<button class="chipcheck" data-comm="toggle-hidden" aria-pressed="${this.showHidden}">${this.showHidden ? 'Hide hidden messages' : 'Show hidden messages'}</button>` : ''}${CommBlast.chip()}${CommText.chip()}</div>${this.forwardForm()}${content}</div>`;
   },
   async send(form) {
     if (this.busy) return;
@@ -798,3 +798,87 @@ document.addEventListener('click', e => {
   render();
 });
 document.addEventListener('change', e => { const i = e.target.closest('input[data-blast-files]'); if (!i) return; const f = [...i.files]; i.value = ''; CommBlast.read(); CommBlast.addFiles(f); });
+
+/* "Text the Team": same admin-only gating as CommBlast, but opens the admin's own phone Messages
+   app with everyone who has a phone number on file added as a recipient (a pre-addressed group
+   text). There's no server-side bulk-SMS send here — RCI Serve doesn't send text messages itself —
+   so unlike Email the Team there is no "Send to All" button, only "Open in My Messages App" and
+   "Copy Numbers". */
+const CommText = {
+  open: false, body: '', showList: false, space: '',
+  people(key = Comm.selected) {
+    let raw = null;
+    if (typeof Rosters !== 'undefined' && Rosters?.data) {
+      const rk = key === 'serve' ? 'leadership' : key;
+      if (!Rosters.data[rk]) {
+        if (!Rosters.errors?.[rk] && !Rosters.tasks?.[rk]) Promise.resolve(Rosters.load(rk)).then(() => { if (S.view === 'messages') render(); });
+        return Rosters.errors?.[rk] ? { error: Rosters.errors[rk] } : null;
+      }
+      raw = Rosters.data[rk].map(p => ({ name: p.name || '', phone: p.phone || '' }));
+    } else if (typeof teamPhonePeople === 'function') raw = teamPhonePeople();
+    else return { error: 'The team list is not available in this app.' };
+    const seen = new Set(), list = [], missing = [];
+    for (const p of raw) {
+      const digits = String(p.phone || '').replace(/<[^>]*>/g, ' ').replace(/[^\d+]/g, '');
+      if (digits.length < 7) { if (p.name) missing.push(p.name); continue; }
+      if (seen.has(digits)) continue;
+      seen.add(digits); list.push({ name: p.name || digits, phone: digits });
+    }
+    list.sort((a,b) => a.name.localeCompare(b.name));
+    return { list, missing };
+  },
+  chip() { return this.allowed() ? `<button class="chipcheck" data-comm="text-toggle" aria-pressed="${this.open}">Text the Team</button>` : ''; },
+  allowed() { return !S.imp && Comm.mode === 'board' && !Comm.thread && Comm.isAdmin() && !!Comm.space(); },
+  view() {
+    if (!this.allowed()) return '';
+    if (this.space !== Comm.selected) { this.space = Comm.selected; this.open = false; this.showList = false; }
+    if (!this.open) return '';
+    const t = Comm.space(), r = this.people();
+    let who;
+    if (!r) who = '<p class="hint">Loading the team list…</p>';
+    else if (r.error) who = `<div class="err">${esc(r.error)}</div>`;
+    else who = `<p class="comm-blast-count"><b>To:</b> all ${commBlastN(r.list.length, 'team member', 'team members')} on ${esc(t.full || t.name)}
+        <button type="button" class="linkbtn" data-comm="text-list" aria-expanded="${this.showList}">${this.showList ? 'Hide names' : 'See names'}</button></p>
+      ${this.showList ? `<div class="comm-blast-names">${r.list.map(p => `<span class="chip">${esc(p.name)}</span>`).join('')}</div>` : ''}
+      ${r.missing.length ? `<p class="hint">Not included (no phone number on file): ${esc(r.missing.join(', '))}.</p>` : ''}`;
+    const ready = r && !r.error && r.list.length, dis = !ready ? 'disabled' : '';
+    return `<form class="panel pad comm-blast-form" data-comm-text-form>
+      <h2>Text the Team</h2>${who}
+      <div class="field"><label for="comm-text-body">Message (optional)</label><textarea id="comm-text-body" class="panel notes" rows="3" maxlength="600" placeholder="Type a message to pre-fill, or leave this blank and write it in your Messages app">${esc(this.body)}</textarea></div>
+      <div class="comm-edit-buttons">
+        <button class="btn primary" type="button" data-comm="text-sms" ${dis}>Open in My Messages App</button>
+        <button class="btn" type="button" data-comm="text-copy" ${dis}>Copy Numbers</button>
+        <button class="btn" type="button" data-comm="text-toggle">Cancel</button>
+      </div>
+      <p class="hint">Opens your phone's own Messages app with everyone added as a recipient. RCI Serve doesn't send text messages itself — standard texting rates apply, and some phones cap how many people can be in one group text.</p>
+    </form>`;
+  },
+  read() { const b = document.getElementById('comm-text-body'); if (b) this.body = b.value; },
+  sms() {
+    this.read();
+    const r = this.people();
+    if (!r || r.error || !r.list.length) { toast('The team list is not ready yet. Refresh and try again.', true); return; }
+    const to = r.list.map(p => p.phone).join(',');
+    const body = this.body.trim();
+    let url = `sms:${to}${body ? `?&body=${encodeURIComponent(body)}` : ''}`;
+    this.open = false; this.showList = false;
+    location.href = url;
+  },
+  async copy() {
+    const r = this.people(); if (!r || r.error || !r.list.length) return;
+    const text = r.list.map(p => p.phone).join(', ');
+    try { await navigator.clipboard.writeText(text); toast(`Copied ${commBlastN(r.list.length, 'number', 'numbers')}.`); }
+    catch (_) { prompt('Copy these numbers:', text); }
+  }
+};
+document.addEventListener('input', e => { if (e.target.id === 'comm-text-body') CommText.read(); });
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-comm^="text-"]'); if (!b) return;
+  const a = b.dataset.comm;
+  if (a === 'text-sms') { CommText.sms(); return; }
+  if (a === 'text-copy') { CommText.copy(); return; }
+  CommText.read();
+  if (a === 'text-toggle') { CommText.open = !CommText.open; if (CommText.open) { Comm.composeOpen = false; CommBlast.open = false; } }
+  if (a === 'text-list') CommText.showList = !CommText.showList;
+  render();
+});
