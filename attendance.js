@@ -17,7 +17,7 @@ const Attendance = {
   /* The header icon: admins only, and only on a day with a service on the schedule. */
   button(){
     if (!this.host.canEdit() || !this.todayServices().length) return "";
-    return `<button class="iconbtn" data-act="att-open" aria-label="Enter church attendance" title="Church Attendance">${this.icon}</button>`;
+    return `<button class="iconbtn att-ico" style="background:none;border:1px solid var(--line);border-radius:999px;width:40px;height:40px;display:grid;place-items:center;color:var(--muted);flex:none;padding:0" data-act="att-open" aria-label="Enter church attendance" title="Church Attendance">${this.icon}</button>`;
   },
   init(h){ Object.assign(this.host, h); },
   esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]); },
