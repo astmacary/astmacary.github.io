@@ -119,8 +119,9 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .count{min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:var(--stop);color:#FFFFFF;font-family:var(--body);font-size:12px;font-weight:700;letter-spacing:0;display:inline-flex;align-items:center;justify-content:center}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
 .panel.pad{padding:14px;display:flex;flex-direction:column;gap:8px}
-.bday-panel{padding:14px;display:flex;flex-direction:column;gap:12px;border:2px solid #D2B07C;box-shadow:0 4px 20px -10px #D2B07C}
-.bday-msg{margin:0;font-family:var(--display);font-weight:700;font-size:21px;color:#D2B07C}
+.bday-panel{padding:16px;display:flex;flex-direction:column;align-items:center;gap:14px;border:2px solid var(--accent);box-shadow:0 4px 20px -10px var(--accent)}
+.bday-msg{margin:0;font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:.02em;color:var(--accent);text-align:center}
+.bday-panel .list{width:100%}
 .bday-panel .list{display:flex;flex-direction:column;gap:8px}
 .bday-panel .row{border:1px solid var(--line);border-radius:var(--r);border-bottom:1px solid var(--line)}
 .row-wrap{display:block}
@@ -376,7 +377,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "160";   // bump together with CACHE in sw.js
+const APP_VERSION = "161";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1826,9 +1827,9 @@ function bdayWishBox(p){
 function bdayRow(p, wishable){
   const open = S.bdayWish === bdayWishKey(p);
   return `<div class="row-wrap">
-    <button type="button" class="row team${wishable ? " row-clickable" : ""}" style="${p.team === "leadership" ? "--tl:#8A6631;--td:#D2B07C" : tvars(teamOf(p.team))}" ${wishable ? `data-act="bday-wish-toggle" data-team="${esc(p.team)}" data-row="${esc(p.rowId)}" data-name="${esc(p.name)}" aria-expanded="${open}"` : "disabled"}>
+    <button type="button" class="row team${wishable ? " row-clickable" : ""}" style="${p.team === "leadership" ? "--tl:var(--accent);--td:var(--accent)" : tvars(teamOf(p.team))}" ${wishable ? `data-act="bday-wish-toggle" data-team="${esc(p.team)}" data-row="${esc(p.rowId)}" data-name="${esc(p.name)}" aria-expanded="${open}"` : "disabled"}>
       <span class="bar"></span>
-      <div class="info"><span class="tlabel">${p.team === "leadership" ? "Leadership" : esc(teamOf(p.team).name)}</span><b>${esc(p.name)}</b><small>${wishable ? (open ? "Cancel" : "Tap to wish them a Happy Birthday 🎂") : "Birthday 🎂"}</small></div>
+      <div class="info">${p.team === "leadership" ? "" : `<span class="tlabel">${esc(teamOf(p.team).name)}</span>`}<b>${esc(p.name)}</b><small>${wishable ? (open ? "Cancel" : "Tap to wish them a Happy Birthday 🎂") : "Birthday 🎂"}</small></div>
     </button>
     ${bdayWishBox(p)}
   </div>`;
