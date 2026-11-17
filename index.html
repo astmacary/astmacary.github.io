@@ -367,7 +367,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "155";   // bump together with CACHE in sw.js
+const APP_VERSION = "156";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -2037,9 +2037,15 @@ function churchForm(f){
 const isAnyAdmin = () => isEditorOf(CHURCH_CAL) || sendableTeams().length > 0;
 function myAnnouncements(){
   const t = todayKey();
-  const fromTeams = myTeams().flatMap(team => (S.teams[team.key]?.announcements || [])
-    .filter(a => a.text && (!a.until || a.until > t)).map(a => ({ ...a, team: team.key })));
   const fromChurch = canViewChurchItems() ? (S.church.anns || []).filter(a => a.text && (!a.until || a.until > t)) : [];
+  // When a church announcement was shared to one of my teams (AnnShare) and I can also see Church
+  // (everyone can now), the team copy has identical text/until/flyer — drop the team duplicate and
+  // keep only the Church card, so the same announcement doesn't show twice.
+  const churchSigs = new Set(fromChurch.map(a => AnnShare.signature(a)));
+  const fromTeams = myTeams().flatMap(team => (S.teams[team.key]?.announcements || [])
+    .filter(a => a.text && (!a.until || a.until > t))
+    .filter(a => !churchSigs.has(AnnShare.signature(a)))
+    .map(a => ({ ...a, team: team.key })));
   return [...fromTeams, ...fromChurch]
     .sort((a, b) => (a.until || "9999-12-31").localeCompare(b.until || "9999-12-31") || a.team.localeCompare(b.team) || a.id - b.id);
 }
