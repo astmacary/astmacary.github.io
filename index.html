@@ -353,7 +353,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <body>
 <div id="app"></div>
 <div id="toast" class="toast" hidden></div>
-<script src="/communications.js?v=106"></script>
+<script src="/communications.js?v=107"></script>
 <script src="/push-config.js?v=95"></script>
 <script src="/push-client.js?v=96"></script>
 <script src="/rosters.js?v=74"></script>
@@ -367,7 +367,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "152";   // bump together with CACHE in sw.js
+const APP_VERSION = "153";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -385,6 +385,9 @@ const TEAMS = [
   { key: "armorbearers", name: "Armor Bearers", full: "RCI Armor Bearers", path: "/rci-armor-bearers/", tl: "#2B2B2E", td: "#B8B8BE", icon: "abshield",
     sitePath: "/sites/RCIArmorBearers", listName: "Armor Bearers Schedule", announcementsListName: "Announcements",
     editors: ["ashley.stmacary@therampchurch.com"] },
+  { key: "greeters", name: "Greeters", full: "RCI Greeters", path: "/rci-greeters/", tl: "#9A4A12", td: "#F0A46C", icon: "smile",
+    sitePath: "/sites/RCIGreeters", listName: "Greeters Schedule", announcementsListName: "Announcements",
+    editors: ["ashley.stmacary@therampchurch.com", "pastormarvin@therampchurch.com"] },
   { key: "ushers", name: "Ushers & Altar Workers", full: "RCI Ushers & Altar Workers", path: "/rci-ushers/", tl: "#1E5E43", td: "#6CC69C", icon: "door",
     sitePath: "/sites/RCIUsherDept.-UsherSchedule", listName: "Usher Schedule", announcementsListName: "Announcements",
     editors: ["delisa.rogers@therampchurch.com", "ashley.stmacary@therampchurch.com", "tammyrambler@gmail.com"] },
@@ -456,6 +459,7 @@ const ICON = {
   rings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="13" r="5"/><circle cx="15" cy="13" r="5"/></svg>',
   cam: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4V8z"/></svg>',
   abshield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 7v10M8 11h8"/></svg>',
+  smile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></svg>',
   shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
   door: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M10 21v-6h4v6"/></svg>',
   music: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
@@ -1011,12 +1015,12 @@ function normalize(t, id, f, emailById, col){
   const common = { ...base, date: dateRaw ? spDate(dateRaw) : "", category: roster ? "" : cat, fullName: name, email, call, time: "",
     guestName: g("GuestName") || "", instructions: g("Instructions") || "", phone: g("PhoneNumber") || "", personId: f[(col.Name || "Name") + "LookupId"] || "" };
   if (roster) return [{ ...common, kind: "profile", role: "", pending: false, confirmed: false,
-    gone: (t.key === "security" || t.key === "armorbearers") ? lc(g("ArchiveStatus")) === "archive" : lc(status) === "unavailable" }];
+    gone: (t.key === "security" || t.key === "armorbearers" || t.key === "greeters") ? lc(g("ArchiveStatus")) === "archive" : lc(status) === "unavailable" }];
   const kind = (!dateRaw || lc(cat) === "no service") ? "other" : "assign";
   const p1 = g("Placement") || "", p2 = g("Placement2") || "", st2 = g("Status2") || "";
   const req = (role, st) => lc(st) === "pending" && filled(cat) && filled(name) && filled(role);
   const out = [];
-  if (t.key === "security" || t.key === "armorbearers" || filled(p1) || !filled(p2))
+  if (t.key === "security" || t.key === "armorbearers" || t.key === "greeters" || filled(p1) || !filled(p2))
     out.push({ ...common, kind, role: p1, status, pending: req(p1, status), confirmed: lc(status) === "accepted", gone: false });
   if (t.key === "ushers" && filled(p2))
     out.push({ ...common, kind, id: common.id + ":2", slot: 2, role: p2, pending: req(p2, st2 || "Pending"), confirmed: lc(st2) === "accepted", gone: false });
@@ -1507,7 +1511,7 @@ function reqRow(i){
 }
 /* Which per-team buttons a team's row shows, matching that app's own Notes/Team/Decline capabilities —
    used on both the Calendar page's day panel and the Next 7 Days list. */
-const TEAM_WEEK_ACTS = { productions: ["notes", "team", "decline"], worship: ["notes", "team", "decline"], ushers: ["team", "decline"], security: ["team", "decline"], armorbearers: ["team", "decline"] };
+const TEAM_WEEK_ACTS = { productions: ["notes", "team", "decline"], worship: ["notes", "team", "decline"], ushers: ["team", "decline"], security: ["team", "decline"], armorbearers: ["team", "decline"], greeters: ["team", "decline"] };
 const statusPill = (i, today) => i.pending ? `<span class="pill warn">NEEDS REPLY</span>` : today ? `<span class="pill today">TODAY</span>` : `<span class="pill ok">CONFIRMED</span>`;
 function teamActs(t){
   const acts = TEAM_WEEK_ACTS[t.key] || ["team", "decline"];
