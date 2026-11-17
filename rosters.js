@@ -54,6 +54,12 @@ const Rosters = {
   },
   isLeadershipMember() { return DEMO || !!this.data.leadership?.some(p => this.isSelf(p)); },
   hiddenLeadership: ['bishop younger'],
+  /* Bishop Younger, Pastor Westgate, and Pastor Claude Gardner: on the Teams page, their own
+     RCI Leadership container shows pastors only (same filtered view a non-member sees), and
+     they can browse every other team's roster even though they're not on those rosters. */
+  restrictedPastorEmails: ['pastor@therampchurch.com', 'pastor@therampchurch.org', 'pastor.westgate@therampchurch.com', 'claude@therampchurch.com'],
+  isRestrictedPastor() { return !DEMO && !!S.me?.emails?.some(e => this.restrictedPastorEmails.includes(lc(e))); },
+  canViewAllTeams() { return this.isRestrictedPastor(); },
   layout: null,
   layoutKey() { return 'rci-serve:teams-layout:' + ((S.me && S.me.emails && S.me.emails[0]) || ''); },
   getLayout() {
@@ -113,7 +119,7 @@ const Rosters = {
   },
   async ministry(t) {
     const d = S.teams[t.key];
-    if (!d?.accessVerified || d.error || d.noAccess || !myTeams().some(x => x.key === t.key)) throw new Error('This ministry roster is not available for your account.');
+    if (!d?.accessVerified || d.error || d.noAccess || !(myTeams().some(x => x.key === t.key) || this.canViewAllTeams())) throw new Error('This ministry roster is not available for your account.');
     const meta = API.sites[t.key];
     if (!meta) throw new Error('Refresh your teams and try again.');
     const columns = (await API.g(`/sites/${meta.siteId}/lists/${meta.listId}/columns?$select=name,displayName`)).value || [];
@@ -287,7 +293,7 @@ const Rosters = {
   // show here to Leadership members themselves — everyone else sees them instead under Auxiliary Leaders.
   visibleLeadership() {
     const people = this.data.leadership || [];
-    return this.isLeadershipMember() ? people : people.filter(p => !this.tagFor(p));
+    return this.isLeadershipMember() && !this.isRestrictedPastor() ? people : people.filter(p => !this.tagFor(p));
   },
   auxiliaryLeaders() {
     return (this.data.leadership || []).map((p, i) => ({ p, i })).filter(({ p }) => !!this.tagFor(p));
@@ -358,7 +364,7 @@ const Rosters = {
     return `<div class="roster-search-results"><p class="hint" role="status">${loading ? 'Searching rosters…' : count ? `${count} matching roster ${count === 1 ? 'entry' : 'entries'}` : 'No people found. Try another name.'}</p>${count ? '<div class="panel roster-search-columns">' : ''}${groups.map(g => `${this.errors[g.key] ? `<p class="hint" role="alert">${esc(g.full)}: ${esc(this.errors[g.key])} Use the refresh icon at the top of the app to try again.</p>` : ''}${g.people.length ? `<section class="roster-search-group"><h2>${esc(g.full)}</h2><ul class="team-roster">${g.people.map(({p,index}) => this.person(p,index,g.key)).join('')}</ul></section>` : ''}`).join('')}${count ? '</div>' : ''}</div>`;
   },
   view() {
-    const teams = myTeams();
+    const teams = this.canViewAllTeams() ? TEAMS : myTeams();
     if (!this.data.leadership && !this.errors.leadership){
       void this.load('leadership');
       return '<h1 class="page">Teams</h1><p class="hint" role="status">Loading teams and roster counts…</p>';
