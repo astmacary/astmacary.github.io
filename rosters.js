@@ -45,7 +45,10 @@ const Rosters = {
     entries.sort((a,b)=>String(a.recordedAt || '').localeCompare(String(b.recordedAt || '')) || (a.recordOrder || 0)-(b.recordOrder || 0));
     return entries.at(-1)?.role;
   },
+  directoryLeaders: [{userId:'directory:greeters:7',name:'Shanelle Moss',team:'greeters',rowId:'7',directoryOnly:true,role:'Greeters Leader'}],
   tagFor(p) {
+    if (p.directoryOnly) return p.role || '';
+    if (p.directoryRole) return p.directoryRole;
     const assigned=this.assignedLeadershipRole(p);
     if (assigned !== undefined) return assigned;
     for (const e of (p.emails || [p.email]).filter(Boolean).map(lc)) if (this.leadershipTags[e]) return this.leadershipTags[e];
@@ -127,7 +130,7 @@ const Rosters = {
     const fields = [...(leaderColumn ? [leaderColumn.name] : []), 'Photo', 'Birthday', 'PhoneNumber', ...(t.key === 'productions' ? ['Name'] : []), ...(t.key === 'worship' ? ['ActiveStatus'] : [])];
     const rows = await API.all(`/sites/${meta.siteId}/lists/${meta.listId}/items?$expand=fields($select=${fields.join(',')})&$top=500`);
     const byId = new Map(rows.map(r => [String(r.id), r.fields || {}]));
-    return this.unique(d.items.filter(p => p.kind === 'profile' && !p.gone && p.fullName && (t.key !== 'worship' || lc(byId.get(p.rowId)?.ActiveStatus) !== 'non active')).map(p => ({
+    return this.unique(d.items.filter(p => p.kind === 'profile' && !p.gone && p.fullName && (t.key !== 'greeters' || (lc(p.email) !== 'ashley.stmacary@therampchurch.com' && lc(p.fullName).replace(/\./g,'').trim() !== 'ashley st macary')) && (t.key !== 'worship' || lc(byId.get(p.rowId)?.ActiveStatus) !== 'non active')).map(p => ({
       name: p.fullName, email: p.email, rowId: p.rowId, team: t.key, ministryLeader: !!leaderColumn && [true,1,'1'].includes(byId.get(p.rowId)?.[leaderColumn.name]), photoRaw: byId.get(p.rowId)?.Photo || '', first: t.key === 'productions' && typeof byId.get(p.rowId)?.Name === 'string' ? byId.get(p.rowId).Name : '', birthday: (byId.get(p.rowId)?.Birthday || '').slice(0,10), phone: byId.get(p.rowId)?.PhoneNumber || ''
     })));
   },
@@ -166,7 +169,7 @@ const Rosters = {
     for (const r of trusted) {
       try {
         const p = JSON.parse(r.text);
-        if (!p.userId || r.parent !== 'leadership:' + p.userId || !p.name || !p.email) continue;
+        if (!p.userId || r.parent !== 'leadership:' + p.userId || !p.name || (!p.email && !this.directoryLeaders.some(x => x.userId === p.userId))) continue;
         if (p.role !== undefined && (typeof p.role !== 'string' || p.role.length > 120)) continue;
         latest.set(p.userId, {...p,...(p.role !== undefined ? {role:p.role.trim().replace(/\s+/g,' ')} : {}),recordedAt:r.at,recordOrder:Number(r.id)});
       } catch (_) {}
@@ -174,11 +177,22 @@ const Rosters = {
     this.leadershipChanges = latest;
     return [...latest.values()].filter(p => p.action === 'add').map(p => ({ ...p, manual: true }));
   },
+  withDirectoryLeaders(people) {
+    const result = [...people];
+    for (const entry of this.directoryLeaders) {
+      const existing = result.find(p => lc(p.name).trim() === lc(entry.name).trim());
+      if (existing) {
+        // Reuse an existing linked identity when one is added later.
+        existing.directoryRole = entry.role;
+      } else if (this.leadershipChanges.get(entry.userId)?.action !== 'remove') result.push({...entry,emails:[]});
+    }
+    return result;
+  },
   async leadership() {
-    if (DEMO) { this.manualPeople(this.demoLeadershipEvents); return this.applyProfiles([
+    if (DEMO) { this.manualPeople(this.demoLeadershipEvents); return this.applyProfiles(this.withDirectoryLeaders([
       { userId: S.me?.id || 'demo-self', name: S.me?.name || 'Demo Leader', email: S.me?.emails[0] || CHURCH_CAL.editors[0], emails: [...(S.me?.emails || []), CHURCH_CAL.editors[0]] },
       { userId: 'demo-other', name: 'Ministry Leader', email: 'leader@example.org' }
-    ].filter(p => this.leadershipChanges.get(p.userId)?.action !== 'remove')); }
+    ].filter(p => this.leadershipChanges.get(p.userId)?.action !== 'remove'))); }
     await this.loadHubAdmins();
     const directories = Promise.allSettled(myTeams().filter(t => S.teams[t.key]?.accessVerified && !S.teams[t.key]?.error && !S.teams[t.key]?.noAccess).map(t => this.data[t.key] ? Promise.resolve(this.data[t.key]) : this.load(t.key).then(() => this.data[t.key] || [])));
     const lists = await Promise.all(TEAMS.map(t => this.adminEmails(t)));
@@ -204,7 +218,7 @@ const Rosters = {
       if (!display.has(key)) display.set(key, { ...p, userIds: [p.userId] });
       else { const old = display.get(key); old.userIds.push(p.userId); old.emails = [...new Set([...(old.emails || [old.email]), ...(p.emails || [p.email])])]; if (!old.photoRaw && p.photoRaw) Object.assign(old, { photoRaw: p.photoRaw, team: p.team, rowId: p.rowId }); }
     }
-    return this.applyProfiles([...display.values()]);
+    return this.applyProfiles(this.withDirectoryLeaders([...display.values()]));
   },
   async load(key, refresh = false) {
     if (this.tasks[key]) return this.tasks[key];
@@ -444,6 +458,7 @@ const Rosters = {
     return raw?.d || raw;
   },
   async ensureLeadershipAccess(person, interactive = false) {
+    if (person.directoryOnly) throw new Error('Add their sign-in email before setting up account access.');
     if (!this.canManage()) throw new Error('Only RCI Serve administrators can set up Leadership calendar access.');
     if (DEMO) return;
     const actor=S.me?.id || S.me?.emails.join('|'), generation=this.generation;
@@ -487,6 +502,7 @@ const Rosters = {
     const generation=this.generation, people=[...(this.data.leadership || [])];
     const task=(async()=>{
       for(const person of people) {
+        if (person.directoryOnly) continue;
         if(generation!==this.generation || !this.canManage()) break;
         try {
           await this.ensureLeadershipAccess(person);
@@ -512,6 +528,7 @@ const Rosters = {
     const people = [...(this.data.leadership || [])];
     let failed = 0;
     for (const person of people) {
+      if (person.directoryOnly) continue;
       try {
         await this.ensureLeadershipAccess(person, true);
         const state = {status:'verified',label:'Access verified',detail:'RCI Serve Members membership and Church Calendar access are confirmed.'};
@@ -706,6 +723,7 @@ const Rosters = {
   // the Manage Access / Share App actions that still make sense on a specific person's page.
   accessPanel(p) {
     if (!this.canManage()) return '';
+    if (p.directoryOnly) return '<section class="panel sec"><p class="hint">Sign-in email has not been added yet.</p></section>';
     return `<section class="panel sec access-box" aria-label="Access actions"><div class="acts2"><a class="btn" href="https://${CONFIG.siteHost}${CHURCH_CAL.sitePath}/_layouts/15/user.aspx" target="_blank" rel="noopener">Manage Access</a><button class="btn share-app" data-act="leader-share-app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V3m-5 5 5-5 5 5M5 13v7h14v-7"/></svg>Share App</button></div></section>`;
   },
   async checkAccess(p) {
