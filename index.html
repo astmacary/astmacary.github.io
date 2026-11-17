@@ -249,6 +249,9 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .cal-head b{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
 .cal-head .iconbtn{border:0;background:var(--surface-2);color:var(--fg)}
 .cal-nav{display:flex;align-items:center;gap:8px;flex:none}
+.day.abt-sent{background:var(--bad-soft);color:var(--bad);font-weight:700}
+.day:disabled{cursor:default}.day:disabled:not(.abt-sent){opacity:.4}
+.chip.abt-sentchip{border-color:var(--bad);color:var(--bad)}
 .dow,.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
 .dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;padding-bottom:4px}
 .day{height:46px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:10px;border:0;background:transparent;font-size:14px;font-weight:500;padding:0}
@@ -364,7 +367,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "143";   // bump together with CACHE in sw.js
+const APP_VERSION = "144";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1745,57 +1748,98 @@ function viewHome(){
   return out;
 }
 
-/* ---------- Armor Bearers time off from RCI Serve (Nov 16) ----------
-   Pastors (and Ashley) can mark themselves Absent on the Armor Bearers schedule from the hub's Calendar.
-   Same row the Armor Bearers app's Report Time Off writes: Service Category Absent, Status Unavailable,
-   Notes "Dates of Absence: …" (which also fires the Admin absence alert flow). Pastors → Assigned To (Placement) =
-   their pastor name; Ashley → her own Roster row (Name lookup), and she can also mark a pastor absent. */
+/* ---------- Armor Bearers Time Off from RCI Serve (Nov 16) ----------
+   Calendar → the away icon beside the day opens a Time Off page like Productions' / the Armor Bearers app's:
+   pick the person, tap the days, add notes, Submit. Who can be picked:
+   - Armor Bearers admins (and Ashley): the pastors at the top, then everyone on the Armor Bearers Roster.
+   - Pastors: any pastor (themselves first), so a pastor can send time off for another pastor.
+   - Anyone else on the Roster: only themselves.
+   Each day saves the same row the Armor Bearers app's Report Time Off writes: Service Category Absent,
+   Status Unavailable, Notes "Dates of Absence: …" (which fires the Admin absence alert flow). Pastors →
+   Assigned To (Placement) = the pastor; Armor Bearers → their Roster name + Name lookup. */
+const ICON_AWAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9.5 13.5l5 5M14.5 13.5l-5 5"/></svg>';
 const myPastor = () => Object.keys(PASTOR_EMAILS).find(isMePastor) || "";
 const isAshley = () => (S.me?.emails || []).map(lc).some(e => PREVIEW_ALLOWED.includes(e));
-function abAbsentWho(){
-  if (S.imp || !S.teams.armorbearers || !API.sites?.armorbearers) return [];
-  const out = [], pr = myPastor();
-  if (pr) out.push({ key: "p:" + pr, label: pr, pastor: pr, self: true });
-  if (isAshley()){
-    const me = (S.teams.armorbearers.items || []).find(i => i.kind === "profile" && !i.gone && (S.me.emails || []).map(lc).includes(lc(i.email)));
-    if (me) out.push({ key: "me", label: "Me (" + (me.fullName || S.me.name) + ")", name: me.fullName || S.me.name, personId: me.personId, email: me.email, self: true });
-    Object.keys(PASTOR_EMAILS).filter(x => x !== pr).forEach(x => out.push({ key: "p:" + x, label: x, pastor: x }));
+const abReady = () => !S.imp && !!S.teams.armorbearers?.items && !!(DEMO || API.sites?.armorbearers);
+const abAdmin = () => isAshley() || isEditorOf(teamOf("armorbearers"));
+const abMyProfile = () => (S.teams.armorbearers?.items || []).find(i => i.kind === "profile" && !i.gone && (S.me.emails || []).map(lc).includes(lc(i.email)));
+const abPastorPerson = x => ({ key: "p:" + x, label: x, pastor: x });
+const abRosterPerson = i => ({ key: "r:" + i.rowId, label: i.fullName, name: i.fullName, personId: i.personId, email: i.email });
+function abWhoList(){
+  if (!abReady()) return [];
+  const pr = myPastor(), me = abMyProfile(), pastors = Object.keys(PASTOR_EMAILS);
+  if (abAdmin()){
+    const roster = (S.teams.armorbearers.items || []).filter(i => i.kind === "profile" && !i.gone && i.fullName).sort((a, b) => a.fullName.localeCompare(b.fullName));
+    return [...pastors.map(abPastorPerson), ...roster.map(abRosterPerson)];
   }
-  return out;
+  if (pr) return [pr, ...pastors.filter(x => x !== pr)].map(abPastorPerson);
+  return me ? [abRosterPerson(me)] : [];
 }
-const abAbsenceOf = (w, k) => (S.teams.armorbearers?.items || []).find(i => i.date === k && lc(i.category) === "absent" &&
-  (w.pastor ? i.role === w.pastor : (lc(i.email) === lc(w.email) || (w.personId && String(i.personId) === String(w.personId)))));
-function abAbsentPanel(k){
-  const who = abAbsentWho(); if (!who.length || k < todayKey()) return "";
-  const tm = teamOf("armorbearers"), busy = S.abBusy;
-  const rows = who.map(w => { const a = abAbsenceOf(w, k);
-    return `<div class="row team" style="${tvars(tm)}"><span class="bar"></span><div class="info"><span class="tlabel">Armor Bearers</span><b>${esc(w.label)}</b><small>${a ? "Marked absent this day" : "Not marked absent"}</small></div>
-      <div class="acts">${a ? `<span class="pill warn">ABSENT</span><button class="btn" data-act="ab-unabsent" data-k="${esc(w.key)}" data-id="${esc(a.rowId)}" ${busy ? "disabled" : ""}>Cancel</button>`
-        : `<button class="btn" data-act="ab-absent" data-k="${esc(w.key)}" ${busy ? "disabled" : ""}>${busy === w.key ? "Saving…" : "Mark Absent"}</button>`}</div></div>`; }).join("");
-  return `<div class="day-sep">Armor Bearers Time Off</div><div class="panel">${rows}</div>`;
+function abSelfKey(){ const pr = myPastor(), me = abMyProfile(); return pr ? "p:" + pr : me ? "r:" + me.rowId : ""; }
+function abWho(){ const list = abWhoList(); return list.find(w => w.key === S.abt?.who) || list.find(w => w.key === abSelfKey()) || (list.length === 1 ? list[0] : null); }
+const abAbsences = w => !w ? [] : (S.teams.armorbearers?.items || []).filter(i => i.date && lc(i.category) === "absent" &&
+  (w.pastor ? i.role === w.pastor : (!PASTOR_EMAILS[i.role] && ((w.email && lc(i.email) === lc(w.email)) || (w.personId && String(i.personId) === String(w.personId)) || lc(i.fullName) === lc(w.name)))));
+function viewAbTimeOff(){
+  const A = S.abt || (S.abt = { month: todayKey().slice(0, 7), sel: new Set(), notes: "" });
+  const list = abWhoList(), w = abWho(), t = todayKey();
+  const head = `<div class="page-h"><button class="back" data-act="abt-back">${ICON.prev}Back</button></div><h1 class="page">Armor Bearers Time Off</h1>`;
+  if (A.done) return `${head}<section class="panel pad"><b>Absence Submitted</b>${A.doneFor ? `<p class="hint">${esc(A.doneFor)}</p>` : ""}<p class="hint">${A.done.map(k => esc(fmtShort(k))).join(" · ")}</p>
+    <button class="btn" style="align-self:flex-start" data-act="abt-again">Submit More Dates</button></section>`;
+  if (!list.length) return `${head}<div class="empty">You're not on the Armor Bearers Roster.</div>`;
+  const whoField = list.length > 1 ? `<div class="field"><label for="abt-who">Absence for</label><select id="abt-who">${w ? "" : `<option value="" selected disabled>Choose a pastor${abAdmin() ? " or Armor Bearer" : ""}</option>`}
+      ${abAdmin() ? `<optgroup label="Pastors">${list.filter(x => x.pastor).map(x => `<option value="${esc(x.key)}" ${w && w.key === x.key ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</optgroup>
+        <optgroup label="Armor Bearers">${list.filter(x => !x.pastor).map(x => `<option value="${esc(x.key)}" ${w && w.key === x.key ? "selected" : ""}>${esc(x.label)}${x.key === abSelfKey() ? " (you)" : ""}</option>`).join("")}</optgroup>`
+      : list.map(x => `<option value="${esc(x.key)}" ${w && w.key === x.key ? "selected" : ""}>${esc(x.label)}${x.key === abSelfKey() ? " (you)" : ""}</option>`).join("")}</select>
+      <span class="hint">${abAdmin() ? "Admins can send time off for any pastor or Armor Bearer." : "Pastors can send time off for any pastor."}</span></div>` : `<p class="hint" style="margin:0">Time off for <b>${esc(list[0].label)}</b></p>`;
+  if (!w) return `${head}<form class="panel pad stack" id="abtForm">${whoField}</form>`;
+  const abs = abAbsences(w), sent = new Set(abs.map(i => i.date)), upcomingSent = abs.filter(i => i.date >= t).sort((a, b) => a.date.localeCompare(b.date));
+  const [y, mo] = A.month.split("-").map(Number), first = new Date(y, mo - 1, 1), daysIn = new Date(y, mo, 0).getDate();
+  let cells = ""; for (let n = 0; n < first.getDay(); n++) cells += `<span class="day blank"></span>`;
+  for (let d = 1; d <= daysIn; d++){ const k = `${A.month}-${pad(d)}`, past = k < t, was = sent.has(k), on = A.sel.has(k);
+    cells += `<button type="button" class="day${on ? " sel" : ""}${k === t ? " today" : ""}${was ? " abt-sent" : ""}" data-act="abt-pick" data-k="${k}" ${past || was ? "disabled" : ""} aria-pressed="${on}" aria-label="${esc(fmtDay(k))}${was ? ", already sent" : ""}"><span>${d}</span></button>`; }
+  const picked = [...A.sel].sort(), thisMonth = A.month === t.slice(0, 7);
+  const busy = S.abBusy;
+  return `${head}<p class="hint" style="margin-top:-6px">Tap every day ${w.pastor ? "an Armor Bearer won't be needed" : "you can't serve"}, then submit. To cancel a day already sent, tap it under Already Sent.</p>
+    <form class="panel pad stack" id="abtForm">${whoField}
+      <div class="cal-head"><b>${esc(first.toLocaleDateString(undefined, { month: "long", year: "numeric" }))}</b><div class="cal-nav"><button type="button" class="iconbtn" data-act="abt-month" data-d="-1" aria-label="Previous month" ${thisMonth ? "disabled" : ""}>${ICON.prev}</button><button type="button" class="iconbtn" data-act="abt-month" data-d="1" aria-label="Next month">${ICON.next}</button></div></div>
+      <div class="dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+      <div class="days">${cells}</div>
+      <div class="chips">${picked.length ? picked.map(k => `<button type="button" class="chip" data-act="abt-pick" data-k="${k}" aria-label="Remove ${esc(fmtDay(k))}">${esc(fmtShort(k))} ×</button>`).join("") : `<span class="hint">No dates picked yet.</span>`}</div>
+      ${upcomingSent.length ? `<div class="field"><span class="label">Already Sent</span><div class="chips">${upcomingSent.map(i => `<button type="button" class="chip abt-sentchip" data-act="abt-cancel" data-id="${esc(i.rowId)}">${esc(fmtShort(i.date))} ×</button>`).join("")}</div>
+        ${S.abtConfirm ? (() => { const r = upcomingSent.find(i => String(i.rowId) === String(S.abtConfirm)); return r ? `<div class="note"><span>Cancel ${w.key === abSelfKey() ? "your" : esc(w.label) + "’s"} time off on ${esc(fmtShort(r.date))}?</span>
+          <button type="button" class="btn decline" data-act="abt-cancel-yes" data-id="${esc(r.rowId)}" ${busy ? "disabled" : ""}>${busy ? "Canceling…" : "Yes, Cancel It"}</button><button type="button" class="btn" data-act="abt-cancel-keep">Keep It</button></div>` : ""; })() : ""}</div>` : ""}
+      <div class="field"><label for="abt-notes">Notes</label><textarea id="abt-notes" placeholder="Anything the schedule team should know (optional).">${esc(A.notes || "")}</textarea></div>
+      <button class="btn primary" type="submit" ${busy || !picked.length ? "disabled" : ""}>${busy === "submit" ? "Submitting…" : `Submit Absence${picked.length > 1 ? ` (${picked.length} days)` : ""}`}</button></form>`;
 }
-async function abMarkAbsent(key, k){
-  const w = abAbsentWho().find(x => x.key === key); if (!w || S.abBusy) return;
-  const site = API.sites.armorbearers, col = site.col || {}, c = n => col[n] || n;
-  const notes = `<p><strong>Dates of Absence:</strong> ${esc(fmtShort(k))}</p>` + (w.self ? "" : `<p><em>Entered by ${esc(S.me.name)}</em></p>`);
-  const fields = { [c("ServiceDate")]: k + "T12:00:00Z", [c("ServiceCategory")]: "Absent", [c("Status")]: "Unavailable", [c("ArchiveStatus")]: "Active",
-    [c("SecurityName")]: w.pastor || w.name, Notes: notes };
-  if (w.pastor) fields[c("Placement")] = w.pastor; else if (w.personId) fields[c("Name") + "LookupId"] = String(w.personId);
-  S.abBusy = key; render();
+async function abtSubmit(){
+  const A = S.abt, w = abWho(); if (!A || !w || S.abBusy) return;
+  const dates = [...A.sel].sort(); if (!dates.length) return;
+  A.notes = ($("#abt-notes")?.value || "").trim();
+  const other = w.key !== abSelfKey();
+  const html = `<p><strong>Dates of Absence:</strong> ${dates.map(k => esc(fmtShort(k))).join("; ")}</p>` + (A.notes ? `<p>${esc(A.notes).replace(/\n/g, "<br>")}</p>` : "") + (other ? `<p><em>Entered by ${esc(S.me.name)}</em></p>` : "");
+  const site = DEMO ? {} : API.sites.armorbearers, col = site.col || {}, c = n => col[n] || n;
+  S.abBusy = "submit"; render();
+  const saved = [];
   try {
-    const r = DEMO ? { id: "d" + Date.now() } : await API.g(`/sites/${site.siteId}/lists/${site.listId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
-    S.teams.armorbearers.items.push(...normalize(teamOf("armorbearers"), String(r.id), fields, {}, col).map(i => ({ ...i, email: w.email || "", personId: w.personId || "" })));
-    toast(`${w.self ? "You're" : w.label + " is"} marked absent on ${fmtShort(k)}`);
-  } catch(e){ toast("Couldn't mark it. " + e.message, true); }
-  S.abBusy = null; render();
+    for (const k of dates){
+      const fields = { [c("ServiceDate")]: k + "T12:00:00Z", [c("ServiceCategory")]: "Absent", [c("Status")]: "Unavailable", [c("ArchiveStatus")]: "Active", [c("SecurityName")]: w.pastor || w.name, Notes: html };
+      if (w.pastor) fields[c("Placement")] = w.pastor; else if (w.personId) fields[c("Name") + "LookupId"] = String(w.personId);
+      const r = DEMO ? { id: "d" + Date.now() + k } : await API.g(`/sites/${site.siteId}/lists/${site.listId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
+      S.teams.armorbearers.items.push(...normalize(teamOf("armorbearers"), String(r.id), fields, {}, col).map(i => ({ ...i, email: w.email || "", personId: w.personId || "" })));
+      saved.push(k);
+    }
+  } catch(e){ toast(`Couldn't submit ${saved.length ? "all of " : ""}the absence. ` + e.message, true); }
+  S.abBusy = null;
+  if (saved.length){ A.done = saved; A.doneFor = other ? w.label : ""; A.sel = new Set(); A.notes = ""; }
+  render();
 }
-async function abCancelAbsent(id){
-  if (S.abBusy) return; const site = API.sites.armorbearers;
-  S.abBusy = "x"; render();
+async function abtCancel(id){
+  if (S.abBusy) return; const site = DEMO ? {} : API.sites.armorbearers;
+  S.abBusy = "cancel"; render();
   try {
     if (!DEMO) await API.g(`/sites/${site.siteId}/lists/${site.listId}/items/${id}`, { method: "DELETE" });
     S.teams.armorbearers.items = S.teams.armorbearers.items.filter(i => String(i.rowId) !== String(id));
-    toast("Absence canceled");
+    S.abtConfirm = null; toast("Time off canceled");
   } catch(e){ toast("Couldn't cancel it. " + e.message, true); }
   S.abBusy = null; render();
 }
@@ -1828,12 +1872,12 @@ function viewCalendar(){
     <section class="panel cal"><div class="cal-head"><b>${esc(label)}</b><div class="cal-nav"><button class="btn sm" data-act="cal-today">Today</button><button class="iconbtn" data-act="month" data-d="-1" aria-label="Previous month">${ICON.prev}</button><button class="iconbtn" data-act="month" data-d="1" aria-label="Next month">${ICON.next}</button></div></div>
       <div class="dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
       <div class="days">${cells}</div></section>
-    <section class="sec"><div class="sec-head"><h2>${esc(fmtDay(sel))}</h2>${canEditChurch ? `<div class="acts">
-        <button class="iconbtn sm" data-act="church-add" aria-label="Add a church event">${ICON.plus}</button>
-        <button class="iconbtn sm danger" data-act="church-noservice" aria-label="Mark no service this day">${ICON.ban}</button></div>` : ""}</div>
+    <section class="sec"><div class="sec-head"><h2>${esc(fmtDay(sel))}</h2>${abWhoList().length || canEditChurch ? `<div class="acts">
+        ${abWhoList().length ? `<button class="iconbtn sm" data-act="abt-open" aria-label="Armor Bearers Time Off" title="Armor Bearers Time Off">${ICON_AWAY}</button>` : ""}
+        ${canEditChurch ? `<button class="iconbtn sm" data-act="church-add" aria-label="Add a church event">${ICON.plus}</button>
+        <button class="iconbtn sm danger" data-act="church-noservice" aria-label="Mark no service this day">${ICON.ban}</button>` : ""}</div>` : ""}</div>
       ${f ? churchForm(f) : ""}
       <div class="panel">${dayList.length ? dayList.map(i => i.team === "church" ? churchRow(i, canEditChurch) : MINISTRIES.some(x => x.key === i.team) ? ministryRow(i) : itemRow(i, false)).join("") : `<div class="empty">No events scheduled.</div>`}</div>
-      ${abAbsentPanel(sel)}
       <p class="hint">${canEditChurch ? "Shows your own assignments on every team, plus the Church calendar." : "Shows your own assignments on every team."} Each team's Calendar shows the whole team.</p></section>`;
 }
 /* Everyone sees announcements from the teams they're ON, plus Church (it's for everyone). Only admins can edit, and
@@ -2002,7 +2046,7 @@ function render(){
     return;
   }
   const tabsArr = tabsList();
-  const body = S.view === "church-event" ? viewChurchEventInfo() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
+  const body = S.view === "ab-timeoff" ? viewAbTimeOff() : S.view === "church-event" ? viewChurchEventInfo() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
     : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
@@ -2089,8 +2133,14 @@ document.addEventListener("click", async e => {
   else if (act === "install" && deferredInstall){ deferredInstall.prompt(); deferredInstall = null; render(); }
   else if (act === "allow-badge"){ try { await Notification.requestPermission(); } catch(_){} updateBadge(); render(); }
   else if (act === "day"){ S.cal.sel = b.dataset.k; render(); }
-  else if (act === "ab-absent") abMarkAbsent(b.dataset.k, S.cal.sel);
-  else if (act === "ab-unabsent") abCancelAbsent(b.dataset.id);
+  else if (act === "abt-open"){ S.abtBack = S.view; S.abt = { month: (S.cal.sel >= todayKey() ? S.cal.sel : todayKey()).slice(0, 7), sel: new Set(S.cal.sel >= todayKey() ? [S.cal.sel] : []), notes: "" }; S.abtConfirm = null; S.view = "ab-timeoff"; render(); window.scrollTo(0, 0); }
+  else if (act === "abt-back"){ S.view = S.abtBack || "calendar"; S.abt = null; render(); }
+  else if (act === "abt-again"){ S.abt.done = null; render(); }
+  else if (act === "abt-month"){ const [y, m] = S.abt.month.split("-").map(Number), d = new Date(y, m - 1 + Number(b.dataset.d), 1); S.abt.month = d.getFullYear() + "-" + pad(d.getMonth() + 1); S.abt.notes = $("#abt-notes")?.value || S.abt.notes; render(); }
+  else if (act === "abt-pick"){ const k = b.dataset.k; S.abt.sel.has(k) ? S.abt.sel.delete(k) : S.abt.sel.add(k); S.abt.notes = $("#abt-notes")?.value || S.abt.notes; render(); }
+  else if (act === "abt-cancel"){ S.abtConfirm = b.dataset.id; render(); }
+  else if (act === "abt-cancel-keep"){ S.abtConfirm = null; render(); }
+  else if (act === "abt-cancel-yes") abtCancel(b.dataset.id);
   else if (act === "cal-today"){ S.cal.sel = todayKey(); S.cal.month = todayKey().slice(0, 7); render(); }
   else if (act === "ann-info-collapse"){ toggleAnnInfoCollapsed(b.dataset.id); render(); }
   else if (act === "month"){ const [y, m] = S.cal.month.split("-").map(Number), d = new Date(y, m - 1 + Number(b.dataset.d), 1); S.cal.month = keyOf(d).slice(0, 7); render(); }
@@ -2192,12 +2242,14 @@ document.addEventListener("click", async e => {
   }
 });
 document.addEventListener("change", e => {
+  if (e.target.id === "abt-who"){ S.abt.who = e.target.value; S.abt.sel = new Set(); S.abtConfirm = null; S.abt.done = null; render(); return; }
   if (e.target.id === "ann-flyer" && e.target.files[0]){
     annDraftSave(); S.annDraft.file = e.target.files[0];
     S.annDraft.preview = URL.createObjectURL(e.target.files[0]); render();
   }
 });
 document.addEventListener("submit", async e => {
+  if (e.target.id === "abtForm"){ e.preventDefault(); abtSubmit(); return; }
   if (e.target.id !== "annForm") return;
   e.preventDefault();
   annDraftSave();
