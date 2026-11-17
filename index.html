@@ -377,7 +377,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "164";   // bump together with CACHE in sw.js
+const APP_VERSION = "165";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1824,7 +1824,14 @@ function teamBirthdays(){
   const t = todayKey(), wk = addDays(t, 7), out = [];
   for (const key of birthdayScope()){
     if (!Rosters.data[key]){
-      if (!Rosters.errors?.[key] && !Rosters.tasks?.[key]) Promise.resolve(Rosters.load(key)).then(() => { if (S.view === "home") render(); });
+      // A team's roster can fail to load on one refresh cycle (a network blip, a slow response while that
+      // team's own schedule briefly re-synced) and Rosters.errors[key] latches that failure so it's never
+      // retried on its own — even once the team's own data is healthy again on the very next refresh. Treat
+      // a stale error as retryable once S.teams[key] currently looks fine, instead of leaving it stuck for
+      // the rest of the session.
+      const stale = Rosters.errors?.[key] && S.teams[key]?.accessVerified && !S.teams[key]?.error && !S.teams[key]?.noAccess;
+      if (stale) delete Rosters.errors[key];
+      if ((!Rosters.errors?.[key] || stale) && !Rosters.tasks?.[key]) Promise.resolve(Rosters.load(key)).then(() => { if (S.view === "home") render(); });
       continue;
     }
     for (const p of Rosters.data[key]){
