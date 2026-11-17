@@ -120,7 +120,7 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
 .panel.pad{padding:14px;display:flex;flex-direction:column;gap:8px}
 .bday-panel{padding:16px;display:flex;flex-direction:column;align-items:center;gap:14px;border:2px solid var(--accent);box-shadow:0 4px 20px -10px var(--accent)}
-.bday-msg{margin:0;font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:.02em;color:var(--accent);text-align:center}
+.bday-msg{margin:0;font-family:var(--display);font-weight:700;font-size:24px;letter-spacing:.02em;color:var(--accent);text-align:center}
 .bday-panel .list{width:100%}
 .bday-panel .list{display:flex;flex-direction:column;gap:8px}
 .bday-panel .row{border:1px solid var(--line);border-radius:var(--r);border-bottom:1px solid var(--line)}
@@ -377,7 +377,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "161";   // bump together with CACHE in sw.js
+const APP_VERSION = "162";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -744,12 +744,16 @@ const API = {
     return { items: raw.flatMap(r => normalize(t, String(r.id), r.fields, emailById, col)), announcements };
   },
   /* Posts a birthday-wall message into a team's own "Birthday Messages" list — the exact same list that
-     team's own app's Birthday Wall reads from, so a message posted from the hub shows up there too. */
+     team's own app's Birthday Wall reads from, so a message posted from the hub shows up there too.
+     Leadership has no team app of its own, so its messages go to the hub's own "Leadership Birthday
+     Messages" list on the church site instead, keyed by userId (Leadership has no numeric roster row). */
   async postBirthdayMessage(team, person, text){
-    const meta = this.sites[team]; if (!meta?.messagesListId) throw new Error("That team doesn't have a Birthday Wall yet.");
+    const meta = team === "leadership" ? this.sites.church : this.sites[team];
+    if (!meta?.messagesListId) throw new Error("That team doesn't have a Birthday Wall yet.");
+    const toId = team === "leadership" ? person.userId : Number(person.rowId);
     const r = await this.g(`/sites/${meta.siteId}/lists/${meta.messagesListId}/items`, { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fields: { Title: person.name, ToId: Number(person.rowId), Message: text } }) });
-    return { id: String(r.id), toId: String(person.rowId), text, fromName: S.me.name, fromEmail: S.me.emails[0] || "", at: r.createdDateTime || new Date().toISOString() };
+      body: JSON.stringify({ fields: { Title: person.name, ToId: toId, Message: text } }) });
+    return { id: String(r.id), toId: String(toId), text, fromName: S.me.name, fromEmail: S.me.emails[0] || "", at: r.createdDateTime || new Date().toISOString() };
   },
   /* The church-wide calendar: a simple list (Title + one date column) on its own site, no membership to check.
      The date column's internal name varies by list, so it's found by type rather than guessed. */
@@ -766,7 +770,12 @@ const API = {
     // public announcement text carried over by churchAddCalendarEntry) so saving one never overwrites the other.
     const hasServiceNotes = cols.some(c => c.name === "ServiceNotes");
     const hasAnn = cols.some(c => c.name === "Announcements"), hasUntil = cols.some(c => c.name === "ShowUntil"), hasFlyer = cols.some(c => c.name === "Flyer");
-    this.sites.church = { siteId: site.id, annListId: listId };   // lets API.flyer(CHURCH_CAL, a) resolve Church flyers the same way team flyers do
+    // "Leadership Birthday Messages" — the hub's own Birthday Wall for Leadership members, who have no team
+    // app of their own to host one. Lives on this same site since Leadership isn't a SharePoint-backed roster.
+    let messagesListId = null;
+    try { messagesListId = (await this.g(`${base}/${encodeURIComponent("Leadership Birthday Messages")}?$select=id`)).id; }
+    catch(e){ /* no such list yet */ }
+    this.sites.church = { siteId: site.id, annListId: listId, messagesListId };   // lets API.flyer(CHURCH_CAL, a) resolve Church flyers the same way team flyers do
     return (this._churchMeta = { base, listId, dateCol: dateCol.name, hasNotes, hasServiceNotes, hasAnn, hasUntil, hasFlyer });
   },
   /* Rows on the Church Calendar list come in three flavors: plain calendar events (just Title + date),
@@ -1804,19 +1813,22 @@ function teamBirthdays(){
   }
   return out;
 }
-/* Whether a birthday person can be wished happy birthday from the hub: they need a roster row on an
-   actual team (not Leadership — no team app/wall backs that), that team needs its "Birthday Messages"
-   list (API.sites[key].messagesListId resolves once that team's own schedule has loaded), and it's not
-   the viewer wishing themselves. */
+/* Leadership has no numeric roster row (no SharePoint-backed roster), so its people are identified by
+   userId instead — this is the one id to use everywhere a birthday row needs to key or post by person. */
+const bdayId = p => p.team === "leadership" ? p.userId : p.rowId;
+/* Whether a birthday person can be wished happy birthday from the hub: they need an id to post against
+   (a roster row for a team, or a userId for Leadership), their team/church site needs its own "Birthday
+   Messages" list resolved (API.sites[key].messagesListId, or API.sites.church.messagesListId for
+   Leadership), and it's not the viewer wishing themselves. */
 function canWishBday(p){
-  return p.team !== "leadership" && !!p.rowId && !!API.sites[p.team]?.messagesListId
+  return !!bdayId(p) && !!(p.team === "leadership" ? API.sites.church?.messagesListId : API.sites[p.team]?.messagesListId)
     && !Rosters.isSelf({ userId: p.userId, userIds: p.userIds, email: p.email, emails: p.emails });
 }
-const bdayWishKey = p => p.team + ":" + p.rowId;
+const bdayWishKey = p => p.team + ":" + bdayId(p);
 /* The optional "Post Message" compose box under a birthday row — same idea as a team app's Birthday Wall. */
 function bdayWishBox(p){
   if (S.bdayWish !== bdayWishKey(p)) return "";
-  return `<form class="stack" data-act="bday-wish-form" data-team="${esc(p.team)}" data-row="${esc(p.rowId)}" data-name="${esc(p.name)}" style="padding:10px 0 2px">
+  return `<form class="stack" data-act="bday-wish-form" data-team="${esc(p.team)}" data-row="${esc(bdayId(p))}" data-name="${esc(p.name)}" style="padding:10px 0 2px">
     <textarea id="bday-wish-text" class="panel notes" rows="2" maxlength="500" placeholder="Happy birthday! 🎉" required></textarea>
     <div class="comm-edit-buttons">
       <button class="btn primary" type="submit" ${S.bdayWishBusy ? "disabled" : ""}>${S.bdayWishBusy ? "Posting…" : "Post Message"}</button>
@@ -1827,7 +1839,7 @@ function bdayWishBox(p){
 function bdayRow(p, wishable){
   const open = S.bdayWish === bdayWishKey(p);
   return `<div class="row-wrap">
-    <button type="button" class="row team${wishable ? " row-clickable" : ""}" style="${p.team === "leadership" ? "--tl:var(--accent);--td:var(--accent)" : tvars(teamOf(p.team))}" ${wishable ? `data-act="bday-wish-toggle" data-team="${esc(p.team)}" data-row="${esc(p.rowId)}" data-name="${esc(p.name)}" aria-expanded="${open}"` : "disabled"}>
+    <button type="button" class="row team${wishable ? " row-clickable" : ""}" style="${p.team === "leadership" ? "--tl:var(--accent);--td:var(--accent)" : tvars(teamOf(p.team))}" ${wishable ? `data-act="bday-wish-toggle" data-team="${esc(p.team)}" data-row="${esc(bdayId(p))}" data-name="${esc(p.name)}" aria-expanded="${open}"` : "disabled"}>
       <span class="bar"></span>
       <div class="info">${p.team === "leadership" ? "" : `<span class="tlabel">${esc(teamOf(p.team).name)}</span>`}<b>${esc(p.name)}</b><small>${wishable ? (open ? "Cancel" : "Tap to wish them a Happy Birthday 🎂") : "Birthday 🎂"}</small></div>
     </button>
@@ -2496,7 +2508,7 @@ document.addEventListener("submit", async e => {
     const { team, row, name } = e.target.dataset;
     S.bdayWishBusy = true; render();
     try {
-      await API.postBirthdayMessage(team, { rowId: row, name }, text);
+      await API.postBirthdayMessage(team, team === "leadership" ? { userId: row, name } : { rowId: row, name }, text);
       S.bdayWish = null; toast("Birthday message posted 🎉");
     } catch(err){ toast(err.message || "Couldn't post that message.", true); }
     S.bdayWishBusy = false; render();
