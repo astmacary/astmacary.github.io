@@ -367,7 +367,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "145";   // bump together with CACHE in sw.js
+const APP_VERSION = "146";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1110,7 +1110,9 @@ const isEditorOf = t => !!S.me && (DEMO || t.editors.some(e => S.me.emails.inclu
 /* On a team: an admin of it, has a (not archived) Roster / profile row, or has been scheduled in the last 120 days or later. */
 function member(t){
   const d = S.teams[t.key]; if (!d) return false;
-  if (S.imp) return (S.impTeams || []).includes(t.key);   // previewing: a member of the teams Ashley picked
+  if (S.imp && !S.impPerson) return (S.impTeams || []).includes(t.key);   // previewing: a member of the teams Ashley picked
+  // Previewing as a specific real person (S.impPerson): fall through to the normal checks below, which
+  // naturally resolve to THEIR real teams/admin rights since S.me now holds their real identity.
   if (isEditorOf(t) || Rosters.isHubAdmin(S.me || {})) return true;
   if (d.noAccess || !d.items) return false;
   const since = addDays(todayKey(), -120);
@@ -1126,12 +1128,16 @@ const PREVIEW_PERSON = { id: "rci-serve-preview-member", name: "Team Member", em
 const IMP_KEY = "rci-serve:preview-member";
 const PREVIEW_ALLOWED = ["ashley.stmacary@therampchurch.com", "astmacary@gmail.com"];   // only Ashley can preview
 const canImpersonate = () => !DEMO && !S.imp && !!S.me && S.me.emails.some(e => PREVIEW_ALLOWED.includes(lc(e)));
-/* The saved preview: a list of team keys (an older "1" means all four). null = not previewing. */
+/* The saved preview: { teams: [...] } (an older "1"/bare array means all-teams / that array), or
+   { person: {name,email} } for previewing as one specific real person. null = not previewing. */
 function wantsImp(){
   try {
     const v = sessionStorage.getItem(IMP_KEY); if (!v) return null;
-    if (v === "1") return TEAMS.map(t => t.key);
-    const keys = impKeys(JSON.parse(v)); return keys.length ? keys : null;
+    if (v === "1") return { teams: TEAMS.map(t => t.key) };
+    const parsed = JSON.parse(v);
+    if (parsed && parsed.person && parsed.person.email) return { person: parsed.person };
+    const keys = impKeys(Array.isArray(parsed) ? parsed : (parsed && parsed.teams) || []);
+    return keys.length ? { teams: keys } : null;
   } catch(_){ return null; }
 }
 const impKeys = list => TEAMS.map(t => t.key).filter(k => (list || []).includes(k));   // valid keys, in the usual team order
@@ -1152,36 +1158,63 @@ function resetIdentityViews(){
 function impStart(keys){
   keys = impKeys(keys);
   if (!keys.length) { toast("Pick at least one team to preview.", true); return; }
-  if (S.imp){   // already previewing: just change the teams
+  if (S.imp && !S.impPerson){   // already previewing a generic team member: just change the teams
     S.impTeams = keys; S.impPick = null;
-    try { sessionStorage.setItem(IMP_KEY, JSON.stringify(keys)); } catch(_){}
+    try { sessionStorage.setItem(IMP_KEY, JSON.stringify({ teams: keys })); } catch(_){}
     resetIdentityViews(); toast("Now previewing: " + impTeamNames(keys).join(" + "));
     S.view = "home"; try { sessionStorage.setItem("rci-serve:view", "home"); } catch(_){}
     render(); window.scrollTo(0, 0); return;
   }
   if (!canImpersonate()) return;
-  S.impTeams = keys; S.impPick = null;
+  S.impTeams = keys; S.impPick = null; S.impPerson = null;
   S.realMe = S.me; S.realPhoto = S.photo;
   S.me = { ...PREVIEW_PERSON, emails: [...PREVIEW_PERSON.emails] }; S.photo = null; S.imp = true;
-  try { sessionStorage.setItem(IMP_KEY, JSON.stringify(keys)); } catch(_){}
+  try { sessionStorage.setItem(IMP_KEY, JSON.stringify({ teams: keys })); } catch(_){}
   resetIdentityViews();
   if ("clearAppBadge" in navigator) navigator.clearAppBadge().catch(() => {});
   S.view = "home"; try { sessionStorage.setItem("rci-serve:view", "home"); } catch(_){}
   render(); window.scrollTo(0, 0);
 }
+/* Preview as one specific real person (someone with RCI Serve access) instead of a generic team member:
+   S.me becomes their real name+email, so member()/isEditorOf()/Rosters.isHubAdmin() all naturally resolve
+   to THEIR real teams and admin rights from the data already loaded under Ashley's own sign-in. */
+function impStartPerson(person){
+  if (!person || !person.email) return;
+  const email = lc(person.email), name = person.name || email;
+  if (S.imp && S.impPerson){   // already previewing as a person: just switch who
+    S.impPerson = { name, email };
+    S.me = { id: "rci-serve-preview-person", name, emails: [email] }; S.photo = null;
+    try { sessionStorage.setItem(IMP_KEY, JSON.stringify({ person: S.impPerson })); } catch(_){}
+    resetIdentityViews(); toast("Now previewing as " + name);
+    S.view = "home"; try { sessionStorage.setItem("rci-serve:view", "home"); } catch(_){}
+    render(); window.scrollTo(0, 0); return;
+  }
+  if (!canImpersonate()) return;
+  S.impTeams = null; S.impPick = null; S.impPerson = { name, email };
+  S.realMe = S.me; S.realPhoto = S.photo;
+  S.me = { id: "rci-serve-preview-person", name, emails: [email] }; S.photo = null; S.imp = true;
+  try { sessionStorage.setItem(IMP_KEY, JSON.stringify({ person: S.impPerson })); } catch(_){}
+  resetIdentityViews();
+  if ("clearAppBadge" in navigator) navigator.clearAppBadge().catch(() => {});
+  S.view = "home"; try { sessionStorage.setItem("rci-serve:view", "home"); } catch(_){}
+  render(); window.scrollTo(0, 0);
+}
+function impRestore(saved){ if (!saved) return; if (saved.person) impStartPerson(saved.person); else if (saved.teams) impStart(saved.teams); }
 function impStop(){
   try { sessionStorage.removeItem(IMP_KEY); } catch(_){}
   if (!S.imp) return;
-  S.me = S.realMe; S.photo = S.realPhoto; S.realMe = null; S.realPhoto = null; S.imp = false; S.impTeams = null; S.impPick = null;
+  S.me = S.realMe; S.photo = S.realPhoto; S.realMe = null; S.realPhoto = null; S.imp = false; S.impTeams = null; S.impPick = null; S.impPerson = null; S.impPersonPick = "";
   resetIdentityViews();
   updateBadge(); render(); window.scrollTo(0, 0);
 }
 function impBanner(){
+  if (S.impPerson) return `<div class="imp-bar" role="status"><span><b>Previewing as ${esc(S.impPerson.name)}</b><small>Their real teams and admin rights · changes are turned off. Team apps still open as you.</small></span><button class="btn" data-act="imp-stop">Exit Preview</button></div>`;
   const names = impTeamNames(S.impTeams), on = names.length === TEAMS.length ? "On all " + TEAMS.length + " teams" : "On " + names.join(" + ");
   return `<div class="imp-bar" role="status"><span><b>Previewing as a team member</b><small>${esc(on)} · not an admin · changes are turned off. Team apps still open as you.</small></span><button class="btn" data-act="imp-stop">Exit Preview</button></div>`;
 }
 /* Ashley picks any team or combination of teams; the preview person is a regular member of exactly those. */
 function impCard(){
+  if (S.imp && S.impPerson) return "";   // currently previewing as a specific person — this card doesn't apply
   const pick = impPicked(), n = pick.size, all = n === TEAMS.length;
   const same = S.imp && n === S.impTeams.length && S.impTeams.every(k => pick.has(k));
   return `<section class="panel pad"><b>${S.imp ? "Change Preview Teams" : "Preview as a Team Member"}</b>
@@ -1190,6 +1223,24 @@ function impCard(){
     <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="btn" data-act="imp-all" ${all ? "disabled" : ""}>All Teams</button>
       <button class="btn primary" data-act="imp-start" ${!n || same ? "disabled" : ""}>${S.imp ? "Switch Preview" : "Preview as Team Member"}</button></div>
     <p class="hint">${n ? `Previewing as a member of ${esc(all ? "all 4 teams" : impTeamNames([...pick]).join(" + "))}.` : "Pick at least one team."}</p></section>`;
+}
+/* Ashley picks one specific real person who has RCI Serve access; the preview uses their real identity,
+   so their actual team memberships and admin rights show exactly as they would for that person. */
+function impPersonCard(){
+  if (S.imp && !S.impPerson) return "";   // currently previewing generic team member — this card doesn't apply
+  if (!AccessLog.rows && !AccessLog.error) void AccessLog.load();
+  const rows = (AccessLog.rows || []).filter(r => r.status === "Successfully logged in").sort((a,b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
+  const selected = S.impPersonPick || (S.impPerson ? S.impPerson.email : "");
+  const same = S.imp && S.impPerson && lc(selected) === S.impPerson.email;
+  return `<section class="panel pad"><b>${S.imp ? "Change Preview Person" : "Preview as a Specific Person"}</b>
+    <p class="hint">See RCI Serve exactly as one person with access would see it — their real teams and admin rights (or lack of them). Nothing can be changed while previewing.</p>
+    ${rows.length ? `<select id="imp-person-select" aria-label="Choose a person to preview as">
+      <option value="">Choose a person…</option>
+      ${rows.map(r => `<option value="${esc(lc(r.email))}" ${lc(r.email) === lc(selected) ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
+    </select>
+    <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="btn primary" data-act="imp-person-start" ${!selected || same ? "disabled" : ""}>${S.imp ? "Switch Preview" : "Preview as This Person"}</button></div>`
+    : AccessLog.error ? `<p class="hint" role="alert">${esc(AccessLog.error)}</p>` : `<p class="hint" role="status">Loading people with access…</p>`}
+    ${S.impPerson ? `<p class="hint">Currently previewing as ${esc(S.impPerson.name)}.</p>` : ""}</section>`;
 }
 const myItems = () => myTeams().flatMap(t => (S.teams[t.key].items || []).filter(i => i.kind === "assign" && mineRow(i) && (i.pending || i.confirmed)));
 const upcoming = () => myItems().filter(i => i.date >= todayKey()).sort((a,b) => a.date.localeCompare(b.date) || a.team.localeCompare(b.team));
@@ -2026,7 +2077,7 @@ function viewProfile(){
     <section class="panel profile-hero"><span class="profile-avatar-wrap"><span class="av">${profile.photo ? `<img src="${profile.photo}" alt="">` : esc(initials(profile.name))}</span>${Rosters.star({emails:S.me.emails})}</span>
       <h2>${esc(profile.name)}</h2><small class="muted">${esc(S.me.emails[0] || "")}</small>
       ${canEdit ? `<div class="profile-hero-actions"><button class="btn" data-act="hub-profile-change-photo">Change Photo</button>${!Rosters.editingProfile ? '<button class="btn" data-act="hub-profile-edit">Edit profile</button>' : ''}</div><input id="hub-profile-photo" type="file" accept="image/*" aria-label="Profile photo" hidden><p class="hint">Your teammates see this on the Leadership roster.</p>` : ''}</section>
-    ${S.imp ? impBanner() + impCard() : canImpersonate() ? impCard() : ""}
+    ${S.imp ? impBanner() + impCard() + impPersonCard() : canImpersonate() ? impCard() + impPersonCard() : ""}
     ${Rosters.profileEditor()}
     ${Push.panel()}
     ${badgeAsk()}
@@ -2122,6 +2173,7 @@ document.addEventListener("click", async e => {
   if (act === "imp-start") impStart([...impPicked()]);
   else if (act === "imp-pick") { const p = impPicked(), k = b.dataset.k; p.has(k) ? p.delete(k) : p.add(k); render(); }
   else if (act === "imp-all") { S.impPick = new Set(TEAMS.map(t => t.key)); render(); }
+  else if (act === "imp-person-start") { const v = $("#imp-person-select")?.value; if (v){ const name = $("#imp-person-select").selectedOptions[0]?.textContent || v; impStartPerson({ name, email: v }); } }
   else if (act === "imp-stop") impStop();
   else if (act === "ann-share") AnnShare.open(b.dataset.id);
   else if (act === "ann-share-close") AnnShare.close();
@@ -2273,6 +2325,7 @@ document.addEventListener("click", async e => {
 });
 document.addEventListener("change", e => {
   if (e.target.id === "abt-who"){ S.abt.who = e.target.value; S.abt.sel = new Set(); S.abtConfirm = null; S.abt.done = null; render(); return; }
+  if (e.target.id === "imp-person-select"){ S.impPersonPick = e.target.value; render(); }
   if (e.target.id === "ann-flyer" && e.target.files[0]){
     annDraftSave(); S.annDraft.file = e.target.files[0];
     S.annDraft.preview = URL.createObjectURL(e.target.files[0]); render();
@@ -2377,13 +2430,13 @@ async function start(){
     S.me = await API.me();
     void AccessLog.recordLogin();
     const restoreImp = wantsImp();
-    if (restoreImp && canImpersonate()) impStart(restoreImp);
+    if (restoreImp && canImpersonate()) impRestore(restoreImp);
     if (OPEN_TEAMS) try {
       const saved = JSON.parse(sessionStorage.getItem('rci-serve:teams-return') || 'null');
       if (saved?.id === S.me.id) { Rosters.search = typeof saved.search === 'string' ? saved.search : ''; Rosters.open = new Set((Array.isArray(saved.open) ? saved.open : []).filter(k => ['leadership',...TEAMS.map(t=>t.key)].includes(k))); }
       sessionStorage.removeItem('rci-serve:teams-return');
     } catch (_) {}
-    void Rosters.loadHubAdmins().then(() => { if (restoreImp && !S.imp && canImpersonate()) impStart(restoreImp); render(); if (S.phase === 'ready') void Comm.load().then(() => { if (S.view === 'messages') render(); }); });
+    void Rosters.loadHubAdmins().then(() => { if (restoreImp && !S.imp && canImpersonate()) impRestore(restoreImp); render(); if (S.phase === 'ready') void Comm.load().then(() => { if (S.view === 'messages') render(); }); });
     const c = readCache();
     if (c && !S.imp && c.me.emails.some(x => S.me.emails.includes(x))){ S.teams = c.teams; S.church = { items: c.church || [], anns: c.churchAnns || [], error: "" }; S.phase = "ready"; render(); }   // show the saved picture right away
     API.photo().then(p => { if (S.imp) S.realPhoto = p; else S.photo = p; render(); });
