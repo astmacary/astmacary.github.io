@@ -378,7 +378,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "168";   // bump together with CACHE in sw.js
+const APP_VERSION = "169";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -2308,9 +2308,9 @@ function viewGiving(){
 const ATT_EXTRA = ["pastormarvin@therampchurch.com"];   // Ushers app admins added through its Make Admin button
 const canEnterAttendance = () => !!S.me && (DEMO || isEditorOf(TEAMS.find(t => t.key === "ushers")) || isEditorOf(CHURCH_CAL) || ATT_EXTRA.some(e => S.me.emails.includes(e)));
 Attendance.init({ g: (p, o) => API.g(p, o), render: () => { if (S.view === "attendance") render(); }, toast: (m, bad) => toast(m, bad), canEdit: canEnterAttendance,
-  // Today's services from the Church Calendar (the same rows Service Notes uses); "No Service" days have none.
-  services: () => (S.church.items || []).filter(i => i.date === todayKey()).some(i => lc(i.title) === "no service") ? []
-    : (S.church.items || []).filter(i => i.date === todayKey() && i.title).map(i => i.title.replace(/\s+service$/i, "").trim()) });
+  // Today's services from the Ushers schedule (the same rows the Ushers app uses), so both apps save the same service name.
+  services: () => { const k = todayKey(), rows = (S.teams.ushers?.items || []).filter(i => i.date === k);
+    return rows.some(i => lc(i.category) === "no service") ? [] : [...new Set(rows.map(i => String(i.category || "").trim()).filter(c => c && c !== "--" && !/^(absent|declined|no show|no response)$|birthday/i.test(c)))]; } });
 function viewAttendance(){ return `<div class="page-h"><button class="back" data-act="tab" data-view="home">${ICON.prev}Back</button></div><h1 class="page">Church Attendance</h1>${Attendance.view()}`; }
 function render(){
   const rosterSearchFocus = document.activeElement?.id === "roster-search" ? document.activeElement.selectionStart : null;
