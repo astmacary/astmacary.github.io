@@ -367,7 +367,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "151";   // bump together with CACHE in sw.js
+const APP_VERSION = "152";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1940,7 +1940,7 @@ function viewCalendar(){
   const m = S.cal.month || (S.cal.sel || todayKey()).slice(0, 7);
   S.cal.month = m;
   const [y, mo] = m.split("-").map(Number), first = new Date(y, mo-1, 1), daysIn = new Date(y, mo, 0).getDate();
-  const churchItems = off.has("church") ? [] : (S.church.items || []).map(e => ({ team: "church", date: e.date, title: e.title, id: e.id, rowId: e.rowId, notes: e.notes }));
+  const churchItems = off.has("church") ? [] : (S.church.items || []).map(e => ({ team: "church", date: e.date, title: e.title, id: e.id, rowId: e.rowId, notes: e.notes, flyer: e.flyer }));
   const minItems = mins.filter(x => !off.has(x.key)).flatMap(x => S.ministries[x.key].events);
   const items = myItems().filter(i => !off.has(i.team)).concat(churchItems, minItems);
   const by = {}; items.forEach(i => { (by[i.date] = by[i.date] || []).push(i); });
