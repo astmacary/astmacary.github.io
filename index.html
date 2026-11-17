@@ -367,7 +367,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "154";   // bump together with CACHE in sw.js
+const APP_VERSION = "155";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -387,7 +387,7 @@ const TEAMS = [
     editors: ["ashley.stmacary@therampchurch.com"] },
   { key: "greeters", name: "Greeters", full: "RCI Greeters", path: "/rci-greeters/", tl: "#9A4A12", td: "#F0A46C", icon: "smile",
     sitePath: "/sites/RCIGreeters", listName: "Greeters Schedule", announcementsListName: "Announcements",
-    editors: ["ashley.stmacary@therampchurch.com", "pastormarvin@therampchurch.com"] },
+    editors: ["ashley.stmacary@therampchurch.com", "pastormarvin@therampchurch.com", "shanelle.moss@therampchurch.com"] },
   { key: "ushers", name: "Ushers & Altar Workers", full: "RCI Ushers & Altar Workers", path: "/rci-ushers/", tl: "#1E5E43", td: "#6CC69C", icon: "door",
     sitePath: "/sites/RCIUsherDept.-UsherSchedule", listName: "Usher Schedule", announcementsListName: "Announcements",
     editors: ["delisa.rogers@therampchurch.com", "ashley.stmacary@therampchurch.com", "tammyrambler@gmail.com"] },
