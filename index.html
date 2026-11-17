@@ -367,7 +367,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "147";   // bump together with CACHE in sw.js
+const APP_VERSION = "148";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1678,6 +1678,13 @@ const PASTOR_EMAILS = {
 };
 const PASTOR_TITLES = ["pastor", "bishop", "elder", "minister", "apostle", "prophet", "evangelist", "dr", "dr.", "overseer", "mother", "lady", "first"];
 const pastorPicEmail = role => (PASTOR_EMAILS[role] || [])[0] || "";
+/* Any of the 4 pastors (Bishop Younger, Pastor Marvin, Pastor Westgate, Pastor Claude) — used to let all
+   pastors see Church announcements and Church events in Next 7 Days on Home, even those who aren't RCI
+   Serve administrators or team editors. This is read-only visibility; editing Church Calendar events
+   still requires isEditorOf(CHURCH_CAL) separately. */
+const PASTOR_ALL_EMAILS = [...new Set(Object.values(PASTOR_EMAILS).flat())].map(lc);
+const isAnyPastor = () => !!S.me?.emails?.some(e => PASTOR_ALL_EMAILS.includes(lc(e)));
+const canViewChurchItems = () => isAnyAdmin() || isAnyPastor();
 function isMePastor(role){
   if (!role || AB_GUESTS.includes(role) || !S.me) return false;
   const mine = (S.me.emails || []).map(lc), listed = (PASTOR_EMAILS[role] || []).map(lc);
@@ -1761,7 +1768,7 @@ function viewHome(){
   const mins = MINISTRIES.filter(m => canViewMinistry(m));
   if (mins.length) out += `<section class="sec"><h2>Your Ministries</h2><div class="tiles">${mins.map(m => `<a class="tile team" style="${tvars(m)}" href="${m.path}"><span class="t-ic">${ICON[m.icon]}</span><b>${esc(m.name)}</b><small>Fruit of Our Union</small></a>`).join("")}</div></section>`;
   {
-    const annFilterChips = [...(isAnyAdmin() ? [CHURCH_CAL] : []), ...myTeams()];   // Church is admin-only, not for everyone
+    const annFilterChips = [...(canViewChurchItems() ? [CHURCH_CAL] : []), ...myTeams()];   // Church is admin/pastor-only, not for everyone
     const anns = myAnnouncements().filter(a => !S.annOff.has(a.team));
     if (annFilterChips.length > 1 || anns.length || annSendTargets().length){
       out += `<section class="sec"><div class="sec-head"><h2>Announcements</h2>${annEditBtn()}</div>
@@ -1776,7 +1783,7 @@ function viewHome(){
       <p class="hint">Decline opens that team's app, where you confirm it.</p></section>`;
   }
   {
-    const admin = isAnyAdmin(), wk = addDays(todayKey(), 7);
+    const admin = canViewChurchItems(), wk = addDays(todayKey(), 7);
     const weekChips = [...(admin ? [CHURCH_CAL] : []), ...myTeams()];
     const mine = upcoming().filter(i => i.confirmed && i.date <= wk && i.date !== todayKey()).map(i => ({ ...i, kind: "item" }));
     const church = admin ? (S.church.items || []).filter(e => e.date >= todayKey() && e.date <= wk).map(e => ({ ...e, team: "church", kind: "church" })) : [];
@@ -2027,7 +2034,7 @@ function myAnnouncements(){
   const t = todayKey();
   const fromTeams = myTeams().flatMap(team => (S.teams[team.key]?.announcements || [])
     .filter(a => a.text && (!a.until || a.until > t)).map(a => ({ ...a, team: team.key })));
-  const fromChurch = isAnyAdmin() ? (S.church.anns || []).filter(a => a.text && (!a.until || a.until > t)) : [];
+  const fromChurch = canViewChurchItems() ? (S.church.anns || []).filter(a => a.text && (!a.until || a.until > t)) : [];
   return [...fromTeams, ...fromChurch]
     .sort((a, b) => (a.until || "9999-12-31").localeCompare(b.until || "9999-12-31") || a.team.localeCompare(b.team) || a.id - b.id);
 }
