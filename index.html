@@ -378,7 +378,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "170";   // bump together with CACHE in sw.js
+const APP_VERSION = "171";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1943,6 +1943,12 @@ function viewHome(){
   const mins = MINISTRIES.filter(m => canViewMinistry(m));
   if (mins.length) out += `<section class="sec"><h2>Your Ministries</h2><div class="tiles">${mins.map(m => `<a class="tile team" style="${tvars(m)}" href="${m.path}"><span class="t-ic">${ICON[m.icon]}</span><b>${esc(m.name)}</b><small>Fruit of Our Union</small></a>`).join("")}</div></section>`;
   {
+    const bdays = teamBirthdays(), t = todayKey();
+    const bdaysToday = bdays.filter(p => p.date === t);
+    if (bdaysToday.length) out += `<section class="sec"><h2>Birthdays</h2><div class="panel bday-panel"><p class="bday-msg">🎈 Happy Birthday! 🎂</p>
+        <div class="list">${bdaysToday.map(p => bdayRow(p, canWishBday(p))).join("")}</div></div></section>`;
+  }
+  {
     const annFilterChips = [...(canViewChurchItems() ? [CHURCH_CAL] : []), ...myTeams()];   // Church is admin/pastor-only, not for everyone
     const anns = myAnnouncements().filter(a => !S.annOff.has(a.team));
     if (annFilterChips.length > 1 || anns.length || annSendTargets().length){
@@ -1951,12 +1957,6 @@ function viewHome(){
         ${anns.length ? `<div class="list">${anns.map(a => annCard(a, false)).join("")}</div>` : `<div class="empty">No announcements yet.</div>`}
         ${S.annEdit ? `<div class="panel pad" style="margin-top:10px">${annForm()}</div>` : ""}</section>`;
     }
-  }
-  {
-    const bdays = teamBirthdays(), t = todayKey();
-    const bdaysToday = bdays.filter(p => p.date === t);
-    if (bdaysToday.length) out += `<section class="sec"><h2>Birthdays</h2><div class="panel bday-panel"><p class="bday-msg">🎈 Happy Birthday! 🎂</p>
-        <div class="list">${bdaysToday.map(p => bdayRow(p, canWishBday(p))).join("")}</div></div></section>`;
   }
   if (reqs.length){
     out += `<section class="sec"><h2>Needs Your Reply <span class="count">${reqs.length}</span></h2><div class="panel">${reqs.map(reqRow).join("")}</div>
