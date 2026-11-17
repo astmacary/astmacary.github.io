@@ -121,10 +121,10 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .panel.pad{padding:14px;display:flex;flex-direction:column;gap:8px}
 .bday-panel{padding:16px;display:flex;flex-direction:column;align-items:center;gap:14px;border:2px solid var(--accent);box-shadow:0 4px 20px -10px var(--accent)}
 .bday-msg{margin:0;font-family:var(--display);font-weight:700;font-size:24px;letter-spacing:.02em;color:var(--accent);text-align:center}
-.bday-panel .list{width:100%}
-.bday-panel .list{display:flex;flex-direction:column;gap:8px}
+.bday-panel .list{width:100%;display:flex;flex-direction:column;gap:8px}
 .bday-panel .row{border:1px solid var(--line);border-radius:var(--r);border-bottom:1px solid var(--line)}
 .row-wrap{display:block}
+.row-wrap textarea{width:100%;box-sizing:border-box}
 button.row{width:100%;background:none;border:none;border-bottom:1px solid var(--surface-2);font:inherit;text-align:left;appearance:none;cursor:default}
 button.row:disabled{opacity:1}
 button.row.row-clickable{cursor:pointer}
@@ -377,7 +377,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "163";   // bump together with CACHE in sw.js
+const APP_VERSION = "164";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
