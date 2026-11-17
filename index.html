@@ -119,9 +119,15 @@ h1.page{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.
 .count{min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:var(--stop);color:#FFFFFF;font-family:var(--body);font-size:12px;font-weight:700;letter-spacing:0;display:inline-flex;align-items:center;justify-content:center}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
 .panel.pad{padding:14px;display:flex;flex-direction:column;gap:8px}
-.bday-panel{padding:14px;display:flex;flex-direction:column;gap:12px;border-color:#D2B07C}
-.bday-msg{margin:0;font-family:var(--display);font-weight:700;font-size:18px}
+.bday-panel{padding:14px;display:flex;flex-direction:column;gap:12px;border:2px solid #D2B07C;box-shadow:0 4px 20px -10px #D2B07C}
+.bday-msg{margin:0;font-family:var(--display);font-weight:700;font-size:21px;color:#D2B07C}
 .bday-panel .list{display:flex;flex-direction:column;gap:8px}
+.bday-panel .row{border:1px solid var(--line);border-radius:var(--r);border-bottom:1px solid var(--line)}
+.row-wrap{display:block}
+button.row{width:100%;background:none;border:none;border-bottom:1px solid var(--surface-2);font:inherit;text-align:left;appearance:none;cursor:default}
+button.row:disabled{opacity:1}
+button.row.row-clickable{cursor:pointer}
+button.row.row-clickable:hover{background:var(--surface-2)}
 .muted{color:var(--muted)}
 .hint{font-size:13px;color:var(--muted);margin:0}
 
@@ -370,7 +376,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "159";   // bump together with CACHE in sw.js
+const APP_VERSION = "160";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -727,8 +733,22 @@ const API = {
         announcements = rows.map(r => ({ id: Number(r.id), created: r.createdDateTime || "", text: annText(r.fields.Announcements) || r.fields.Title || "", until: spDate(r.fields.ShowUntil), flyer: r.fields.Flyer || "" }));
       } catch(e){ console.warn(t.name + ": couldn't read Announcements.", e); }
     }
-    this.sites[t.key] = { siteId: site.id, listId, col, annListId };
+    // "Birthday Messages" — the same list each team app's own Birthday Wall reads and writes. Not every
+    // team has one yet (e.g. Worship & Arts), in which case this just stays null and the hub's own
+    // "tap to wish them a happy birthday" quietly doesn't offer that team's birthdays a wall to post to.
+    let messagesListId = null;
+    try { messagesListId = (await this.g(`${base}/${encodeURIComponent("Birthday Messages")}?$select=id`)).id; }
+    catch(e){ /* no such list on this team's site yet */ }
+    this.sites[t.key] = { siteId: site.id, listId, col, annListId, messagesListId };
     return { items: raw.flatMap(r => normalize(t, String(r.id), r.fields, emailById, col)), announcements };
+  },
+  /* Posts a birthday-wall message into a team's own "Birthday Messages" list — the exact same list that
+     team's own app's Birthday Wall reads from, so a message posted from the hub shows up there too. */
+  async postBirthdayMessage(team, person, text){
+    const meta = this.sites[team]; if (!meta?.messagesListId) throw new Error("That team doesn't have a Birthday Wall yet.");
+    const r = await this.g(`/sites/${meta.siteId}/lists/${meta.messagesListId}/items`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: { Title: person.name, ToId: Number(person.rowId), Message: text } }) });
+    return { id: String(r.id), toId: String(person.rowId), text, fromName: S.me.name, fromEmail: S.me.emails[0] || "", at: r.createdDateTime || new Date().toISOString() };
   },
   /* The church-wide calendar: a simple list (Title + one date column) on its own site, no membership to check.
      The date column's internal name varies by list, so it's found by type rather than guessed. */
@@ -1105,7 +1125,7 @@ const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams
             busy: new Set(), cal: { month: null, sel: null, off: loadFilter("cal"), form: null, busy: false }, hideInstall: false,
             annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"), payrollOff: loadFilter("payroll"), payrollDayOff: loadFilter("payroll-day"),
             notesSeen: loadNotesSeen(),
-            churchEventPage: null, calEventBack: "home" };
+            churchEventPage: null, calEventBack: "home", bdayWish: null, bdayWishBusy: false };
 /* Teams this signed-in person can "Send to": only the ones they actually admin. */
 const sendableTeams = () => TEAMS.filter(isEditorOf);
 /* Always pushed to on every Service Notes save, for any RCI Leader, regardless of their own
@@ -1778,16 +1798,44 @@ function teamBirthdays(){
     }
     for (const p of Rosters.data[key]){
       const d = nextBirthdayKey(p.birthday, t);
-      if (d && d <= wk) out.push({ name: p.name, team: key, date: d });
+      if (d && d <= wk) out.push({ name: p.name, team: key, date: d, rowId: p.rowId, email: p.email, emails: p.emails, userId: p.userId, userIds: p.userIds });
     }
   }
   return out;
 }
+/* Whether a birthday person can be wished happy birthday from the hub: they need a roster row on an
+   actual team (not Leadership — no team app/wall backs that), that team needs its "Birthday Messages"
+   list (API.sites[key].messagesListId resolves once that team's own schedule has loaded), and it's not
+   the viewer wishing themselves. */
+function canWishBday(p){
+  return p.team !== "leadership" && !!p.rowId && !!API.sites[p.team]?.messagesListId
+    && !Rosters.isSelf({ userId: p.userId, userIds: p.userIds, email: p.email, emails: p.emails });
+}
+const bdayWishKey = p => p.team + ":" + p.rowId;
+/* The optional "Post Message" compose box under a birthday row — same idea as a team app's Birthday Wall. */
+function bdayWishBox(p){
+  if (S.bdayWish !== bdayWishKey(p)) return "";
+  return `<form class="stack" data-act="bday-wish-form" data-team="${esc(p.team)}" data-row="${esc(p.rowId)}" data-name="${esc(p.name)}" style="padding:10px 0 2px">
+    <textarea id="bday-wish-text" class="panel notes" rows="2" maxlength="500" placeholder="Happy birthday! 🎉" required></textarea>
+    <div class="comm-edit-buttons">
+      <button class="btn primary" type="submit" ${S.bdayWishBusy ? "disabled" : ""}>${S.bdayWishBusy ? "Posting…" : "Post Message"}</button>
+      <button class="btn" type="button" data-act="bday-wish-cancel">Cancel</button>
+    </div></form>`;
+}
+/* A birthday row the viewer can tap to open the wish compose box, when canWishBday(p) allows it. */
+function bdayRow(p, wishable){
+  const open = S.bdayWish === bdayWishKey(p);
+  return `<div class="row-wrap">
+    <button type="button" class="row team${wishable ? " row-clickable" : ""}" style="${p.team === "leadership" ? "--tl:#8A6631;--td:#D2B07C" : tvars(teamOf(p.team))}" ${wishable ? `data-act="bday-wish-toggle" data-team="${esc(p.team)}" data-row="${esc(p.rowId)}" data-name="${esc(p.name)}" aria-expanded="${open}"` : "disabled"}>
+      <span class="bar"></span>
+      <div class="info"><span class="tlabel">${p.team === "leadership" ? "Leadership" : esc(teamOf(p.team).name)}</span><b>${esc(p.name)}</b><small>${wishable ? (open ? "Cancel" : "Tap to wish them a Happy Birthday 🎂") : "Birthday 🎂"}</small></div>
+    </button>
+    ${bdayWishBox(p)}
+  </div>`;
+}
 /* A birthday falling in the next 7 days, shown in that section with the same row layout as a team assignment. */
 function bdayWeekRow(i){
-  const t = i.team === "leadership" ? null : teamOf(i.team);
-  return `<div class="row team" style="${t ? tvars(t) : "--tl:#8A6631;--td:#D2B07C"}"><span class="bar"></span>
-    <div class="info"><span class="tlabel">🎂 ${esc(t ? t.name : "Leadership")}</span><b>${esc(i.name)}</b><small>Birthday</small></div></div>`;
+  return bdayRow(i, canWishBday(i));
 }
 /* Balloons: phones only, once per day per device, skipped for reduced motion — same idea as the team apps'
    confetti, but balloons for the hub. Rosters for the viewer's birthday scope are loaded (if not cached)
@@ -1864,9 +1912,8 @@ function viewHome(){
   {
     const bdays = teamBirthdays(), t = todayKey();
     const bdaysToday = bdays.filter(p => p.date === t);
-    if (bdaysToday.length) out += `<section class="sec"><h2>Birthdays</h2>
-      <div class="panel bday-panel"><p class="bday-msg">🎈 Happy Birthday! 🎂</p>
-        <div class="list">${bdaysToday.map(p => { const tm = p.team === "leadership" ? null : teamOf(p.team); return `<div class="row team" style="${tm ? tvars(tm) : "--tl:#8A6631;--td:#D2B07C"}"><span class="bar"></span><div class="info"><span class="tlabel">${tm ? esc(tm.name) : "Leadership"}</span><b>${esc(p.name)}</b><small>Happy Birthday!</small></div></div>`; }).join("")}</div></div></section>`;
+    if (bdaysToday.length) out += `<section class="sec"><h2>Birthdays</h2><div class="panel bday-panel"><p class="bday-msg">🎈 Happy Birthday! 🎂</p>
+        <div class="list">${bdaysToday.map(p => bdayRow(p, canWishBday(p))).join("")}</div></div></section>`;
   }
   if (reqs.length){
     out += `<section class="sec"><h2>Needs Your Reply <span class="count">${reqs.length}</span></h2><div class="panel">${reqs.map(reqRow).join("")}</div>
@@ -2313,6 +2360,8 @@ document.addEventListener("click", async e => {
   else if (act === "signout"){ if (!S.imp) { try { await Push.disable(); } catch (e) { toast(e.message, true); return; } } try { sessionStorage.removeItem(IMP_KEY); } catch(_){} if (S.imp){ impStop(); return; } Rosters.reset(); AnnShare.sourceId=''; AnnShare.snapshot=null; AnnShare.selected.clear(); AnnShare.sent.clear(); Comm.data = {}; Comm.meta = {}; Comm.drafts = {}; Comm.edit = null; Comm.forward = null; Comm.demoNotes = {}; Comm.meId = ''; Comm.identityKey = ''; try { localStorage.removeItem("rci-serve:cache"); localStorage.removeItem("rci-serve:state"); } catch(_){} API.signOut(); }
   else if (act === "retry") location.reload();
   else if (act === "refresh") loadAll();
+  else if (act === "bday-wish-toggle") { const key = b.dataset.team + ":" + b.dataset.row; S.bdayWish = S.bdayWish === key ? null : key; render(); }
+  else if (act === "bday-wish-cancel") { S.bdayWish = null; render(); }
   else if (act === "accept") accept(b.dataset.id);
   else if (act === "decline-ask"){ S.confirmDecline = b.dataset.id; render(); }
   else if (act === "decline-keep"){ S.confirmDecline = null; render(); }
@@ -2439,6 +2488,19 @@ document.addEventListener("change", e => {
   }
 });
 document.addEventListener("submit", async e => {
+  if (e.target.dataset.act === "bday-wish-form"){
+    e.preventDefault();
+    const text = $("#bday-wish-text")?.value.trim();
+    if (!text) return;
+    const { team, row, name } = e.target.dataset;
+    S.bdayWishBusy = true; render();
+    try {
+      await API.postBirthdayMessage(team, { rowId: row, name }, text);
+      S.bdayWish = null; toast("Birthday message posted 🎉");
+    } catch(err){ toast(err.message || "Couldn't post that message.", true); }
+    S.bdayWishBusy = false; render();
+    return;
+  }
   if (e.target.id === "abtForm"){ e.preventDefault(); abtSubmit(); return; }
   if (e.target.id !== "annForm") return;
   e.preventDefault();
