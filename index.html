@@ -380,7 +380,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "173";   // bump together with CACHE in sw.js
+const APP_VERSION = "174";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -758,6 +758,56 @@ const API = {
       body: JSON.stringify({ fields: { Title: person.name, ToId: toId, Message: text } }) });
     return { id: String(r.id), toId: String(toId), text, fromName: S.me.name, fromEmail: S.me.emails[0] || "", at: r.createdDateTime || new Date().toISOString() };
   },
+  pastorsCache: null,
+  /* The 4 pastors' roster rows (Title/Email/Photo) from the hub's own "Pastors" list, keyed by the
+     display name used throughout (PASTOR_EMAILS' keys: "Bishop Younger", "Pastor Marvin", …). Loaded
+     once per session; an admin's photo edit updates the cached row in place instead of reloading. */
+  async loadPastors(){
+    if (this.pastorsCache) return this.pastorsCache;
+    await this.churchMeta();
+    const meta = this.sites.church; if (!meta?.pastorsListId) return (this.pastorsCache = {});
+    const raw = await this.all(`/sites/${meta.siteId}/lists/${meta.pastorsListId}/items?$expand=fields($select=Title,Email,Photo)&$top=200`);
+    const out = {};
+    for (const r of raw) out[r.fields.Title] = { rowId: String(r.id), name: r.fields.Title, email: r.fields.Email || "", photoRaw: r.fields.Photo || "" };
+    return (this.pastorsCache = out);
+  },
+  /* Uploads a new photo for a pastor's roster row — same technique each team app's own roster photo
+     upload uses: the file goes into the site's Site Assets library, and the row's Photo column is set
+     to a small JSON pointer at it (read back via API.pastorPhoto below). */
+  async uploadPastorPhoto(row, blob){
+    const meta = this.sites.church;
+    const drives = await this.g(`/sites/${meta.siteId}/drives?$select=id,name,webUrl`);
+    const assets = drives.value.find(d => /\/SiteAssets$/i.test(d.webUrl)) || drives.value.find(d => /site assets/i.test(d.name))
+      || await this.g(`/sites/${meta.siteId}/lists/${encodeURIComponent("Site Assets")}/drive?$select=id,name,webUrl`).catch(() => null);
+    if (!assets) throw new Error("Couldn't find the site's Site Assets library.");
+    const fileName = `pastor_${row.rowId}_${Date.now()}.jpg`;
+    const up = await this.g(`/drives/${assets.id}/root:/Lists/${meta.pastorsListId}/${fileName}:/content`, {
+      method: "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob });
+    const u = new URL(up.webUrl);
+    const raw = JSON.stringify({ type: "thumbnail", fileName, serverUrl: u.origin, serverRelativeUrl: decodeURIComponent(u.pathname) });
+    await this.g(`/sites/${meta.siteId}/lists/${meta.pastorsListId}/items/${row.rowId}/fields`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ Photo: raw }) });
+    return raw;
+  },
+  /* A pastor's photo: their roster row's own uploaded photo first (via SharePoint's own API — Graph can't
+     read Site Assets files this way), falling back to their Microsoft 365 account photo like before. */
+  pastorPhotoCache: new Map(),
+  pastorPhoto(row){
+    const k = (row?.rowId || "") + "|" + (row?.photoRaw || "") + "|" + (row?.email || "");
+    if (!this.pastorPhotoCache.has(k)) this.pastorPhotoCache.set(k, (async () => {
+      if (row?.photoRaw){
+        try {
+          const p = JSON.parse(row.photoRaw), q = v => encodeURIComponent(String(v).replace(/'/g, "''"));
+          if (p.serverRelativeUrl) return await this.spBlob(CHURCH_CAL, `GetFileByServerRelativeUrl('${q(p.serverRelativeUrl)}')/$value`);
+        } catch(e){}
+      }
+      if (row?.email){
+        try { const res = await this.g(`/users/${encodeURIComponent(row.email)}/photo/$value`, { raw: true }); return URL.createObjectURL(await res.blob()); }
+        catch(e){}
+      }
+      return null;
+    })());
+    return this.pastorPhotoCache.get(k);
+  },
   /* The church-wide calendar: a simple list (Title + one date column) on its own site, no membership to check.
      The date column's internal name varies by list, so it's found by type rather than guessed. */
   async churchMeta(){
@@ -778,7 +828,12 @@ const API = {
     let messagesListId = null;
     try { messagesListId = (await this.g(`${base}/${encodeURIComponent("Leadership Birthday Messages")}?$select=id`)).id; }
     catch(e){ /* no such list yet */ }
-    this.sites.church = { siteId: site.id, annListId: listId, messagesListId };   // lets API.flyer(CHURCH_CAL, a) resolve Church flyers the same way team flyers do
+    // "Pastors" — the hub's own roster for the 4 pastors (Bishop Younger, Pastor Marvin, Pastor Westgate,
+    // Pastor Claude), so an admin can set a photo for them without touching their Microsoft 365 account.
+    let pastorsListId = null;
+    try { pastorsListId = (await this.g(`${base}/${encodeURIComponent("Pastors")}?$select=id`)).id; }
+    catch(e){ /* no such list yet */ }
+    this.sites.church = { siteId: site.id, annListId: listId, messagesListId, pastorsListId };   // lets API.flyer(CHURCH_CAL, a) resolve Church flyers the same way team flyers do
     return (this._churchMeta = { base, listId, dateCol: dateCol.name, hasNotes, hasServiceNotes, hasAnn, hasUntil, hasFlyer });
   },
   /* Rows on the Church Calendar list come in three flavors: plain calendar events (just Title + date),
@@ -1138,7 +1193,7 @@ const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams
             busy: new Set(), cal: { month: null, sel: null, off: loadFilter("cal"), form: null, busy: false }, hideInstall: false,
             annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"), payrollOff: loadFilter("payroll"), payrollDayOff: loadFilter("payroll-day"),
             notesSeen: loadNotesSeen(),
-            churchEventPage: null, calEventBack: "home", bdayWish: null, bdayWishBusy: false };
+            churchEventPage: null, calEventBack: "home", bdayWish: null, bdayWishBusy: false, pastorPhotoBusy: null };
 /* Teams this signed-in person can "Send to": only the ones they actually admin. */
 const sendableTeams = () => TEAMS.filter(isEditorOf);
 /* Always pushed to on every Service Notes save, for any RCI Leader, regardless of their own
@@ -1712,6 +1767,17 @@ function hydrateUserPics(){
     USER_PICS.get(e).then(url => { if (url && el.isConnected && !el.querySelector("img")) el.insertAdjacentHTML("beforeend", `<img alt="" src="${url}">`); });
   });
 }
+/* A pastor's photo, by their display name (PASTOR_EMAILS' keys). Prefers the uploaded Pastors-roster
+   photo over their Microsoft 365 account photo — see API.pastorPhoto. */
+const pastorPic = (role, name) => `<span class="av upic" data-pastor="${esc(role || "")}" aria-hidden="true">${esc(initials(name || role || ""))}</span>`;
+function hydratePastorPics(){
+  document.querySelectorAll("[data-pastor]").forEach(async el => {
+    const role = el.dataset.pastor; if (!role || DEMO || el.querySelector("img")) return;
+    const pastors = await API.loadPastors();
+    const url = await API.pastorPhoto(pastors[role]);
+    if (url && el.isConnected && !el.querySelector("img")) el.insertAdjacentHTML("beforeend", `<img alt="" src="${url}">`);
+  });
+}
 /* Armor Bearers: Assigned To holds the pastor (or "Guest Preacher"/"Guest Singer" + Guest Name);
    Full Name is the Armor Bearer serving them. */
 const AB_GUESTS = ["Guest Preacher", "Guest Singer"];
@@ -1785,7 +1851,7 @@ function todayHero(){
     <div class="today-h"><span class="today-dot" aria-hidden="true"></span>You're Serving Today</div>
     ${list.map(i => { const tm = teamOf(i.team); return `<div class="today-item">
       <span class="tlabel team" style="${tvars(tm)}">${esc(tm.name)}</span>
-      ${i.team === "armorbearers" ? `<div class="today-who">${userPic(pastorPicEmail(i.role), AB_GUESTS.includes(i.role) ? (i.guestName || i.role) : i.role)}<div class="today-role">${esc(abRole(i) || "Serving")}</div></div>
+      ${i.team === "armorbearers" ? `<div class="today-who">${AB_GUESTS.includes(i.role) ? userPic(pastorPicEmail(i.role), i.guestName || i.role) : pastorPic(i.role, i.role)}<div class="today-role">${esc(abRole(i) || "Serving")}</div></div>
       <div class="today-meta">${esc(i.category || "")} · Call Time <b>${esc(i.call || "TBD")}</b></div>
       ${i.instructions ? `<div class="today-meta" style="white-space:pre-line">${esc(i.instructions)}</div>` : ""}
       ${S.confirmDecline === i.id ? `<div class="confirm-row">Can't make it to ${esc(abRole(i))} today?
@@ -2268,7 +2334,23 @@ function viewAnnouncements(){
     <p class="hint">Announcements are posted and edited in each team's app.</p>`;
 }
 
-function viewTeams(){ return Rosters.view(); }
+function viewTeams(){ return (isEditorOf(CHURCH_CAL) ? pastorsAdminSection() : "") + Rosters.view(); }
+/* Admin-only (Ashley & Pastor Marvin): each pastor's photo, editable here. The photo shown throughout
+   the app (Armor Bearers' "Today" card, etc.) is this roster photo first, their Microsoft 365 account
+   photo otherwise — see API.pastorPhoto. */
+function pastorsAdminSection(){
+  if (!API.pastorsCache) { Promise.resolve(API.loadPastors()).then(() => { if (S.view === "teams") render(); }); return ""; }
+  const pastors = API.pastorsCache, names = Object.keys(PASTOR_EMAILS);
+  if (!names.some(n => pastors[n])) return "";   // list not set up yet — nothing to show
+  return `<section class="sec"><h2>Pastor Photos</h2><div class="panel" style="padding:14px;display:flex;flex-direction:column;gap:10px">
+    ${names.filter(n => pastors[n]).map(n => { const row = pastors[n]; return `<div class="row-wrap"><div class="row team" style="--tl:var(--accent);--td:var(--accent)">
+      <span class="bar"></span>${pastorPic(n, n)}
+      <div class="info"><b>${esc(n)}</b><small>${esc(row.email || "")}</small></div>
+      <label class="btn" style="margin-left:auto;flex:none" for="pastor-photo-${esc(row.rowId)}">${S.pastorPhotoBusy === row.rowId ? "Uploading…" : "Change Photo"}</label>
+      <input id="pastor-photo-${esc(row.rowId)}" type="file" accept="image/*" data-pastor-row="${esc(n)}" hidden>
+    </div></div>`; }).join("")}
+  </div></section>`;
+}
 
 function viewProfile(){
   const profile = Rosters.ownProfile();
@@ -2343,7 +2425,7 @@ function render(){
     `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${S.imp && S.view !== "profile" ? impBanner() : ""}${body}</div></main>` + tabs + AnnShare.modal();
   if (rosterSearchFocus !== null && S.view === "teams") { const input = document.getElementById("roster-search"); input?.focus({preventScroll:true}); input?.setSelectionRange(rosterSearchFocus,rosterSearchFocus); }
-  hydrateFlyers(); hydrateUserPics(); if (["teams","leader-about"].includes(S.view)) Rosters.hydrate();
+  hydrateFlyers(); hydrateUserPics(); hydratePastorPics(); if (["teams","leader-about"].includes(S.view)) Rosters.hydrate();
 }
 function hydrateFlyers(){
   document.querySelectorAll("[data-flyer]").forEach(async el => {
@@ -2543,6 +2625,19 @@ document.addEventListener("change", e => {
   if (e.target.id === "ann-flyer" && e.target.files[0]){
     annDraftSave(); S.annDraft.file = e.target.files[0];
     S.annDraft.preview = URL.createObjectURL(e.target.files[0]); render();
+  }
+  if (e.target.dataset.pastorRow && e.target.files[0]){
+    (async () => {
+      const name = e.target.dataset.pastorRow, row = API.pastorsCache?.[name]; if (!row) return;
+      S.pastorPhotoBusy = row.rowId; render();
+      try {
+        const blob = await resizeImage(e.target.files[0]);
+        row.photoRaw = await API.uploadPastorPhoto(row, blob);
+        API.pastorPhotoCache.clear();
+        toast("Photo updated");
+      } catch(err){ toast("Couldn't update that photo. " + err.message, true); }
+      S.pastorPhotoBusy = null; render();
+    })();
   }
 });
 document.addEventListener("submit", async e => {
