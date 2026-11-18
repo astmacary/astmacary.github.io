@@ -436,7 +436,11 @@ const Rosters = {
     document.querySelectorAll('[data-roster-photo]').forEach(async el => {
       const [key, index] = el.dataset.rosterPhoto.split(':');
       const p = this.data[key]?.[Number(index)]; if (!p) return;
-      const url = await this.photo(p);
+      // Pastors (PASTOR_EMAILS) show their Pastors-roster photo here too, same as their own About
+      // page — see pastorRoleFor / API.pastorPhoto in index.html.
+      const pastorRole = key === 'leadership' ? pastorRoleFor(p.email) : null;
+      const prow = pastorRole ? (API.pastorsCache || await API.loadPastors())[pastorRole] : null;
+      const url = prow ? await API.pastorPhoto(prow) : await this.photo(p);
       if (!url || !el.isConnected) return;
       const img = document.createElement('img'); img.src = url; img.alt = ''; el.replaceChildren(img);
     });
