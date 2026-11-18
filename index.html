@@ -1633,7 +1633,7 @@ function servedRow(i){
   const t = teamOf("armorbearers"), ph = abPhone(i);
   return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
     <div class="info"><span class="tlabel">Your Armor Bearer</span><span class="served-who">${userPic(i.email, i.fullName)}<b>${esc(i.fullName)}</b></span><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.svcTime ? " · Service " + esc(i.svcTime) : ""}</small></div>
-    <div class="row-right">${ph ? `<a class="iconbtn" href="tel:${esc(ph)}" aria-label="Call ${esc(i.fullName)}" title="Call">${ICON.phone || "📞"}</a><a class="iconbtn" href="sms:${esc(ph)}" aria-label="Text ${esc(i.fullName)}" title="Text">${ICON.chat || "💬"}</a>` : ""}</div></div>`;
+    <div class="row-right">${i.confirmed ? "" : `<span class="pill warn">WAITING</span>`}${ph ? `<a class="iconbtn" href="tel:${esc(ph)}" aria-label="Call ${esc(i.fullName)}" title="Call">${ICON.phone || "📞"}</a><a class="iconbtn" href="sms:${esc(ph)}" aria-label="Text ${esc(i.fullName)}" title="Text">${ICON.chat || "💬"}</a>` : ""}</div></div>`;
 }
 function weekCue(i){
   const t = teamOf(i.team), today = i.date === todayKey();
@@ -2037,7 +2037,7 @@ function viewHome(){
     const church = admin ? (S.church.items || []).filter(e => e.date >= todayKey() && e.date <= wk).map(e => ({ ...e, team: "church", kind: "church" })) : [];
     const bdayWeek = teamBirthdays().filter(p => p.date !== todayKey()).map(p => ({ date: p.date, team: p.team, name: p.name, kind: "bday" }));
     // Pastors: who is serving them (their Armor Bearer) on each confirmed date this week.
-    const served = (S.teams.armorbearers?.items || []).filter(i => i.kind === "assign" && i.fullName && i.confirmed && i.date > todayKey() && i.date <= wk && isMePastor(i.role)).map(i => ({ ...i, team: "armorbearers", kind: "served" }));
+    const served = (S.teams.armorbearers?.items || []).filter(i => i.kind === "assign" && i.fullName && (i.confirmed || i.pending) && i.date > todayKey() && i.date <= wk && isMePastor(i.role)).map(i => ({ ...i, team: "armorbearers", kind: "served" }));
     const week = [...mine, ...served, ...church, ...bdayWeek].filter(i => !S.weekOff.has(i.team)).sort((a, b) => a.date.localeCompare(b.date) || a.team.localeCompare(b.team));
     const byDate = {}; week.forEach(i => { (byDate[i.date] = byDate[i.date] || []).push(i); });
     const grouped = Object.keys(byDate).sort().map(d => `<div class="day-sep">${esc(fmtDay(d))}</div><div class="panel">${byDate[d].map(i => i.kind === "church" ? churchRow(i, isEditorOf(CHURCH_CAL)) : i.kind === "bday" ? bdayWeekRow(i) : i.kind === "served" ? servedRow(i) : weekCue(i)).join("")}</div>`).join("");
