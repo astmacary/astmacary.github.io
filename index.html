@@ -203,6 +203,8 @@ button.row.row-clickable:hover{background:var(--surface-2)}
 .today-who{display:flex;align-items:center;gap:12px}
 .pastor-hero .today-who .av,.pastor-hero .today-who img{width:44px!important;height:44px!important;font-size:16px}
 .pastor-hero .today-role{font-size:21px}
+.served-who{display:flex;align-items:center;gap:8px}
+.served-who .av{width:28px!important;height:28px!important;font-size:11px}
 .pastor-ab{display:flex;flex-direction:column;gap:6px;min-width:0}
 .ab-contact{display:flex;gap:8px;flex-wrap:wrap}
 .ab-contact .btn{padding:6px 14px;min-height:34px;border-color:var(--accent);color:var(--accent);font-weight:700;gap:6px}
@@ -378,7 +380,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "172";   // bump together with CACHE in sw.js
+const APP_VERSION = "173";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1571,6 +1573,13 @@ function itemRow(i, showDate=true){
 }
 /* Next 7 Days row — same row layout as the Calendar page's day panel (bar + info + status pill + icon-button
    row-acts), linking Notes/Team/Decline out to that team's own app since that's where those views live. */
+/* Next 7 Days row for a pastor: the Armor Bearer serving them that day, with Call/Text. */
+function servedRow(i){
+  const t = teamOf("armorbearers"), ph = abPhone(i);
+  return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
+    <div class="info"><span class="tlabel">Your Armor Bearer</span><span class="served-who">${userPic(i.email, i.fullName)}<b>${esc(i.fullName)}</b></span><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.svcTime ? " · Service " + esc(i.svcTime) : ""}</small></div>
+    <div class="row-right">${ph ? `<a class="iconbtn" href="tel:${esc(ph)}" aria-label="Call ${esc(i.fullName)}" title="Call">${ICON.phone || "📞"}</a><a class="iconbtn" href="sms:${esc(ph)}" aria-label="Text ${esc(i.fullName)}" title="Text">${ICON.chat || "💬"}</a>` : ""}</div></div>`;
+}
 function weekCue(i){
   const t = teamOf(i.team), today = i.date === todayKey();
   return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
@@ -1961,9 +1970,11 @@ function viewHome(){
     const mine = upcoming().filter(i => i.confirmed && i.date <= wk && i.date !== todayKey()).map(i => ({ ...i, kind: "item" }));
     const church = admin ? (S.church.items || []).filter(e => e.date >= todayKey() && e.date <= wk).map(e => ({ ...e, team: "church", kind: "church" })) : [];
     const bdayWeek = teamBirthdays().filter(p => p.date !== todayKey()).map(p => ({ date: p.date, team: p.team, name: p.name, kind: "bday" }));
-    const week = [...mine, ...church, ...bdayWeek].filter(i => !S.weekOff.has(i.team)).sort((a, b) => a.date.localeCompare(b.date) || a.team.localeCompare(b.team));
+    // Pastors: who is serving them (their Armor Bearer) on each confirmed date this week.
+    const served = (S.teams.armorbearers?.items || []).filter(i => i.kind === "assign" && i.fullName && i.confirmed && i.date > todayKey() && i.date <= wk && isMePastor(i.role)).map(i => ({ ...i, team: "armorbearers", kind: "served" }));
+    const week = [...mine, ...served, ...church, ...bdayWeek].filter(i => !S.weekOff.has(i.team)).sort((a, b) => a.date.localeCompare(b.date) || a.team.localeCompare(b.team));
     const byDate = {}; week.forEach(i => { (byDate[i.date] = byDate[i.date] || []).push(i); });
-    const grouped = Object.keys(byDate).sort().map(d => `<div class="day-sep">${esc(fmtDay(d))}</div><div class="panel">${byDate[d].map(i => i.kind === "church" ? churchRow(i, isEditorOf(CHURCH_CAL)) : i.kind === "bday" ? bdayWeekRow(i) : weekCue(i)).join("")}</div>`).join("");
+    const grouped = Object.keys(byDate).sort().map(d => `<div class="day-sep">${esc(fmtDay(d))}</div><div class="panel">${byDate[d].map(i => i.kind === "church" ? churchRow(i, isEditorOf(CHURCH_CAL)) : i.kind === "bday" ? bdayWeekRow(i) : i.kind === "served" ? servedRow(i) : weekCue(i)).join("")}</div>`).join("");
     out += `<section class="sec"><h2>Next 7 Days</h2>
       ${weekChips.length > 1 ? `<div class="chips" role="group" aria-label="Show next 7 days">${weekChips.map(t => `<button class="chip team team-pill${S.weekOff.has(t.key) ? " off" : ""}" style="${tvars(t)}" data-act="week-filter" data-k="${t.key}" aria-pressed="${!S.weekOff.has(t.key)}"><span class="dot"></span>${esc(t.name)}</button>`).join("")}</div>` : ""}
       ${week.length ? `<div class="list">${grouped}</div>` : `<div class="empty">${reqs.length ? "Nothing confirmed this week yet." : "Nothing on your schedule this week."}</div>`}</section>`;
