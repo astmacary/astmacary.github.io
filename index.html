@@ -368,7 +368,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
 <script src="/communications.js?v=108"></script>
 <script src="/push-config.js?v=95"></script>
 <script src="/push-client.js?v=96"></script>
-<script src="/rosters.js?v=74"></script>
+<script src="/rosters.js?v=75"></script>
 <script src="/announcement-sharing.js?v=47"></script>
 <script src="/attendance.js?v=4"></script>
 <script>
@@ -380,7 +380,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "174";   // bump together with CACHE in sw.js
+const APP_VERSION = "175";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1633,7 +1633,7 @@ function servedRow(i){
   const t = teamOf("armorbearers"), ph = abPhone(i);
   return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
     <div class="info"><span class="tlabel">Your Armor Bearer</span><span class="served-who">${userPic(i.email, i.fullName)}<b>${esc(i.fullName)}</b></span><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.svcTime ? " · Service " + esc(i.svcTime) : ""}</small></div>
-    <div class="row-right">${i.confirmed ? "" : `<span class="pill warn">WAITING</span>`}${ph ? `<a class="iconbtn" href="tel:${esc(ph)}" aria-label="Call ${esc(i.fullName)}" title="Call">${ICON.phone || "📞"}</a><a class="iconbtn" href="sms:${esc(ph)}" aria-label="Text ${esc(i.fullName)}" title="Text">${ICON.chat || "💬"}</a>` : ""}</div></div>`;
+    <div class="row-right">${i.confirmed ? "" : `<span class="pill warn">NOT CONFIRMED</span>`}${ph ? `<a class="iconbtn" href="tel:${esc(ph)}" aria-label="Call ${esc(i.fullName)}" title="Call">${ICON.phone || "📞"}</a><a class="iconbtn" href="sms:${esc(ph)}" aria-label="Text ${esc(i.fullName)}" title="Text">${ICON.chat || "💬"}</a>` : ""}</div></div>`;
 }
 function weekCue(i){
   const t = teamOf(i.team), today = i.date === todayKey();
@@ -2334,23 +2334,12 @@ function viewAnnouncements(){
     <p class="hint">Announcements are posted and edited in each team's app.</p>`;
 }
 
-function viewTeams(){ return (isEditorOf(CHURCH_CAL) ? pastorsAdminSection() : "") + Rosters.view(); }
-/* Admin-only (Ashley & Pastor Marvin): each pastor's photo, editable here. The photo shown throughout
-   the app (Armor Bearers' "Today" card, etc.) is this roster photo first, their Microsoft 365 account
-   photo otherwise — see API.pastorPhoto. */
-function pastorsAdminSection(){
-  if (!API.pastorsCache) { Promise.resolve(API.loadPastors()).then(() => { if (S.view === "teams") render(); }); return ""; }
-  const pastors = API.pastorsCache, names = Object.keys(PASTOR_EMAILS);
-  if (!names.some(n => pastors[n])) return "";   // list not set up yet — nothing to show
-  return `<section class="sec"><h2>Pastor Photos</h2><div class="panel" style="padding:14px;display:flex;flex-direction:column;gap:10px">
-    ${names.filter(n => pastors[n]).map(n => { const row = pastors[n]; return `<div class="row-wrap"><div class="row team" style="--tl:var(--accent);--td:var(--accent)">
-      <span class="bar"></span>${pastorPic(n, n)}
-      <div class="info"><b>${esc(n)}</b><small>${esc(row.email || "")}</small></div>
-      <label class="btn" style="margin-left:auto;flex:none" for="pastor-photo-${esc(row.rowId)}">${S.pastorPhotoBusy === row.rowId ? "Uploading…" : "Change Photo"}</label>
-      <input id="pastor-photo-${esc(row.rowId)}" type="file" accept="image/*" data-pastor-row="${esc(n)}" hidden>
-    </div></div>`; }).join("")}
-  </div></section>`;
-}
+function viewTeams(){ return Rosters.view(); }
+/* Which PASTOR_EMAILS role key (if any) a roster person's email belongs to — used on their own
+   Leadership "About" page to show the Pastors-roster photo and, for themself or Ashley, a
+   Change Photo control. See API.pastorPhoto / API.uploadPastorPhoto. */
+const pastorRoleFor = email => Object.keys(PASTOR_EMAILS).find(k => PASTOR_EMAILS[k].map(lc).includes(lc(email || "")));
+const ASHLEY_EMAIL = "ashley.stmacary@therampchurch.com";
 
 function viewProfile(){
   const profile = Rosters.ownProfile();
@@ -2629,6 +2618,8 @@ document.addEventListener("change", e => {
   if (e.target.dataset.pastorRow && e.target.files[0]){
     (async () => {
       const name = e.target.dataset.pastorRow, row = API.pastorsCache?.[name]; if (!row) return;
+      const mine = (S.me?.emails || []).map(lc);
+      if (!mine.includes(lc(ASHLEY_EMAIL)) && !mine.includes(lc(row.email || "")) && !(PASTOR_EMAILS[name] || []).map(lc).some(e => mine.includes(e))) return;
       S.pastorPhotoBusy = row.rowId; render();
       try {
         const blob = await resizeImage(e.target.files[0]);
