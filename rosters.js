@@ -31,6 +31,7 @@ const Rosters = {
   },
   leadershipTags: {
     'shanelle.moss@therampchurch.com': 'Greeters Leader',
+    'shanellemoss87@gmail.com': 'Greeters Leader',
     'ashley.stmacary@therampchurch.com': 'Production Director',
     'cassie.carter.inc@gmail.com': 'Worship & Arts Director',
     'lee.gilbert@therampchurch.com': 'Security Leader',
