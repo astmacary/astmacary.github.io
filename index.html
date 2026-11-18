@@ -380,7 +380,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "181";   // bump together with CACHE in sw.js
+const APP_VERSION = "182";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -681,6 +681,7 @@ const API = {
         content.forEach(r => {
           const f = r.fields || {}; if (lc(f.Kind || "") !== "gathering" || !f.PromptDate) return;
           let extra = {}; try { extra = JSON.parse(f.AppData || "{}") || {}; } catch(_){}
+          if (extra.branch) return; // Branch-only dates stay inside the Marriage app
           const start = String(f.PromptDate).slice(0, 10), end = ymd.test(String(extra.end || "")) && extra.end > start ? extra.end : start;
           for (let d = start; d <= end; d = addDays(d, 1)) events.push({ team: m.key, date: d, title: String(f.Title || "Marriage gathering"), when: extra.when || "" });
         });
