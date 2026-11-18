@@ -1578,7 +1578,7 @@ function servedRow(i){
   const t = teamOf("armorbearers"), ph = abPhone(i);
   return `<div class="row team" style="${tvars(t)}"><span class="bar"></span>
     <div class="info"><span class="tlabel">Your Armor Bearer</span><span class="served-who">${userPic(i.email, i.fullName)}<b>${esc(i.fullName)}</b></span><small>${esc(fmtShort(i.date))}${i.category ? " · " + esc(i.category) : ""}${i.svcTime ? " · Service " + esc(i.svcTime) : ""}</small></div>
-    <div class="row-right">${i.confirmed ? "" : `<span class="pill neutral">Waiting for reply</span>`}${ph ? `<a class="iconbtn" href="tel:${esc(ph)}" aria-label="Call ${esc(i.fullName)}" title="Call">${ICON.phone || "📞"}</a><a class="iconbtn" href="sms:${esc(ph)}" aria-label="Text ${esc(i.fullName)}" title="Text">${ICON.chat || "💬"}</a>` : ""}</div></div>`;
+    <div class="row-right">${i.confirmed ? "" : `<span class="pill warn">WAITING</span>`}${ph ? `<a class="iconbtn" href="tel:${esc(ph)}" aria-label="Call ${esc(i.fullName)}" title="Call">${ICON.phone || "📞"}</a><a class="iconbtn" href="sms:${esc(ph)}" aria-label="Text ${esc(i.fullName)}" title="Text">${ICON.chat || "💬"}</a>` : ""}</div></div>`;
 }
 function weekCue(i){
   const t = teamOf(i.team), today = i.date === todayKey();
