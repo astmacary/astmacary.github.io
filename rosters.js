@@ -37,7 +37,8 @@ const Rosters = {
     'gilbertwilfred7@gmail.com': 'Security Leader',
     'tammyrambler@gmail.com': 'Ushers & Altar Workers Leader',
     'delisa.rogers@therampchurch.com': 'Ushers & Altar Workers Leader',
-    'denise.benton@therampchurch.com': 'Armor Bearers Leader'
+    'denise.benton@therampchurch.com': 'Armor Bearers Leader',
+    'ddbenton27@gmail.com': 'Armor Bearers Leader'
   },
   leadershipAccountTags: {
     '48bd5b24-3a7e-4ded-9c9b-12eea8616241': 'Production Coordinator'
