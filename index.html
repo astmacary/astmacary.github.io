@@ -380,7 +380,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "188";   // bump together with CACHE in sw.js
+const APP_VERSION = "189";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -2016,13 +2016,25 @@ function lastSunday(fromKeyStr){
   const d = fromKey(fromKeyStr); d.setDate(d.getDate() - d.getDay());
   return keyOf(d);
 }
-// Leadership roster people, each paired with their matched assign rows across every loaded team (by email).
+// Leadership roster people, each paired with their matched assign rows across every loaded team (by email), plus
+// any "Report Time Off" rows for them (category "Absent" — Productions' own Time Off, or the Armor Bearers Time
+// Off feature, which can file a pastor's absence by name instead of email, resolved via PASTOR_EMAILS).
 function leadershipWithItems(){
   return (Rosters.data.leadership || []).map(p => {
     const emails = (p.emails || [p.email]).filter(Boolean).map(lc);
     const items = TEAMS.flatMap(t => (S.teams[t.key]?.items || []).filter(i => i.kind === "assign" && i.email && emails.includes(lc(i.email))).map(i => ({ ...i, teamName: t.name })));
-    return { p, items };
-  }).filter(x => x.items.length);
+    const timeOff = TEAMS.flatMap(t => (S.teams[t.key]?.items || []).filter(i => i.date && lc(i.category) === "absent" &&
+      ((i.email && emails.includes(lc(i.email))) || (i.role && (PASTOR_EMAILS[i.role] || []).some(e => emails.includes(lc(e)))))).map(i => ({ ...i, teamName: t.name })));
+    return { p, items, timeOff };
+  }).filter(x => x.items.length || x.timeOff.length);
+}
+// The set of dates a leader was actually absent: a real decline on an assignment (optionally filtered to one
+// service category) union every Time Off date they filed (which covers the whole day, so never category-filtered).
+function personAbsenceDates({ items, timeOff }, catFilter){
+  const set = new Set();
+  items.forEach(i => { if (i.declined && (!catFilter || catFilter === "all" || lc(i.category) === lc(catFilter))) set.add(i.date); });
+  timeOff.forEach(i => set.add(i.date));
+  return set;
 }
 function viewDashboards(){
   if (!canViewDashboards()) return `<h1 class="page">Dashboards</h1><section class="panel pad"><p>You don't have a dashboard here yet.</p></section>`;
@@ -2043,14 +2055,13 @@ function leaderDashboard(){
   if (!Attendance.rows && !Attendance.loading) Attendance.load();
   const cats = [...new Set(withItems.flatMap(({items}) => items.map(i => i.category).filter(Boolean)))].sort();
   const sel = S.dashCategory || "all";
-  const inYear = items => items.filter(i => i.date >= yearStart && i.date <= today && i.declined && (sel === "all" || lc(i.category) === lc(sel)));
   const monthName = mk => fromKey(mk + "-01").toLocaleDateString(undefined, { month: "short" });
-  const absenceRows = withItems.map(({p,items}) => {
-    const yr = inYear(items);
+  const absenceRows = withItems.map(x => {
+    const yr = [...personAbsenceDates(x, sel)].filter(d => d >= yearStart && d <= today);
     const byMonth = {};
-    yr.forEach(i => { const mk = i.date.slice(0,7); byMonth[mk] = (byMonth[mk] || 0) + 1; });
+    yr.forEach(d => { const mk = d.slice(0,7); byMonth[mk] = (byMonth[mk] || 0) + 1; });
     const months = Object.keys(byMonth).sort().map(mk => `${monthName(mk)} ${byMonth[mk]}`);
-    return { p, months, total: yr.length };
+    return { p: x.p, months, total: yr.length };
   }).filter(r => r.total > 0).sort((a,b) => b.total - a.total);
 
   // Church count, grouped by service category: most recent count and this-year average per category.
@@ -2067,7 +2078,7 @@ function leaderDashboard(){
   const dc = dashCalInit();
   const [dy, dmo] = dc.month.split("-").map(Number), dfirst = new Date(dy, dmo - 1, 1), dDaysIn = new Date(dy, dmo, 0).getDate();
   const declinedByDate = {};
-  withItems.forEach(({p,items}) => items.forEach(i => { if (i.declined) (declinedByDate[i.date] = declinedByDate[i.date] || []).push(p); }));
+  withItems.forEach(x => personAbsenceDates(x, "all").forEach(d => { (declinedByDate[d] = declinedByDate[d] || []).push(x.p); }));
   let dcCells = "";
   for (let n = 0; n < dfirst.getDay(); n++) dcCells += `<span class="day blank"></span>`;
   for (let d = 1; d <= dDaysIn; d++){
