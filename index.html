@@ -380,7 +380,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "187";   // bump together with CACHE in sw.js
+const APP_VERSION = "188";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -2032,17 +2032,52 @@ function viewDashboards(){
   out += myLedTeams().map(teamDashboard).join("");
   return out;
 }
+function dashCalInit(){
+  const today = todayKey();
+  if (!S.dashCal) S.dashCal = { month: today.slice(0,7), sel: today };
+  return S.dashCal;
+}
 function leaderDashboard(){
-  const today = todayKey(), monthStart = today.slice(0,7) + "-01", yearStart = today.slice(0,4) + "-01-01";
-  const lastSun = lastSunday(addDays(today, -1));
+  const today = todayKey(), yearStart = today.slice(0,4) + "-01-01", curYear = today.slice(0,4);
   const withItems = leadershipWithItems();
-  const missedLastSun = withItems.map(({p,items}) => ({ p, missed: items.filter(i => i.date === lastSun && i.declined) })).filter(x => x.missed.length);
   if (!Attendance.rows && !Attendance.loading) Attendance.load();
-  const sundayCounts = (Attendance.rows || []).filter(r => lc(r.service).includes("sunday")).slice(0, 8);
   const cats = [...new Set(withItems.flatMap(({items}) => items.map(i => i.category).filter(Boolean)))].sort();
   const sel = S.dashCategory || "all";
-  const inRange = (items, from) => items.filter(i => i.date >= from && i.date <= today && i.declined && (sel === "all" || lc(i.category) === lc(sel)));
-  const absenceRows = withItems.map(({p,items}) => ({ p, month: inRange(items, monthStart).length, year: inRange(items, yearStart).length })).filter(r => r.year > 0).sort((a,b) => b.year - a.year);
+  const inYear = items => items.filter(i => i.date >= yearStart && i.date <= today && i.declined && (sel === "all" || lc(i.category) === lc(sel)));
+  const monthName = mk => fromKey(mk + "-01").toLocaleDateString(undefined, { month: "short" });
+  const absenceRows = withItems.map(({p,items}) => {
+    const yr = inYear(items);
+    const byMonth = {};
+    yr.forEach(i => { const mk = i.date.slice(0,7); byMonth[mk] = (byMonth[mk] || 0) + 1; });
+    const months = Object.keys(byMonth).sort().map(mk => `${monthName(mk)} ${byMonth[mk]}`);
+    return { p, months, total: yr.length };
+  }).filter(r => r.total > 0).sort((a,b) => b.total - a.total);
+
+  // Church count, grouped by service category: most recent count and this-year average per category.
+  const churchCats = [...new Set((Attendance.rows || []).map(r => r.service).filter(Boolean))].sort();
+  const churchByCat = churchCats.map(c => {
+    const rows = (Attendance.rows || []).filter(r => r.service === c); // already sorted newest-first
+    const last = rows[0];
+    const yearRows = rows.filter(r => r.date >= yearStart && r.count != null);
+    const avg = yearRows.length ? Math.round(yearRows.reduce((s,r) => s + Number(r.count), 0) / yearRows.length) : null;
+    return { c, last, avg };
+  });
+
+  // Leadership calendar: click a date to see who was absent, the church count(s), and baptisms (placeholder).
+  const dc = dashCalInit();
+  const [dy, dmo] = dc.month.split("-").map(Number), dfirst = new Date(dy, dmo - 1, 1), dDaysIn = new Date(dy, dmo, 0).getDate();
+  const declinedByDate = {};
+  withItems.forEach(({p,items}) => items.forEach(i => { if (i.declined) (declinedByDate[i.date] = declinedByDate[i.date] || []).push(p); }));
+  let dcCells = "";
+  for (let n = 0; n < dfirst.getDay(); n++) dcCells += `<span class="day blank"></span>`;
+  for (let d = 1; d <= dDaysIn; d++){
+    const k = `${dc.month}-${pad(d)}`, miss = declinedByDate[k] || [];
+    dcCells += `<button class="day${k === dc.sel ? " sel" : ""}${k === today ? " today" : ""}" data-act="dash-day" data-k="${k}" aria-label="${esc(fmtDay(k))}${miss.length ? ", " + plural(miss.length, "leader absent", "leaders absent") : ""}"${k === dc.sel ? ' aria-pressed="true"' : ""}>
+      <span>${d}</span><span class="dots">${miss.length ? `<i class="cal-noservice" aria-hidden="true">${ICON.x || "•"}</i>` : ""}</span></button>`;
+  }
+  const dcLabel = dfirst.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const selMissed = declinedByDate[dc.sel] || [];
+  const selCounts = (Attendance.rows || []).filter(r => r.date === dc.sel);
   const since90 = addDays(today, -90);
   const perf = TEAMS.map(t => {
     const items = (S.teams[t.key]?.items || []).filter(i => i.kind === "assign" && i.date >= since90 && i.date <= today);
@@ -2050,16 +2085,22 @@ function leaderDashboard(){
     return { t, total: items.length, confirmed };
   }).filter(x => x.total);
   return `<section class="sec"><h2 class="section-label">Leadership</h2>
-    <div class="panel pad"><b>Leaders Absent — ${esc(fmtShort(lastSun))}</b>
-      ${missedLastSun.length ? missedLastSun.map(x => dashRow(esc(x.p.name), `<small>${esc([...new Set(x.missed.map(m => m.teamName))].join(", "))}</small>`)).join("") : `<p class="hint" style="margin:6px 0 0">No leaders missed last Sunday.</p>`}
+    <div class="panel pad cal" style="margin-bottom:12px"><div class="cal-head"><b>${esc(dcLabel)}</b><div class="cal-nav"><button class="btn sm" data-act="dash-cal-today">Today</button><button class="iconbtn" data-act="dash-month" data-d="-1" aria-label="Previous month">${ICON.prev}</button><button class="iconbtn" data-act="dash-month" data-d="1" aria-label="Next month">${ICON.next}</button></div></div>
+      <div class="dow" aria-hidden="true"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+      <div class="days">${dcCells}</div>
+      <div style="margin-top:14px"><b>${esc(fmtDay(dc.sel))}</b>
+        <div style="margin-top:4px">
+          ${dashRow("Leaders absent", selMissed.length ? esc(selMissed.map(p => p.name).join(", ")) : `<span class="hint">None</span>`)}
+          ${selCounts.length ? selCounts.map(r => dashRow(esc(r.service || "Church Count"), `<b>${r.count == null ? "—" : Number(r.count).toLocaleString()}</b>`)).join("") : dashRow("Church count", `<span class="hint">No count entered</span>`)}
+          ${dashRow("Baptisms", `<span class="hint">Coming once the Deacons app is built</span>`)}
+        </div></div>
     </div>
-    <div class="panel pad" style="margin-top:12px"><b>Church Count — Sunday Mornings</b>
-      ${sundayCounts.length ? sundayCounts.map(r => dashRow(esc(Attendance.fmt(r.date)), `<b>${r.count == null ? "—" : Number(r.count).toLocaleString()}</b>`)).join("") : `<p class="hint" style="margin:6px 0 0">${Attendance.loading ? "Loading…" : "No attendance has been entered yet."}</p>`}
+    <div class="panel pad"><b>Church Count by Service</b>
+      ${churchByCat.length ? churchByCat.map(x => dashRow(esc(x.c), `Last: <b>${x.last && x.last.count != null ? Number(x.last.count).toLocaleString() : "—"}</b>${x.last ? ` <small>(${esc(Attendance.fmt(x.last.date))})</small>` : ""}<br><small>Avg ${curYear}: ${x.avg == null ? "—" : x.avg.toLocaleString()}</small>`)).join("") : `<p class="hint" style="margin:6px 0 0">${Attendance.loading ? "Loading…" : "No attendance has been entered yet."}</p>`}
     </div>
-    <div class="panel pad" style="margin-top:12px"><b>Baptisms</b><p class="hint" style="margin:6px 0 0">Coming once the Deacons app is built.</p></div>
-    <div class="panel pad" style="margin-top:12px"><b>Leader Absences — This Month / Year</b>
+    <div class="panel pad" style="margin-top:12px"><b>Leader Absences — ${curYear}</b>
       ${cats.length ? `<div class="field" style="margin:8px 0"><label for="dash-cat">Service</label><select id="dash-cat">${["all", ...cats].map(c => `<option value="${esc(c)}" ${sel === c ? "selected" : ""}>${c === "all" ? "All services" : esc(c)}</option>`).join("")}</select></div>` : ""}
-      ${absenceRows.length ? absenceRows.map(r => dashRow(esc(r.p.name), `${r.month} this month · ${r.year} this year`)).join("") : `<p class="hint" style="margin:6px 0 0">No absences in this window.</p>`}
+      ${absenceRows.length ? absenceRows.map(r => dashRow(esc(r.p.name), `<small>${esc(r.months.join(", "))}</small><br><b>${r.total} total</b>`)).join("") : `<p class="hint" style="margin:6px 0 0">No absences in ${curYear}.</p>`}
     </div>
     <div class="panel pad" style="margin-top:12px"><b>Ministry Performance — Last 90 Days</b>
       ${perf.length ? perf.map(x => dashRow(esc(x.t.name), `${x.total ? Math.round(x.confirmed / x.total * 100) : 0}% confirmed <small>(${x.confirmed}/${x.total})</small>`)).join("") : `<p class="hint" style="margin:6px 0 0">Nothing scheduled in the last 90 days.</p>`}
@@ -2546,6 +2587,9 @@ document.addEventListener("click", async e => {
   if (act === "att-open"){ Attendance.editId = null; Attendance.load(true); S.view = "attendance"; render(); window.scrollTo(0, 0); return; }
   if (act === "dash-open"){ if (!Attendance.rows) Attendance.load(); S.view = "dashboards"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); return; }
   if (act === "dash-back"){ S.view = "home"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); return; }
+  if (act === "dash-day"){ dashCalInit().sel = b.dataset.k; render(); return; }
+  if (act === "dash-month"){ const dc = dashCalInit(), [y, m] = dc.month.split("-").map(Number), d = new Date(y, m - 1 + Number(b.dataset.d), 1); dc.month = keyOf(d).slice(0, 7); render(); return; }
+  if (act === "dash-cal-today"){ const dc = dashCalInit(); dc.sel = todayKey(); dc.month = todayKey().slice(0, 7); render(); return; }
   if (await Attendance.click(b)) return;
   if (act === "imp-start") impStart([...impPicked()]);
   else if (act === "imp-pick") { const p = impPicked(), k = b.dataset.k; p.has(k) ? p.delete(k) : p.add(k); render(); }
