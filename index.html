@@ -380,7 +380,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "184";   // bump together with CACHE in sw.js
+const APP_VERSION = "185";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -470,6 +470,7 @@ const newPill = () => `<span class="pill new-pill">NEW</span> `;
 
 const ICON = {
   rings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="13" r="5"/><circle cx="15" cy="13" r="5"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="13" y="8" width="3" height="10"/><rect x="18" y="14" width="3" height="4"/></svg>',
   cam: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4V8z"/></svg>',
   abshield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 7v10M8 11h8"/></svg>',
   smile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></svg>',
@@ -1194,7 +1195,7 @@ const S = { phase: "boot", error: "", me: null, photo: null, view: "home", teams
             busy: new Set(), cal: { month: null, sel: null, off: loadFilter("cal"), form: null, busy: false }, hideInstall: false,
             annEdit: false, annDraft: null, annConfirm: null, annOff: loadFilter("ann"), weekOff: loadFilter("week"), payrollOff: loadFilter("payroll"), payrollDayOff: loadFilter("payroll-day"),
             notesSeen: loadNotesSeen(),
-            churchEventPage: null, calEventBack: "home", bdayWish: null, bdayWishBusy: false, pastorPhotoBusy: null };
+            churchEventPage: null, calEventBack: "home", bdayWish: null, bdayWishBusy: false, pastorPhotoBusy: null, dashCategory: "all" };
 /* Teams this signed-in person can "Send to": only the ones they actually admin. */
 const sendableTeams = () => TEAMS.filter(isEditorOf);
 /* Always pushed to on every Service Notes save, for any RCI Leader, regardless of their own
@@ -1995,13 +1996,97 @@ async function maybeBalloons(){
     if (age < 3500) requestAnimationFrame(frame); else c.remove();
   })(start);
 }
+
+/* ---------- Dashboards: quick-numbers reporting ----------
+   Pastors + Ashley get a church-wide "Leadership" dashboard; anyone leading a team (a TEAMS editor)
+   gets that team's serving stats. Built entirely from data already loaded client-side (S.teams,
+   Rosters.data, Attendance.rows) — no new SharePoint list. "Absence"/"declined" below means a
+   person was scheduled (an assign row) and the date has passed without them being confirmed — the
+   same signal as the team apps' own "Can't Make It" flow, since nothing else distinguishes an
+   active decline from a plain no-show. The burnout label is a rough, clearly-labeled heuristic
+   (how often someone has served this month vs. their team's average), not a real prediction. */
+const canViewLeaderDash = () => isEditorOf(CHURCH_CAL) || isAnyPastor();
+const myLedTeams = () => TEAMS.filter(isEditorOf);
+const canViewDashboards = () => canViewLeaderDash() || myLedTeams().length > 0;
+const dashRow = (label, right) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><span>${label}</span><span style="text-align:right;flex:none">${right}</span></div>`;
+function lastSunday(fromKeyStr){
+  const d = fromKey(fromKeyStr); d.setDate(d.getDate() - d.getDay());
+  return keyOf(d);
+}
+// Leadership roster people, each paired with their matched assign rows across every loaded team (by email).
+function leadershipWithItems(){
+  return (Rosters.data.leadership || []).map(p => {
+    const emails = (p.emails || [p.email]).filter(Boolean).map(lc);
+    const items = TEAMS.flatMap(t => (S.teams[t.key]?.items || []).filter(i => i.kind === "assign" && i.email && emails.includes(lc(i.email))).map(i => ({ ...i, teamName: t.name })));
+    return { p, items };
+  }).filter(x => x.items.length);
+}
+function viewDashboards(){
+  if (!canViewDashboards()) return `<h1 class="page">Dashboards</h1><section class="panel pad"><p>You don't have a dashboard here yet.</p></section>`;
+  const back = `<button class="back" data-act="dash-back">‹ Back</button>`;
+  let out = `<div class="page-h">${back}<h1 class="page">Dashboards</h1></div>`;
+  if (canViewLeaderDash()) out += leaderDashboard();
+  out += myLedTeams().map(teamDashboard).join("");
+  return out;
+}
+function leaderDashboard(){
+  const today = todayKey(), monthStart = today.slice(0,7) + "-01", yearStart = today.slice(0,4) + "-01-01";
+  const lastSun = lastSunday(addDays(today, -1));
+  const withItems = leadershipWithItems();
+  const missedLastSun = withItems.map(({p,items}) => ({ p, missed: items.filter(i => i.date === lastSun && !i.confirmed && !i.pending && !i.gone) })).filter(x => x.missed.length);
+  if (!Attendance.rows && !Attendance.loading) Attendance.load();
+  const sundayCounts = (Attendance.rows || []).filter(r => lc(r.service).includes("sunday")).slice(0, 8);
+  const cats = [...new Set(withItems.flatMap(({items}) => items.map(i => i.category).filter(Boolean)))].sort();
+  const sel = S.dashCategory || "all";
+  const inRange = (items, from) => items.filter(i => i.date >= from && i.date <= today && !i.confirmed && !i.pending && !i.gone && (sel === "all" || lc(i.category) === lc(sel)));
+  const absenceRows = withItems.map(({p,items}) => ({ p, month: inRange(items, monthStart).length, year: inRange(items, yearStart).length })).filter(r => r.year > 0).sort((a,b) => b.year - a.year);
+  const since90 = addDays(today, -90);
+  const perf = TEAMS.map(t => {
+    const items = (S.teams[t.key]?.items || []).filter(i => i.kind === "assign" && i.date >= since90 && i.date <= today);
+    const confirmed = items.filter(i => i.confirmed).length;
+    return { t, total: items.length, confirmed };
+  }).filter(x => x.total);
+  return `<section class="sec"><h2 class="section-label">Leadership</h2>
+    <div class="panel pad"><b>Leaders Absent — ${esc(fmtShort(lastSun))}</b>
+      ${missedLastSun.length ? missedLastSun.map(x => dashRow(esc(x.p.name), `<small>${esc([...new Set(x.missed.map(m => m.teamName))].join(", "))}</small>`)).join("") : `<p class="hint" style="margin:6px 0 0">No leaders missed last Sunday.</p>`}
+    </div>
+    <div class="panel pad" style="margin-top:12px"><b>Church Count — Sunday Mornings</b>
+      ${sundayCounts.length ? sundayCounts.map(r => dashRow(esc(Attendance.fmt(r.date)), `<b>${r.count == null ? "—" : Number(r.count).toLocaleString()}</b>`)).join("") : `<p class="hint" style="margin:6px 0 0">${Attendance.loading ? "Loading…" : "No attendance has been entered yet."}</p>`}
+    </div>
+    <div class="panel pad" style="margin-top:12px"><b>Baptisms</b><p class="hint" style="margin:6px 0 0">Coming once the Deacons app is built.</p></div>
+    <div class="panel pad" style="margin-top:12px"><b>Leader Absences — This Month / Year</b>
+      ${cats.length ? `<div class="field" style="margin:8px 0"><label for="dash-cat">Service</label><select id="dash-cat">${["all", ...cats].map(c => `<option value="${esc(c)}" ${sel === c ? "selected" : ""}>${c === "all" ? "All services" : esc(c)}</option>`).join("")}</select></div>` : ""}
+      ${absenceRows.length ? absenceRows.map(r => dashRow(esc(r.p.name), `${r.month} this month · ${r.year} this year`)).join("") : `<p class="hint" style="margin:6px 0 0">No absences in this window.</p>`}
+    </div>
+    <div class="panel pad" style="margin-top:12px"><b>Ministry Performance — Last 90 Days</b>
+      ${perf.length ? perf.map(x => dashRow(esc(x.t.name), `${x.total ? Math.round(x.confirmed / x.total * 100) : 0}% confirmed <small>(${x.confirmed}/${x.total})</small>`)).join("") : `<p class="hint" style="margin:6px 0 0">Nothing scheduled in the last 90 days.</p>`}
+    </div></section>`;
+}
+function teamDashboard(t){
+  const today = todayKey(), monthStart = today.slice(0,7) + "-01";
+  const all = S.teams[t.key]?.items || [];
+  const byPerson = {};
+  for (const r of all.filter(i => i.kind === "profile" && !i.gone && i.fullName)) byPerson[lc(r.fullName)] = { name: r.fullName, served: [], declined: 0 };
+  for (const i of all.filter(i => i.kind === "assign" && i.fullName && i.date <= today)){
+    const key = lc(i.fullName);
+    if (!byPerson[key]) byPerson[key] = { name: i.fullName, served: [], declined: 0 };
+    if (i.confirmed && i.date >= monthStart) byPerson[key].served.push(i);
+    else if (!i.confirmed && !i.pending && !i.gone) byPerson[key].declined++;
+  }
+  const rows = Object.values(byPerson).sort((a,b) => b.served.length - a.served.length);
+  const avg = rows.length ? rows.reduce((s,r) => s + r.served.length, 0) / rows.length : 0;
+  const burnout = n => n === 0 ? "" : n >= Math.max(3, avg * 1.5) ? "High" : n >= Math.max(2, avg) ? "Medium" : "Low";
+  return `<section class="sec"><h2 class="section-label">${esc(t.name)} — This Month</h2><div class="panel pad">
+    ${rows.length ? rows.map(r => dashRow(`<b>${esc(r.name)}</b><br><small>${[...new Set(r.served.map(s => s.role).filter(Boolean))].join(", ") || "—"}</small>`, `${r.served.length} time${r.served.length === 1 ? "" : "s"}${burnout(r.served.length) ? ` <small>(${burnout(r.served.length)} burnout risk)</small>` : ""}<br><small>Declined ${r.declined}</small>`)).join("") : `<p class="hint" style="margin:6px 0 0">No activity yet this month.</p>`}
+  </div></section>`;
+}
 function viewHome(){
   const h = new Date().getHours(), part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
   const teams = myTeams(), reqs = pendingOf();
   let out = `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div class="kicker">${esc(new Date().toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"}))}</div>
     <h1 class="greet">Good ${part}, ${esc(firstOf(S.me.name) || "friend")}</h1>
     ${S.loading ? `<div class="updating" style="margin-top:6px"><span class="spinner"></span>Checking your teams…</div>` : ""}</div>
-    <span style="display:flex;gap:8px;flex:none">${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes${todayNotesUnseen() ? ", unread edit" : ""}" title="Today's Service Notes">${ICON.notes}${todayNotesUnseen() ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}${Attendance.button()}</span></div>`;
+    <span style="display:flex;gap:8px;flex:none">${Rosters.isLeadershipMember() ? `<button class="iconbtn" data-act="today-notes" aria-label="Today's Service Notes${todayNotesUnseen() ? ", unread edit" : ""}" title="Today's Service Notes">${ICON.notes}${todayNotesUnseen() ? '<span class="red-dot" aria-hidden="true"></span>' : ""}</button>` : ""}${canViewDashboards() ? `<button class="iconbtn" data-act="dash-open" aria-label="Dashboards" title="Dashboards">${ICON.chart || "📊"}</button>` : ""}${Attendance.button()}</span></div>`;
   out += badgeAsk();
   out += todayHero();
   out += pastorHero();
@@ -2413,7 +2498,7 @@ function render(){
   }
   const tabsArr = tabsList();
   const body = S.view === "attendance" ? viewAttendance() : S.view === "ab-timeoff" ? viewAbTimeOff() : S.view === "church-event" ? viewChurchEventInfo() : (S.view === "announcements" && SHOW_ANNOUNCEMENTS) ? viewAnnouncements() : S.view === "calendar" ? viewCalendar() : (S.view === "giving" && SHOW_GIVING) ? viewGiving()
-    : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "profile" ? viewProfile() : viewHome();
+    : S.view === "install" ? viewInstall() : S.view === "leader-about" ? Rosters.aboutView() : S.view === "messages" ? Comm.view() : S.view === "teams" ? viewTeams() : S.view === "dashboards" ? viewDashboards() : S.view === "profile" ? viewProfile() : viewHome();
   const tabs = `<nav class="tabs" aria-label="Main"><div class="wrap" style="grid-template-columns:repeat(${tabsArr.length},minmax(0,1fr))">${tabsArr.map(([v, l, ic]) =>
     `<button data-act="tab" data-view="${v}"${(S.view === "leader-about" ? "teams" : S.view) === v ? ' aria-current="page"' : ""}>${ic}<span class="tab-label">${l}</span>${v === "messages" && Comm.totalUnread() ? `<span class="count" aria-label="${Comm.totalUnread()} unread messages">${Comm.totalUnread()}</span>` : ""}${v === "home" && n ? `<span class="count" aria-hidden="true">${n}</span>` : ""}</button>`).join("")}</div></nav>`;
   app.innerHTML = header + `<main><div class="wrap${S.view === "calendar" ? " calendar-wrap" : ""}">${S.imp && S.view !== "profile" ? impBanner() : ""}${body}</div></main>` + tabs + AnnShare.modal();
@@ -2456,6 +2541,8 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act;
   if (act === "att-open"){ Attendance.editId = null; Attendance.load(true); S.view = "attendance"; render(); window.scrollTo(0, 0); return; }
+  if (act === "dash-open"){ if (!Attendance.rows) Attendance.load(); S.view = "dashboards"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); return; }
+  if (act === "dash-back"){ S.view = "home"; try { sessionStorage.setItem("rci-serve:view", S.view); } catch(_){} render(); window.scrollTo(0, 0); return; }
   if (await Attendance.click(b)) return;
   if (act === "imp-start") impStart([...impPicked()]);
   else if (act === "imp-pick") { const p = impPicked(), k = b.dataset.k; p.has(k) ? p.delete(k) : p.add(k); render(); }
@@ -2615,6 +2702,7 @@ document.addEventListener("click", async e => {
 document.addEventListener("change", e => {
   if (e.target.id === "abt-who"){ S.abt.who = e.target.value; S.abt.sel = new Set(); S.abtConfirm = null; S.abt.done = null; render(); return; }
   if (e.target.id === "imp-person-select"){ S.impPersonPick = e.target.value; render(); }
+  if (e.target.id === "dash-cat"){ S.dashCategory = e.target.value; render(); }
   if (e.target.id === "ann-flyer" && e.target.files[0]){
     annDraftSave(); S.annDraft.file = e.target.files[0];
     S.annDraft.preview = URL.createObjectURL(e.target.files[0]); render();
