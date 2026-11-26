@@ -380,7 +380,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "186";   // bump together with CACHE in sw.js
+const APP_VERSION = "187";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -1084,6 +1084,7 @@ function normalize(t, id, f, emailById, col){
       email: emailById[f.PersonLookupId] || "", call: f.CallTime || "", time: f.ServiceTime || "",
       pending: f.Status === "Pending" && f.Published === "Request Sent",
       confirmed: f.Status === "Accepted" && f.Published === "Request Approved",
+      declined: f.Status === "Declined",
       gone: lc(f.ArchiveStatus) === "archived" }];
   }
   if (t.key === "worship"){
@@ -1097,6 +1098,7 @@ function normalize(t, id, f, emailById, col){
       email: emailById[f.NameEmailLookupId] || "", call: f.CallTime || "", time: f.ServiceTime || "",
       pending: f.Status === "Pending" && f.Published === "Request Sent",
       confirmed: f.Status === "Accepted" && f.Published === "Request Approved",
+      declined: f.Status === "Declined",
       gone: !f.ServiceDate && lc(f.Status) === "unavailable" }];
   }
   // Security and Ushers share a shape; Ushers rows can hold a second (Altar Worker) request.
@@ -1114,9 +1116,9 @@ function normalize(t, id, f, emailById, col){
   const req = (role, st) => lc(st) === "pending" && filled(cat) && filled(name) && filled(role);
   const out = [];
   if (t.key === "security" || t.key === "armorbearers" || t.key === "greeters" || filled(p1) || !filled(p2))
-    out.push({ ...common, kind, role: p1, status, pending: req(p1, status), confirmed: lc(status) === "accepted", gone: false });
+    out.push({ ...common, kind, role: p1, status, pending: req(p1, status), confirmed: lc(status) === "accepted", declined: lc(status) === "declined", gone: false });
   if (t.key === "ushers" && filled(p2))
-    out.push({ ...common, kind, id: common.id + ":2", slot: 2, role: p2, pending: req(p2, st2 || "Pending"), confirmed: lc(st2) === "accepted", gone: false });
+    out.push({ ...common, kind, id: common.id + ":2", slot: 2, role: p2, pending: req(p2, st2 || "Pending"), confirmed: lc(st2) === "accepted", declined: lc(st2) === "declined", gone: false });
   return out;
 }
 
@@ -2000,11 +2002,12 @@ async function maybeBalloons(){
 /* ---------- Dashboards: quick-numbers reporting ----------
    Pastors + Ashley get a church-wide "Leadership" dashboard; anyone leading a team (a TEAMS editor)
    gets that team's serving stats. Built entirely from data already loaded client-side (S.teams,
-   Rosters.data, Attendance.rows) — no new SharePoint list. "Absence"/"declined" below means a
-   person was scheduled (an assign row) and the date has passed without them being confirmed — the
-   same signal as the team apps' own "Can't Make It" flow, since nothing else distinguishes an
-   active decline from a plain no-show. The burnout label is a rough, clearly-labeled heuristic
-   (how often someone has served this month vs. their team's average), not a real prediction. */
+   Rosters.data, Attendance.rows) — no new SharePoint list. "Absence"/"declined" below counts only
+   rows whose Status is actually "Declined" (i.e. the person tapped "Can't Make It" themselves) —
+   never a row that's merely unconfirmed, pending, or a "No Service"/"Absent" week marker, which is
+   excluded entirely since those are kind "other", not "assign". The burnout label is a rough,
+   clearly-labeled heuristic (how often someone has served this month vs. their team's average),
+   not a real prediction. */
 const canViewLeaderDash = () => isEditorOf(CHURCH_CAL) || isAnyPastor();
 const myLedTeams = () => TEAMS.filter(isEditorOf);
 const canViewDashboards = () => canViewLeaderDash() || myLedTeams().length > 0;
@@ -2033,12 +2036,12 @@ function leaderDashboard(){
   const today = todayKey(), monthStart = today.slice(0,7) + "-01", yearStart = today.slice(0,4) + "-01-01";
   const lastSun = lastSunday(addDays(today, -1));
   const withItems = leadershipWithItems();
-  const missedLastSun = withItems.map(({p,items}) => ({ p, missed: items.filter(i => i.date === lastSun && !i.confirmed && !i.pending && !i.gone) })).filter(x => x.missed.length);
+  const missedLastSun = withItems.map(({p,items}) => ({ p, missed: items.filter(i => i.date === lastSun && i.declined) })).filter(x => x.missed.length);
   if (!Attendance.rows && !Attendance.loading) Attendance.load();
   const sundayCounts = (Attendance.rows || []).filter(r => lc(r.service).includes("sunday")).slice(0, 8);
   const cats = [...new Set(withItems.flatMap(({items}) => items.map(i => i.category).filter(Boolean)))].sort();
   const sel = S.dashCategory || "all";
-  const inRange = (items, from) => items.filter(i => i.date >= from && i.date <= today && !i.confirmed && !i.pending && !i.gone && (sel === "all" || lc(i.category) === lc(sel)));
+  const inRange = (items, from) => items.filter(i => i.date >= from && i.date <= today && i.declined && (sel === "all" || lc(i.category) === lc(sel)));
   const absenceRows = withItems.map(({p,items}) => ({ p, month: inRange(items, monthStart).length, year: inRange(items, yearStart).length })).filter(r => r.year > 0).sort((a,b) => b.year - a.year);
   const since90 = addDays(today, -90);
   const perf = TEAMS.map(t => {
@@ -2071,7 +2074,7 @@ function teamDashboard(t){
     const key = lc(i.fullName);
     if (!byPerson[key]) byPerson[key] = { name: i.fullName, served: [], declined: 0 };
     if (i.confirmed && i.date >= monthStart) byPerson[key].served.push(i);
-    else if (!i.confirmed && !i.pending && !i.gone) byPerson[key].declined++;
+    else if (i.declined) byPerson[key].declined++;
   }
   const rows = Object.values(byPerson).sort((a,b) => b.served.length - a.served.length);
   const avg = rows.length ? rows.reduce((s,r) => s + r.served.length, 0) / rows.length : 0;
