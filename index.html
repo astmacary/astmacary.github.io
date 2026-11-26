@@ -380,7 +380,7 @@ button.team-pill,.comm button.team-pill{display:inline-flex;align-items:center;g
    It reads each team's SharePoint list with that app's own rules.
    ============================================================ */
 const OPEN_TEAMS = new URLSearchParams(location.search).has("teams");
-const APP_VERSION = "185";   // bump together with CACHE in sw.js
+const APP_VERSION = "186";   // bump together with CACHE in sw.js
 const CONFIG = {
   clientId: "cd20cb76-a6e8-47fa-9abf-c8e17fb5594d",   // the "RCI Productions" Entra app registration (shared by all the apps)
   tenantId: "4351910e-4abe-4ff8-a519-ce7ac8cad567",
@@ -2470,7 +2470,7 @@ function viewGiving(){
    plus the Church Calendar editors (Ashley, Pastor Marvin) enter counts here or in the Ushers app. */
 const ATT_EXTRA = ["pastormarvin@therampchurch.com"];   // Ushers app admins added through its Make Admin button
 const canEnterAttendance = () => !!S.me && (DEMO || isEditorOf(TEAMS.find(t => t.key === "ushers")) || isEditorOf(CHURCH_CAL) || ATT_EXTRA.some(e => S.me.emails.includes(e)));
-Attendance.init({ g: (p, o) => API.g(p, o), render: () => { if (S.view === "attendance") render(); }, toast: (m, bad) => toast(m, bad), canEdit: canEnterAttendance,
+Attendance.init({ g: (p, o) => API.g(p, o), render: () => { if (S.view === "attendance" || S.view === "dashboards") render(); }, toast: (m, bad) => toast(m, bad), canEdit: canEnterAttendance,
   // Today's services from the Ushers schedule (the same rows the Ushers app uses), so both apps save the same service name.
   services: () => { const k = todayKey(), rows = (S.teams.ushers?.items || []).filter(i => i.date === k);
     return rows.some(i => lc(i.category) === "no service") ? [] : [...new Set(rows.map(i => String(i.category || "").trim()).filter(c => c && c !== "--" && !/^(absent|declined|no show|no response)$|birthday/i.test(c)))]; } });
